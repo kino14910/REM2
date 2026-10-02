@@ -1,0 +1,5 @@
+allowBuilds:
+  electron-winstaller: true
+minimumReleaseAgeExclude:
+  - vite@8.3.2
+nodeLinker: hoisted
