@@ -1,6 +1,11 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "categories": {
-    "correctness": "warn"
+    "correctness": "warn",
+    "suspicious": "warn"
+  },
+  "ignorePatterns": ["dist/**", "coverage/**", ".vite/**", "node_modules/**"],
+  "rules": {
+    "no-console": "off"
   }
 }

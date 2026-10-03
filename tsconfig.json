@@ -1,14 +1,47 @@
 {
   "compilerOptions": {
     "target": "ESNext",
-    "module": "preserve",
-    "moduleResolution": "bundler",
-    "allowJs": true,
-    "skipLibCheck": true,
-    "esModuleInterop": true,
+    "lib": ["ESNext"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
     "noImplicitAny": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": false,
+    "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
     "sourceMap": true,
-    "resolveJsonModule": true
+    "declaration": false,
+    "allowJs": false,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": false,
+    "types": ["node"],
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
+    "paths": {
+      "rem2-kernel": ["src/kernel/index.ts"],
+      "rem2-kernel/*": ["src/kernel/*"]
+    }
   },
-  "include": ["src/**/*", "*.ts", "*.mts"]
+  "include": [
+    "src/**/*.ts",
+    "plugins/**/*.ts",
+    "tests/**/*.ts",
+    "vitest.config.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "coverage",
+    ".vite",
+    "src/electron-shell/**",
+    "src/main.ts",
+    "src/preload.ts",
+    "src/renderer.ts"
+  ]
 }
