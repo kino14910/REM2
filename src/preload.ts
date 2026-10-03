@@ -1,3 +1,7 @@
-// oxlint-disable eslint-plugin-unicorn/no-empty-file
-// See the Electron documentation for details on how to use preload scripts:
-// https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
+/**
+ * Electron Forge preload 入口（可选外壳）。
+ *
+ * 转发到 `src/electron-shell/preload.ts`。
+ */
+
+import './electron-shell/preload.js';

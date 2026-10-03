@@ -1,12 +1,37 @@
 <!doctype html>
-<html>
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <title>Hello World!</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      内容安全策略（CSP）。
+
+      为什么需要：Electron 在渲染进程缺少 CSP（或启用了 unsafe-eval）时会打印
+      "Insecure Content-Security-Policy" 安全告警——那不只是噪音，而是真实的 XSS 暴露面。
+
+      取值说明：
+      - script-src 'self'：只允许同源脚本（Vite dev 的 /@vite/client 也是同源）。
+        刻意**不含** 'unsafe-eval'，这正是不再触发 Electron 告警的关键。
+      - style-src 'unsafe-inline'：本 demo 用内联 style 属性渲染，必须放开。
+      - connect-src 显式放行 ws://localhost：Vite 的 HMR 走 WebSocket，
+        而 CSP 的 'self' 不覆盖 ws:// 协议，需单独列出。
+      - object-src / base-uri 收紧，减少注入面。
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self';
+               script-src 'self';
+               style-src 'self' 'unsafe-inline';
+               img-src 'self' data:;
+               font-src 'self';
+               connect-src 'self' ws://localhost:* ws://127.0.0.1:* http://localhost:* http://127.0.0.1:*;
+               object-src 'none';
+               base-uri 'none';"
+    />
+    <title>rem2 · Kernel Console</title>
   </head>
-  <body>
-    <h1>💖 Hello World!</h1>
-    <p>Welcome to your Electron application.</p>
+  <body style="margin: 0; background: #0f1115">
+    <div id="app"></div>
     <script type="module" src="/src/renderer.ts"></script>
   </body>
 </html>

@@ -1,0 +1,16 @@
+{
+  "//": "Electron 外壳（浏览器/DOM 上下文）专用类型检查配置。",
+  "//why": "内核必须是纯 Node 环境。若把 DOM lib 加进根 tsconfig，内核代码就能无意中使用 document/window 而不报错，破坏'内核零浏览器依赖'的红线。因此外壳单独配置。",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "noEmit": true
+  },
+  "include": [
+    "src/main.ts",
+    "src/preload.ts",
+    "src/renderer.ts",
+    "src/electron-shell/**/*.ts"
+  ],
+  "exclude": ["node_modules", "dist", "coverage", ".vite"]
+}
