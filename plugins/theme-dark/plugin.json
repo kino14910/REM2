@@ -1,0 +1,12 @@
+{
+  "id": "com.rem2.theme-dark",
+  "name": "Dark Theme",
+  "version": "1.0.0",
+  "entry": "src/index.ts",
+  "optionalDependencies": { "com.rem2.logger-console": "^1.0.0" },
+  "capabilities": ["ui.theme"],
+  "compatibility": { "minKernel": "^1.0.0", "contractVersion": "1" },
+  "author": "rem2-team",
+  "description": "注册一套深色主题 token（UI 由外壳插件消费）",
+  "tags": ["ui", "theme"]
+}

@@ -1,0 +1,11 @@
+{
+  "id": "com.rem2.logger-console",
+  "name": "Console Logger",
+  "version": "1.0.0",
+  "entry": "src/index.ts",
+  "capabilities": ["log.sink"],
+  "compatibility": { "minKernel": "^1.0.0", "contractVersion": "1" },
+  "author": "rem2-team",
+  "description": "把内核日志输出到控制台（证明可观测性是插件）",
+  "tags": ["observability", "logging"]
+}
