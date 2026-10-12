@@ -13,7 +13,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { scaffoldPlugin } from './scaffold-plugin.js';
 import { runValidate } from './validate-manifest.js';
-import { builtinPluginsRoot, projectRoot } from '../runtime/bootstrap/paths.js';
+import { builtinPluginsRoot, projectRoot } from './paths.js';
 
 /** CLI 主入口，返回退出码。 */
 export async function main(

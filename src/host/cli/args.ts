@@ -20,8 +20,8 @@ export interface KernelBootstrapArgs {
   exitAfterStart: boolean;
 }
 
-/** 解析 argv。 */
-export function defaultKernelOptions(argv: string[]): KernelBootstrapArgs {
+/** 解析 argv（`KernelBootstrapArgs` 形状对齐 `KernelOptions` 的可从命令行表达子集）。 */
+export function parseArgs(argv: string[]): KernelBootstrapArgs {
   const args: KernelBootstrapArgs = {
     id: 'rem2-kernel',
     pluginRoots: [],
@@ -117,7 +117,7 @@ function printHelp(): void {
     [
       'rem2 内核引导',
       '',
-      '用法：tsx src/runtime/bootstrap/run.ts [选项]',
+      '用法：tsx src/host/cli/run.ts [选项]',
       '',
       '选项：',
       '  --id <id>                内核实例 id（默认 rem2-kernel）',

@@ -82,12 +82,19 @@ export function projectRoot(fromFile?: string): string {
   return process.cwd();
 }
 
-/** 内建插件目录。 */
+/**
+ * 内建插件根目录。
+ *
+ * ★ 指向 `plugins-dist/`（构建产物聚合目录）而不是 `plugins/`：
+ * `plugin.json` 的 `entry` 现在**唯一**指向 `dist/index.js`（唯一形态，docs/11 §3.1），
+ * 而 `dist/index.js` 只存在于构建产物里。若指向 `plugins/`，内核会对着
+ * `plugins/<id>/dist/index.js` 去找 —— 开发态下该目录不存在（源码在 `src/`），
+ * 于是**全部插件 Failed**，且报错是「模块解析失败」，与真正的原因（根目录指错）相距很远。
+ *
+ * 优先级：`plugins-dist/`（已构建）> `plugins/`（未构建，便于手工调试源码目录）。
+ */
 export function builtinPluginsRoot(root = projectRoot()): string {
+  const dist = path.join(root, 'plugins-dist');
+  if (existsSync(dist)) return dist;
   return path.join(root, 'plugins');
-}
-
-/** 示例配置目录。 */
-export function examplesDir(root = projectRoot()): string {
-  return path.join(root, 'examples');
 }

@@ -1,7 +1,7 @@
 /**
- * Electron Forge preload 入口（可选外壳）。
+ * Electron Forge preload 入口（转发壳）。
  *
- * 转发到 `src/electron-shell/preload.ts`。
+ * 保留它是为了让 `forge.config.mts` 的 entry 固定；实现见 `src/host/electron/preload.ts`。
  */
 
-import './electron-shell/preload.js';
+import './host/electron/preload.js';

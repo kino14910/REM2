@@ -8,8 +8,9 @@
 import path from 'node:path';
 import process from 'node:process';
 import { Kernel } from '../../kernel/kernel.js';
-import { defaultKernelOptions } from './args.js';
-import { projectRoot, builtinPluginsRoot, examplesDir } from './paths.js';
+import { createDeps } from '../../kernel/composition.js';
+import { parseArgs } from './args.js';
+import { projectRoot, builtinPluginsRoot } from './paths.js';
 
 /**
  * 运行内核直到收到退出信号。
@@ -17,33 +18,32 @@ import { projectRoot, builtinPluginsRoot, examplesDir } from './paths.js';
 export async function run(
   argv: string[] = process.argv.slice(2),
 ): Promise<void> {
-  const args = defaultKernelOptions(argv);
+  const args = parseArgs(argv);
   const root = projectRoot();
 
   const builtinRoot = args.builtinPluginsRoot ?? builtinPluginsRoot(root);
   const extraRoots = args.pluginRoots.slice();
 
-  const kernel = new Kernel({
-    id: args.id,
-    roots: extraRoots,
-    builtinRoot,
-    ...(args.configPath
-      ? { configPath: path.resolve(root, args.configPath) }
-      : {}),
-    startTimeoutMs: args.startTimeoutMs,
-    stopTimeoutMs: args.stopTimeoutMs,
-    legacyFallback: args.legacyFallback,
-    logLevel: args.logLevel,
-    onResolveError: 'graceful',
-    initialConfig: { app: { greeting: 'Hello from rem2' } },
-  });
+  const kernel = new Kernel(
+    createDeps({
+      id: args.id,
+      roots: extraRoots,
+      builtinRoot,
+      ...(args.configPath
+        ? { configPath: path.resolve(root, args.configPath) }
+        : {}),
+      startTimeoutMs: args.startTimeoutMs,
+      stopTimeoutMs: args.stopTimeoutMs,
+      legacyFallback: args.legacyFallback,
+      logLevel: args.logLevel,
+      onResolveError: 'graceful',
+      initialConfig: { app: { greeting: 'Hello from rem2' } },
+    }),
+  );
 
   const result = await kernel.start();
   const report = await kernel.health();
 
-  const log = kernel.root
-    ? { line: (s: string) => process.stdout.write(`${s}\n`) }
-    : undefined;
   const write = (s: string): void => {
     process.stdout.write(`${s}\n`);
   };
@@ -60,7 +60,6 @@ export async function run(
     );
   }
   write('─────────────────────────────');
-  void log;
 
   let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {
@@ -81,7 +80,7 @@ export async function run(
   }
 }
 
-// 直接执行入口（tsx src/runtime/bootstrap/run.ts）。
+// 直接执行入口（tsx src/host/cli/run.ts）。
 const isMain = (() => {
   try {
     const entry = process.argv[1] ?? '';
@@ -101,5 +100,3 @@ if (isMain) {
     process.exitCode = 1;
   });
 }
-
-export { examplesDir };

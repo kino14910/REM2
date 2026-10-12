@@ -7,7 +7,7 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
-import { validateManifest } from '../kernel/discovery/manifest-validator.js';
+import { validateManifest } from '../../kernel/discovery/manifest-validator.js';
 
 /** 校验结果条目。 */
 export interface ValidateEntry {
