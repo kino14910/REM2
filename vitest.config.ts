@@ -1,13 +1,13 @@
-import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
+import { KERNEL_ALIAS } from './vite.shared.mjs';
 
 /**
  * Vitest 配置。
  *
  * - 运行环境：node（内核是纯 Node 库，绝不依赖 Electron / DOM）。
  * - pool：threads（隔离好、启动快）。
- * - 别名 rem2-kernel → src/kernel/index.ts，使插件与测试以「公共出口」方式引用内核，
- *   从而在契约测试中强制「插件不得 import 内核内部实现」这一架构约束（见 docs/02 §K.3）。
+ * - 别名 rem2-kernel → src/kernel/index.ts：与 vite 共享同一份来源，
+ *   消除「同一 alias 声明多处」的漂移（docs/09 O21）。
  *
  * ## 并发与超时（重要）
  *
@@ -26,16 +26,20 @@ export default defineConfig({
     pool: 'threads',
     include: ['tests/**/*.test.ts'],
     globals: false,
-    // 限制并发：避免重型集成测试互相饿死（见上）。
     maxWorkers: 4,
     minWorkers: 1,
-    // 单用例超时：内核启动/重载 + 临时目录 IO，在并发下需要更宽裕的窗口。
     testTimeout: 30_000,
     hookTimeout: 30_000,
     coverage: {
       provider: 'v8',
       include: ['src/kernel/**/*.ts'],
-      exclude: ['src/kernel/index.ts', 'src/kernel/contracts/**'],
+      // index.ts 是纯 re-export、contracts 是纯类型、definitions 是纯声明表 ——
+      // 计入覆盖率无意义。
+      exclude: [
+        'src/kernel/index.ts',
+        'src/kernel/contracts/**',
+        'src/kernel/extensions/definitions.ts',
+      ],
       reporter: ['text', 'lcov'],
       thresholds: {
         lines: 85,
@@ -45,9 +49,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      'rem2-kernel': fileURLToPath(
-        new URL('./src/kernel/index.ts', import.meta.url),
-      ),
+      'rem2-kernel': KERNEL_ALIAS,
     },
   },
 });

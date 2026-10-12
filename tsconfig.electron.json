@@ -1,0 +1,11 @@
+{
+  "//": "Electron 主进程 + preload：需要 DOM（BrowserWindow）与 node（fs/path）。",
+  "//why": "由 tsconfig.shell.json 演进而来：renderer 已被 Svelte 前端与 frontend 配置接管，剩下主进程一侧，故只保留 DOM + node 组合。",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "noEmit": true
+  },
+  "include": ["src/main.ts", "src/preload.ts", "src/host/electron/**/*.ts", "src/declarations.d.ts"]
+}

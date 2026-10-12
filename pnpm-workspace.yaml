@@ -1,3 +1,12 @@
+# 插件纳入 workspace：每个插件是独立包（@rem2/plugin-<id>），
+# 因此它们有各自的 package.json / tsconfig.json / 构建脚本，形态才能统一
+# （docs/13 F2 / B12）。
+#
+# 注意：插件的 node_modules 走 hoisted，esbuild 由根 devDependencies 提供，
+# 不在插件 package.json 里重复声明 —— 契约测试禁止插件 import 第三方包。
+packages:
+  - 'plugins/*'
+
 allowBuilds:
   electron-winstaller: true
   esbuild: true

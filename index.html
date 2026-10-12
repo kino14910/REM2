@@ -9,10 +9,15 @@
       为什么需要：Electron 在渲染进程缺少 CSP（或启用了 unsafe-eval）时会打印
       "Insecure Content-Security-Policy" 安全告警——那不只是噪音，而是真实的 XSS 暴露面。
 
+      ★ Svelte 5 不需要 'unsafe-eval'：$state / $derived 编译为普通 JS。
+        这正是不必为 Svelte 放宽 CSP 的原因。
+
       取值说明：
       - script-src 'self'：只允许同源脚本（Vite dev 的 /@vite/client 也是同源）。
         刻意**不含** 'unsafe-eval'，这正是不再触发 Electron 告警的关键。
-      - style-src 'unsafe-inline'：本 demo 用内联 style 属性渲染，必须放开。
+      - style-src 'unsafe-inline'：Svelte 的 <style> 编译产物与内联 style 属性都需要它。
+        注意：主题切换走 CSSOM 写入（setProperty），不受 style-src 约束，
+        但 Svelte 组件的 scoped <style> 会被编译进 CSS 文件由 <link> 加载（'self' 即可）。
       - connect-src 显式放行 ws://localhost：Vite 的 HMR 走 WebSocket，
         而 CSP 的 'self' 不覆盖 ws:// 协议，需单独列出。
       - object-src / base-uri 收紧，减少注入面。
@@ -32,6 +37,6 @@
   </head>
   <body style="margin: 0; background: #0f1115">
     <div id="app"></div>
-    <script type="module" src="/src/renderer.ts"></script>
+    <script type="module" src="/src/frontend/entry-client.ts"></script>
   </body>
 </html>

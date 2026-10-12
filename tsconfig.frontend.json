@@ -1,0 +1,15 @@
+{
+  "//": "Svelte 前端：只要 DOM。刻意不给 node 类型，从类型层面阻止前端碰 Node API。",
+  "//why": "renderer 在 contextIsolation + sandbox 下本就无 Node 能力；把这条约束落到类型上比靠自觉可靠。同时 moduleResolution=Bundler 是 svelte 插件解析 ./X.svelte 的必要条件（NodeNext 不认无后缀的 .svelte 导入）。",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": [],
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true
+  },
+  "include": ["src/frontend/**/*.ts", "src/declarations.d.ts"]
+}

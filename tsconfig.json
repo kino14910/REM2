@@ -17,6 +17,7 @@
     "resolveJsonModule": true,
     "sourceMap": true,
     "declaration": false,
+    "noEmit": true,
     "allowJs": false,
     "isolatedModules": true,
     "verbatimModuleSyntax": false,
@@ -24,24 +25,26 @@
     "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
-      "rem2-kernel": ["src/kernel/index.ts"],
-      "rem2-kernel/*": ["src/kernel/*"]
+      "rem2-kernel": ["src/kernel/index.ts"]
     }
   },
   "include": [
-    "src/**/*.ts",
-    "plugins/**/*.ts",
+    "src/kernel/**/*.ts",
+    "src/host/cli/**/*.ts",
+    "src/host/ipc/**/*.ts",
+    "plugins/*/src/**/*.ts",
     "tests/**/*.ts",
-    "vitest.config.ts"
+    "*.ts",
+    "*.mts"
   ],
   "exclude": [
     "node_modules",
     "dist",
     "coverage",
     ".vite",
-    "src/electron-shell/**",
+    "plugins-dist",
+    "src/host/electron/**",
     "src/main.ts",
-    "src/preload.ts",
-    "src/renderer.ts"
+    "src/preload.ts"
   ]
 }

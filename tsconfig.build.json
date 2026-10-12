@@ -1,0 +1,28 @@
+{
+  "//": "内核产物的唯一编译配置（docs/13 §4.2）。",
+  "//why": "内核是零第三方依赖的那一层，也是唯一需要对外分发 .d.ts 的部分。host/frontend 不进 dist —— 它们是宿主产物，各自由 vite/forge 负责。",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "src",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "module": "NodeNext",
+    "types": ["node"]
+  },
+  "include": ["src/kernel/**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "coverage",
+    ".vite",
+    "plugins-dist",
+    "src/host/**",
+    "src/frontend/**",
+    "plugins/**",
+    "tests/**",
+    "*.mts"
+  ]
+}
