@@ -1,48 +1,49 @@
 /**
  * Worker 插件代理（内核侧视图）。
  *
- * 对内核其余部分（LifecycleManager、Registry）而言，WorkerPluginProxy 就是一个
- * 普通的 `Plugin` 实例。它的生命周期钩子通过 RPC 转发到 Worker 线程中的真实插件，
- * Worker 线程使用自己的简化版上下文（见 worker-bootstrap.ts）。
+ * 对 `LifecycleManager` / `PluginsRegistry` 而言，代理就是一个普通的
+ * `PluginFactoryHooks` 对象：钩子经 RPC 转发到 Worker 线程中的真实插件，
+ * Worker 侧使用自己的简化版上下文（见 `worker-bootstrap.ts`）。
+ *
+ * 另承载 Worker 侧的扩展点贡献（docs/11 §6.2）：仅 log.sink / metrics.sink /
+ * trace.exporter 三类，值必须可结构化克隆。贡献由 Worker 内 ctx 的
+ * `extensions.contribute` 经 RPC 转发到内核的 `ExtensionPointRegistry`。
  */
 
-import type { Plugin, StopReason } from '../contracts/lifecycle.js';
-import type { PluginContext } from '../contracts/context.js';
-import type { PluginManifest } from '../contracts/manifest.js';
+import type { PluginFactoryHooks } from '../contracts/plugin.js';
+import type { StopReason } from '../contracts/lifecycle.js';
 import type { WorkerPluginHost } from './worker-host.js';
+import { WORKER_ALLOWED_EXTENSION_POINTS } from './worker-protocol.js';
 
-export class WorkerPluginProxy implements Plugin {
-  readonly manifest: PluginManifest;
+/** Worker 可贡献的扩展点集合（供 `worker-bootstrap` 与本文件共用同一份定义）。 */
+export const WORKER_CONTRIBUTABLE_POINTS: ReadonlySet<string> = new Set(
+  WORKER_ALLOWED_EXTENSION_POINTS,
+);
 
-  constructor(
-    manifest: PluginManifest,
-    private readonly host: WorkerPluginHost,
-  ) {
-    this.manifest = manifest;
-  }
+export class WorkerPluginProxy implements PluginFactoryHooks {
+  constructor(private readonly host: WorkerPluginHost) {}
 
   // 钩子参数中的 PluginContext 无法跨结构化克隆传输，因此 Worker 侧使用自己构建的代理上下文；
   // 这里只把可序列化的附加参数（如 StopReason）传过去。
 
-  async onDiscover(_ctx: PluginContext): Promise<void> {
+  async onDiscover(): Promise<void> {
     await this.host.callHook('onDiscover', []);
   }
-  async onLoad(_ctx: PluginContext): Promise<void> {
+  async onLoad(): Promise<void> {
     await this.host.callHook('onLoad', []);
   }
-  async onConfigure(_ctx: PluginContext): Promise<void> {
+  async onConfigure(): Promise<void> {
     await this.host.callHook('onConfigure', []);
   }
-  async onStart(_ctx: PluginContext): Promise<void> {
+  async onStart(): Promise<void> {
     await this.host.callHook('onStart', []);
   }
-  async onStop(_ctx: PluginContext, reason: StopReason): Promise<void> {
+  async onStop(_ctx: unknown, reason: StopReason): Promise<void> {
     await this.host.callHook('onStop', [reason]);
-  }
-  async onUnload(_ctx: PluginContext): Promise<void> {
+  }  async onUnload(): Promise<void> {
     await this.host.callHook('onUnload', []);
   }
-  async onDispose(_ctx: PluginContext): Promise<void> {
+  async onDispose(): Promise<void> {
     await this.host.callHook('onDispose', []);
     // 终止 Worker 线程。
     await this.host.terminate();
@@ -50,8 +51,9 @@ export class WorkerPluginProxy implements Plugin {
   async onHealthCheck(): Promise<'healthy' | 'degraded' | 'unhealthy'> {
     const value = await this.host.callHook('onHealthCheck', []);
     const valid = value as string | undefined;
-    if (valid === 'healthy' || valid === 'degraded' || valid === 'unhealthy')
+    if (valid === 'healthy' || valid === 'degraded' || valid === 'unhealthy') {
       return valid;
+    }
     return 'unhealthy';
   }
 }

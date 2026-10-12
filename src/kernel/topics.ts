@@ -21,9 +21,11 @@ export const Topics = {
   CommandExecute: 'command.execute',
   CommandResult: 'command.result',
 
-  /** UI（UI 外壳插件消费） */
+  /** UI（前端经 IPC 白名单消费，原始插件事件不外泄） */
   UiThemeRegistered: 'ui.theme.registered',
   UiThemeChanged: 'ui.theme.changed',
+  /** 插件主动推送面板数据刷新（`panel.data-changed`）。 */
+  PanelDataChanged: 'ui.panel.data-changed',
 
   /** 健康 */
   HealthRequest: 'health.request',

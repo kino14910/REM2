@@ -5,7 +5,11 @@
  * 其余为 `sandboxed`，敏感能力需显式授予。
  */
 
-import type { TrustLevel, TrustPolicy } from '../contracts/permission.js';
+import {
+  Capabilities,
+  type TrustLevel,
+  type TrustPolicy,
+} from '../contracts/permission.js';
 import type { CandidateSource } from '../discovery/candidate.js';
 
 /** 默认信任策略。 */
@@ -13,19 +17,30 @@ export const DEFAULT_TRUST_POLICY: TrustPolicy = {
   defaults: {
     // 可信（内建）：默认授予常规能力，但 net.listen / fs.write / process.spawn 仍需显式授予。
     trusted: [
-      'log.sink',
-      'config.provider',
-      'metrics.sink',
-      'command.provide',
-      'health.expose',
-      'ui.theme',
+      Capabilities.LogSink,
+      Capabilities.MetricsSink,
+      Capabilities.TraceExporter,
+      Capabilities.ConfigProvider,
+      Capabilities.CommandProvide,
+      Capabilities.HealthExpose,
+      Capabilities.UiTheme,
+      Capabilities.UiPanel,
+      Capabilities.UiRoute,
     ],
-    // 沙箱（用户插件）：默认只授予最小能力。
-    sandboxed: ['log.sink'],
+    // 沙箱（用户插件）：默认只授予最小能力（仅日志落地）。
+    sandboxed: [Capabilities.LogSink],
   },
   warnOn: {
     trusted: ['net.', 'fs.write', 'process.', 'kernel.'],
-    sandboxed: ['net.', 'fs.', 'process.', 'config.', 'command.', 'kernel.'],
+    sandboxed: [
+      'net.',
+      'fs.',
+      'process.',
+      'config.',
+      'command.',
+      'ui.',
+      'kernel.',
+    ],
   },
 };
 

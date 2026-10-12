@@ -43,6 +43,17 @@ export interface DiscoverResult {
 export class PluginDiscovery {
   private lastCandidates: Candidate[] = [];
   private readonly issues: DiscoverIssue[] = [];
+  /**
+   * 轻量扫描缓存（docs/09 O17）：key = 根目录 + 根 mtime。
+   *
+   * 根目录 mtime 会在其下任一子项被增删改时变化，因此它足以作为
+   * 「该根下插件集合是否可能变化」的判据 —— 换来的是热重载路径上
+   * 避免重复 readdir + 逐个 readFile plugin.json。
+   */
+  private readonly scanCache = new Map<
+    string,
+    { rootMtimeMs: number; found: Candidate[] }
+  >();
 
   get candidates(): Candidate[] {
     return this.lastCandidates;
@@ -99,7 +110,7 @@ export class PluginDiscovery {
     return { candidates: collected, issues };
   }
 
-  /** 扫描单个根目录（同步返回候选，内部异步读取）。 */
+  /** 扫描单个根目录（带 mtime 缓存）。 */
   async scanRoot(
     root: string,
     source: CandidateSource,
@@ -109,9 +120,19 @@ export class PluginDiscovery {
     const out: Candidate[] = [];
 
     let entries: string[];
+    let rootMtimeMs = 0;
     try {
       const st = await stat(root);
       if (!st.isDirectory()) return out;
+      rootMtimeMs = st.mtimeMs;
+      const cached = this.scanCache.get(root);
+      if (cached && cached.rootMtimeMs === rootMtimeMs) {
+        // 命中缓存：按当前 source 重标 source 后返回（source 是扫描参数，非缓存内容）。
+        for (const c of cached.found) {
+          out.push({ ...c, source, builtin: source === 'builtin' });
+        }
+        return out;
+      }
       entries = await readdir(root);
     } catch {
       // 根目录不存在 → 静默跳过（可选根）。
@@ -139,7 +160,13 @@ export class PluginDiscovery {
       if (candidate) out.push(candidate);
     }
 
+    this.scanCache.set(root, { rootMtimeMs, found: out.slice() });
     return out;
+  }
+
+  /** 清空扫描缓存（测试用；生产路径靠 mtime 自然失效）。 */
+  clearCache(): void {
+    this.scanCache.clear();
   }
 
   /** 从插件目录读取清单。 */

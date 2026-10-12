@@ -1,12 +1,11 @@
 /**
- * 插件 API 实现（docs/02 §J.4，动机 #7）。
+ * 插件 API 实现：服务导出/解析（受能力代理约束）。
  *
- * - `export/unexport`：把本插件服务标记为可导出，并登记所需能力。
- * - `useCapability`：经 CapabilityGuard 校验后解析其他插件导出的服务。
- * - `registerCapability`：运行期登记能力实现（供能力发现）。
- *
- * 安全要点（动机 #7）：插件**不得**取得父容器引用。因此"导出后反向挂载到父容器"
+ * 安全要点：插件**不得**取得父容器引用，因此「导出后反向挂载到 root 容器」
  * 这一动作由内核通过注入的 `hooks` 完成，插件 API 自身不持有也不读取父容器。
+ *
+ * 变更（docs/13 D5）：`capabilities` Map 与 `registerCapability` / `getCapability` /
+ * `listCapabilities` 全部删除 —— 能力贡献走 `ctx.extensions`（P3 唯一挂载面）。
  */
 
 import type { PluginApi, ExportOptions } from '../contracts/context.js';
@@ -22,12 +21,7 @@ export interface PluginApiHooks {
   unmountExported(child: Container): void;
 }
 
-/**
- * 插件 API 实现。
- */
 export class PluginApiImpl implements PluginApi {
-  private readonly capabilities = new Map<string, unknown>();
-
   constructor(
     private readonly pluginId: string,
     private readonly container: Container,
@@ -60,18 +54,5 @@ export class PluginApiImpl implements PluginApi {
     this.guard.assert(token.id, this.pluginId);
     // 解析顺序：自身容器 → 向上委派父容器（父容器含已挂载的兄弟插件导出项）。
     return this.container.resolve(token);
-  }
-
-  registerCapability(name: string, impl: unknown): void {
-    this.capabilities.set(name, impl);
-  }
-
-  /** 读取本插件登记的能力（内核/测试用）。 */
-  getCapability(name: string): unknown {
-    return this.capabilities.get(name);
-  }
-
-  listCapabilities(): string[] {
-    return Array.from(this.capabilities.keys()).sort();
   }
 }

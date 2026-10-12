@@ -11,6 +11,7 @@ import type {
   PluginHealthInfo,
 } from '../contracts/health.js';
 import type { PluginsRegistry } from '../registry/plugins-registry.js';
+import type { ExtensionPointRegistry } from '../extensions/registry.js';
 
 /** 聚合健康状态：任一 unhealthy → unhealthy；任一 degraded → degraded；否则 healthy。 */
 function aggregate(statuses: HealthStatus[]): HealthStatus {
@@ -30,14 +31,25 @@ export class HealthService {
   constructor(
     private readonly kernelVersion: string,
     private readonly registry: PluginsRegistry,
+    private readonly extensions: ExtensionPointRegistry,
   ) {}
 
-  /** 注册某插件的健康自检。 */
-  registerCheck(pluginId: string, fn: HealthCheckFn): void {
-    this.checks.set(pluginId, fn);
+  /**
+   * 健康自检的**唯一读取口**是 `health.check` 扩展点。
+   *
+   * 旧实现有 `registerCheck` 这个旁路入口，等于绕过了 P3 的扩展点注册表。
+   * 现在贡献只经 `ctx.extensions.contribute('health.check', …)`，本类只负责读。
+   */
+  private checksOf(): Map<string, HealthCheckFn> {
+    const out = new Map<string, HealthCheckFn>();
+    if (!this.extensions.has('health.check')) return out;
+    for (const e of this.extensions.entries<HealthCheckFn>('health.check')) {
+      out.set(e.pluginId, e.impl);
+    }
+    return out;
   }
 
-  /** 注销。 */
+  /** 注销（保留为幂等空操作：回收已由 `extensions.retractAll` 统一完成）。 */
   unregisterCheck(pluginId: string): void {
     this.checks.delete(pluginId);
   }
@@ -50,13 +62,14 @@ export class HealthService {
    */
   async report(): Promise<HealthReport> {
     const plugins: PluginHealthInfo[] = [];
+    const checks = this.checksOf();
 
     for (const loaded of this.registry.allLoaded()) {
       const id = loaded.manifest.id;
       let status: HealthStatus;
       let message: string | undefined;
 
-      const check = this.checks.get(id);
+      const check = checks.get(id);
       if (check) {
         try {
           status = await check();
@@ -90,22 +103,14 @@ export class HealthService {
   }
 }
 
-/** 插件状态 → 健康状态映射。 */
+/** 插件状态 → 健康状态映射（新状态机）。 */
 function mapStateToHealth(state: string): HealthStatus {
   switch (state) {
-    case 'Started':
+    case 'Active':
       return 'healthy';
-    case 'Degraded':
-      return 'degraded';
     case 'Failed':
       return 'unhealthy';
-    case 'Configured':
-    case 'Loaded':
-    case 'Discovered':
-      return 'degraded';
-    case 'Stopped':
-    case 'Unloaded':
-    case 'Disposed':
+    case 'Degraded':
       return 'degraded';
     default:
       return 'degraded';

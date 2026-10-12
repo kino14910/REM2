@@ -6,7 +6,8 @@
  * - Worker 引导代码必须是纯 JS（Worker 内没有 TS 编译管线），
  *   内联后类型检查仍覆盖宿主侧，引导代码本身保持零依赖、可直接 eval。
  *
- * 协议（结构化克隆消息）：
+ * 协议（结构化克隆消息）的类型定义在 `worker-protocol.ts`（单一来源），
+ * 本文件只用字符串字面量与之对应——因为 Worker 内是纯 JS，没有类型可引。
  * - 内核 → Worker：`init` / `call`（生命周期钩子 RPC）/ `event`（事件派发）
  *   / `config`（配置快照推送）/ `ctx-result`（上下文调用回包）。
  * - Worker → 内核：`ready` / `init-error` / `result` / `ctx`（上下文调用）
@@ -17,6 +18,9 @@ export const WORKER_BOOTSTRAP_SOURCE = String.raw`
 
 const { parentPort } = require('node:worker_threads');
 const path = require('node:path');
+
+/** Worker 可贡献的扩展点白名单（与 worker-protocol.ts 保持一致）。 */
+const WORKER_ALLOWED_POINTS = ['log.sink', 'metrics.sink', 'trace.exporter'];
 
 if (!parentPort) throw new Error('worker-bootstrap 必须在 Worker 线程中运行');
 const port = parentPort;
@@ -127,7 +131,7 @@ function buildContext(init) {
   return {
     pluginId,
     manifest: init.manifest,
-    phase: 'Start',
+    phase: 'Loaded',
     log: logApi,
     config: configApi,
     events: eventsApi,
@@ -154,7 +158,20 @@ function buildContext(init) {
       export: unsupported('api.export'),
       unexport: unsupported('api.unexport'),
       useCapability: unsupported('api.useCapability'),
-      registerCapability: unsupported('api.registerCapability'),
+    },
+    // Worker 仅允许贡献三类 sink 扩展点（值须可结构化克隆）。
+    // UI 类扩展点从 Worker 贡献没有意义：跨进程边界拿不到 renderer。
+    extensions: {
+      contribute(point, contribution) {
+        if (WORKER_ALLOWED_POINTS.indexOf(point) < 0) {
+          throw new Error(
+            'Worker 隔离下只允许贡献 ' + WORKER_ALLOWED_POINTS.join(' / ') +
+            '，收到：' + point,
+          );
+        }
+        void ctxCall(['extensions', 'contribute'], [point, contribution]);
+      },
+      retract: unsupported('extensions.retract'),
     },
     plugins: {
       has: unsupported('plugins.has'),
@@ -166,12 +183,22 @@ function buildContext(init) {
   };
 }
 
-/** 实例化插件模块（与内核 plugin-factory 同样的三种形态）。 */
-function instantiate(mod) {
-  let candidate = mod && mod.default !== undefined ? mod.default : (mod && mod.plugin !== undefined ? mod.plugin : mod && mod.Plugin);
-  if (candidate && typeof candidate === 'object' && 'default' in candidate) candidate = candidate.default;
-  if (typeof candidate === 'function') return new candidate();
-  return candidate;
+/**
+ * 装配插件：唯一形态 = export default definePlugin(manifest, setup)。
+ *
+ * 旧实现在这里猜 3 种形态（且与内核的 4 种不一致）——两份不一致的重复实现
+ * 本身就是 bug 温床（docs/11 §3.1）。现在两边都是「断言 default 是函数然后调用」。
+ */
+async function instantiate(mod, ctx) {
+  const factory = mod && mod.default;
+  if (typeof factory !== 'function') {
+    throw new Error('插件必须 export default definePlugin(manifest, setup)');
+  }
+  const hooks = await factory(ctx);
+  if (!hooks || typeof hooks !== 'object') {
+    throw new Error('definePlugin 的 setup 必须返回钩子对象');
+  }
+  return hooks;
 }
 
 port.on('message', async (msg) => {
@@ -181,11 +208,8 @@ port.on('message', async (msg) => {
         configSnapshot = msg.configSnapshot || {};
         permissionsSnapshot = msg.permissions || { granted: [], denied: [] };
         const mod = await import(msg.entrySpecifier);
-        instance = instantiate(mod);
-        if (!instance || typeof instance !== 'object') {
-          throw new Error('插件模块未导出可识别的插件对象');
-        }
         ctx = buildContext(msg);
+        instance = await instantiate(mod, ctx);
         port.postMessage({ t: 'ready' });
       } catch (error) {
         port.postMessage({ t: 'init-error', message: String((error && error.message) || error) });

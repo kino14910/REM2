@@ -1,7 +1,10 @@
 /**
- * 插件模块解析（docs/02 §A.8：entry 支持 .ts / .js / .cjs / 包名）。
+ * 插件模块解析：entry **只指向构建产物**（`.js` / `.mjs`）。
  *
  * 零依赖：仅 node:url / node:path / node:fs。
+ *
+ * 补全列表已删除 `.ts` 与 `index.ts`（docs/10 §5.1 / docs/13 §1.2 #55）：
+ * 允许 `.ts` 入口就是「主进程需要注册 tsx loader」的根因，而那条通道已被 forge Fuses 封死。
  */
 
 import { existsSync } from 'node:fs';
@@ -21,10 +24,9 @@ export interface ResolvedEntry {
  * 把 manifest.entry 解析为可动态 import 的说明符。
  *
  * - 绝对路径 / 相对路径（以 ./ ../ 开头）→ 相对插件 rootDir 解析为 file URL。
- * - 形如 `src/index.ts` 的"路径式" entry（含 `/` 或已知扩展名）→ 同样按相对路径处理
- *   （裸包名不允许含 `/` 之外的路径分隔形态，且入口不可能是裸包名带扩展名）。
+ * - 形如 `dist/index.js` 的「路径式」 entry（含 `/` 或已知扩展名）→ 同样按相对路径处理。
  * - 其余裸包名 → 原样返回（交由 Node 解析）。
- * - 无扩展名时按 [.ts, .js, .mjs, .cjs, index.ts, index.js] 顺序补全。
+ * - 无扩展名时按 [.js, .mjs, .cjs, index.js, index.mjs] 顺序补全（**不含 .ts**）。
  *
  * 安全边界（E_ENTRY_ESCAPE）：路径式入口解析后**必须仍位于 rootDir 内**；
  * 绝对路径也必须指向 rootDir 内部。否则插件可借 manifest 让内核 import 任意磁盘文件。
@@ -52,13 +54,11 @@ export function resolveEntry(
     return toFileUrl(base);
   }
 
-  // 补全扩展名
+  // 补全扩展名：只认构建产物。
   const candidates = [
-    `${base}.ts`,
     `${base}.js`,
     `${base}.mjs`,
     `${base}.cjs`,
-    path.join(base, 'index.ts'),
     path.join(base, 'index.js'),
     path.join(base, 'index.mjs'),
     path.join(base, 'index.cjs'),
@@ -87,10 +87,13 @@ function assertInsideRoot(
 }
 
 /**
- * 判断 entry 是否为"路径式"说明符。
+ * 判断 entry 是否为「路径式」说明符。
  *
  * 路径式：含路径分隔符（`/` 或 `\`），或以已知脚本扩展名结尾。
  * 反例：`lodash` / `@scope/pkg`（纯包名，按 Node 包解析）。
+ *
+ * 仍保留 `.ts` 判定：这不是「允许 TS 入口」，而是让 `dist/index.ts` 这类
+ * 非法 entry 走路径解析从而在 manifest 校验阶段就被拒（而非被当成裸包名）。
  */
 function looksLikeFilePath(entry: string): boolean {
   if (entry.includes('/') || entry.includes('\\')) return true;

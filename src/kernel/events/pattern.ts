@@ -86,6 +86,27 @@ function matchSegments(
   return matchSegments(p, pi + 1, e, ei + 1);
 }
 
+/**
+ * 取模式的首段，作为分桶键。
+ *
+ * 桶索引的前提（docs/13 O16）：`a:b:c` 模式**只可能**匹配首段为 `a` 的事件；
+ * `*` / `**` 模式匹配任意首段，必须进「通配桶」。
+ */
+export function bucketKeyOf(pattern: string): string {
+  const segs = splitSegments(pattern);
+  const first = segs[0];
+  if (first === undefined || first === '*' || first === '**') return WILDCARD_BUCKET;
+  return first;
+}
+
+/** 通配桶键（`*` / `**` 模式专用）。 */
+export const WILDCARD_BUCKET = '*';
+
+/** 事件名所属的桶键。 */
+export function bucketKeyOfEvent(event: string): string {
+  return splitSegments(event)[0] ?? WILDCARD_BUCKET;
+}
+
 /** 模式"特异性"打分（用于优先级相等时的确定性排序，越大越具体）。 */
 export function specificity(pattern: string): number {
   if (pattern === '**') return 0;

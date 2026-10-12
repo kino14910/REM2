@@ -25,6 +25,8 @@ export type KernelErrorCode =
   | 'E_ALREADY_STARTED'
   | 'E_MANIFEST_MISMATCH'
   | 'E_ENTRY_ESCAPE'
+  | 'E_UNKNOWN_EXTENSION_POINT'
+  | 'E_EXTENSION_CONFLICT'
   | 'E_GENERIC';
 
 /** 所有内核错误的基类。 */
@@ -205,5 +207,45 @@ export class NotWritableError extends KernelError {
   constructor(name: string) {
     super('E_NOT_WRITABLE', `配置 provider 不可写：${name}`, { name });
     this.name = 'NotWritableError';
+  }
+}
+
+/** 向未声明的扩展点贡献（P3：不静默，直接拒绝）。 */
+export class UnknownExtensionPointError extends KernelError {
+  readonly point: string;
+
+  constructor(point: string) {
+    super(
+      'E_UNKNOWN_EXTENSION_POINT',
+      `未声明的扩展点：${point}（扩展点必须在 extensions/definitions.ts 中显式定义）`,
+      { point },
+    );
+    this.name = 'UnknownExtensionPointError';
+    this.point = point;
+  }
+}
+
+/** 扩展点槽位冲突（单例槽 reject-new / 多贡献槽同 id）。 */
+export class ExtensionConflictError extends KernelError {
+  readonly point: string;
+  readonly contributionId: string;
+  readonly holderPluginId: string | undefined;
+
+  constructor(
+    point: string,
+    contributionId: string,
+    holderPluginId: string | undefined,
+  ) {
+    super(
+      'E_EXTENSION_CONFLICT',
+      `扩展点冲突：${point} 的槽位 "${contributionId}" 已被${
+        holderPluginId ? `插件 ${holderPluginId}` : '宿主默认实现'
+      }占用`,
+      { point, contributionId, holderPluginId },
+    );
+    this.name = 'ExtensionConflictError';
+    this.point = point;
+    this.contributionId = contributionId;
+    this.holderPluginId = holderPluginId;
   }
 }

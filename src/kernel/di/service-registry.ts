@@ -10,7 +10,7 @@ import type {
   ServiceFactory,
   Lifetime,
 } from '../contracts/service-token.js';
-import type { Container } from '../contracts/di-container.js';
+import type { Container } from '../contracts/container.js';
 import type { ServiceRegistry } from '../contracts/service.js';
 
 /** 注册表门面（组合一个容器）。 */

@@ -5,7 +5,11 @@
  * 校验器与 `manifest.schema.json` 语义保持一致，并由单测覆盖。
  */
 
-import type { PluginManifest } from '../contracts/manifest.js';
+import type {
+  PluginManifest,
+  ManifestContribution,
+} from '../contracts/manifest.js';
+import { EXTENSION_POINT_IDS } from '../extensions/definitions.js';
 import { isValidRange } from '../semver/range.js';
 import { isValidVersion } from '../semver/semver.js';
 
@@ -32,6 +36,11 @@ export interface ManifestValidationResult {
 const ID_RE = /^[a-z0-9]+([._-][a-z0-9]+)*$/;
 const CAP_RE = /^[a-z][a-z0-9-]*(\.[a-z0-9-]+)*$/;
 const VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+/** entry 只允许构建产物（docs/11 §6.3：消除 dev/prod 双形态）。 */
+const ENTRY_RE = /\.(js|mjs)$/;
+
+/** 已声明的扩展点 id 集合（来自 `extensions/definitions.ts`，保证单一来源）。 */
+const KNOWN_POINTS: ReadonlySet<string> = new Set(EXTENSION_POINT_IDS);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return (
@@ -85,9 +94,14 @@ export function validateManifest(raw: unknown): ManifestValidationResult {
     });
   }
 
-  // entry
+  // entry：必须是构建产物（.js / .mjs）。这是「dev 与 prod 同形态」的类型级落点。
   if (typeof obj.entry !== 'string' || obj.entry.trim() === '') {
     issues.push({ path: '$.entry', message: 'entry 必须是非空字符串' });
+  } else if (!ENTRY_RE.test(obj.entry)) {
+    issues.push({
+      path: '$.entry',
+      message: `entry 必须是构建产物（以 .js 或 .mjs 结尾）：${obj.entry}`,
+    });
   }
 
   // compatibility
@@ -141,31 +155,80 @@ export function validateManifest(raw: unknown): ManifestValidationResult {
   validateDepMap(obj.dependencies, '$.dependencies', issues);
   validateDepMap(obj.optionalDependencies, '$.optionalDependencies', issues);
 
-  // capabilities
-  if (obj.capabilities !== undefined) {
-    if (!Array.isArray(obj.capabilities)) {
-      issues.push({
-        path: '$.capabilities',
-        message: 'capabilities 必须是数组',
-      });
+  // requires（我需要什么）
+  if (obj.requires !== undefined) {
+    if (!Array.isArray(obj.requires)) {
+      issues.push({ path: '$.requires', message: 'requires 必须是数组' });
     } else {
       const seen = new Set<string>();
-      obj.capabilities.forEach((cap, i) => {
+      obj.requires.forEach((cap, i) => {
         if (typeof cap !== 'string' || !CAP_RE.test(cap)) {
           issues.push({
-            path: `$.capabilities[${i}]`,
+            path: `$.requires[${i}]`,
             message: `能力名非法：${String(cap)}`,
           });
         } else if (seen.has(cap)) {
-          issues.push({
-            path: `$.capabilities[${i}]`,
-            message: `能力重复：${cap}`,
-          });
+          issues.push({ path: `$.requires[${i}]`, message: `能力重复：${cap}` });
         } else {
           seen.add(cap);
         }
       });
     }
+  }
+
+  // contributes（我提供什么）：point 必须是已声明的扩展点 id
+  if (obj.contributes !== undefined) {
+    if (!Array.isArray(obj.contributes)) {
+      issues.push({ path: '$.contributes', message: 'contributes 必须是数组' });
+    } else {
+      const seen = new Set<string>();
+      obj.contributes.forEach((raw, i) => {
+        if (!isPlainObject(raw)) {
+          issues.push({
+            path: `$.contributes[${i}]`,
+            message: 'contributes 项必须是对象',
+          });
+          return;
+        }
+        const point = raw.point;
+        const cid = raw.id;
+        if (typeof point !== 'string' || !KNOWN_POINTS.has(point)) {
+          issues.push({
+            path: `$.contributes[${i}].point`,
+            message: `未声明的扩展点：${String(point)}`,
+          });
+        }
+        if (typeof cid !== 'string' || cid.trim() === '') {
+          issues.push({
+            path: `$.contributes[${i}].id`,
+            message: 'contributes[].id 必须是非空字符串',
+          });
+        }
+        if (raw.capability !== undefined && typeof raw.capability !== 'string') {
+          issues.push({
+            path: `$.contributes[${i}].capability`,
+            message: 'capability 必须是字符串',
+          });
+        }
+        const key = `${String(point)}#${String(cid)}`;
+        if (seen.has(key)) {
+          issues.push({
+            path: `$.contributes[${i}]`,
+            message: `贡献槽位重复：${key}`,
+          });
+        } else {
+          seen.add(key);
+        }
+      });
+    }
+  }
+
+  // capabilities 已更名 requires；出现即视为过期字段（破坏式变更，不静默忽略）。
+  if (obj.capabilities !== undefined) {
+    issues.push({
+      path: '$.capabilities',
+      message: 'capabilities 已更名：提供什么用 contributes，需要什么用 requires',
+    });
   }
 
   // 可选字符串字段
@@ -256,8 +319,20 @@ function normalizeManifest(obj: Record<string, unknown>): PluginManifest {
   if (isPlainObject(obj.optionalDependencies)) {
     manifest.optionalDependencies = toStringMap(obj.optionalDependencies);
   }
-  if (Array.isArray(obj.capabilities)) {
-    manifest.capabilities = obj.capabilities.map((c) => String(c));
+  if (Array.isArray(obj.requires)) {
+    manifest.requires = obj.requires.map((c) => String(c));
+  }
+  if (Array.isArray(obj.contributes)) {
+    manifest.contributes = obj.contributes.map((c) => {
+      const raw = c as Record<string, unknown>;
+      const item: ManifestContribution = {
+        point: String(raw.point),
+        id: String(raw.id),
+      };
+      return raw.capability !== undefined
+        ? { ...item, capability: String(raw.capability) }
+        : item;
+    });
   }
   if (typeof obj.author === 'string') manifest.author = obj.author;
   if (typeof obj.description === 'string')

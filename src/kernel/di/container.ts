@@ -10,9 +10,8 @@
  * 4. 解析服务时做循环检测（构造栈），抛 CircularDependencyError。
  */
 
-import type { Container as ContainerContract } from '../contracts/di-container.js';
-import { ServiceToken } from '../contracts/service-token.js';
-import type { ServiceFactory } from '../contracts/service-token.js';
+import type { Container as ContainerContract } from '../contracts/container.js';
+import type { ServiceToken, ServiceFactory } from '../contracts/service-token.js';
 import { Lifetime, normalizeLifetime } from './lifetime.js';
 import { CircularDependencyError, NoProviderError } from '../errors.js';
 import type { ServiceRegistry } from '../contracts/service.js';

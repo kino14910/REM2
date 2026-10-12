@@ -1,36 +1,55 @@
 /**
- * rem2-kernel 公共出口（docs/02 §K.3）。
+ * `rem2-kernel` 唯一公共出口。
  *
  * 插件与测试**只能**从本出口引用内核；不得深链 `src/kernel/**` 内部实现。
  * 契约测试 `tests/contract/plugin-contract.test.ts` 断言此约束。
+ *
+ * 导出面被刻意收窄为四类（docs/11 P7 / docs/13 D8）：
+ * ① 契约类型 + 纯函数工厂；② `KernelTokens`；③ 错误类；④ 版本常量。
+ * **不导出任何实现类** —— 旧版导出了 20+ 个实现类，插件可以 `new ConfigService()`
+ * 造一个假内核服务，边界形同虚设。
  */
 
-// ── 契约（类型 + 唯一运行时构造器 ServiceToken） ──
 export type {
-  PluginManifest,
+  // 清单
   Compatibility,
-  Plugin,
+  PluginManifest,
+  PluginManifestInit,
+  ManifestContribution,
+  // 插件形态
+  PluginFactory,
+  PluginFactoryHooks,
+  PluginHookName,
   PluginModuleExport,
+  // 生命周期
   LifecyclePhase,
   StopReason,
+  PhaseOutcome,
+  // 上下文
   PluginContext,
   PluginApi,
   ExportOptions,
+  // DI
   ServiceDescriptor,
   ServiceFactory,
   Lifetime,
   LifetimeValue,
+  ServiceToken,
   ServiceRegistry,
+  ServicesView,
   Container,
+  // 事件总线
   Unsubscribe,
   OnOptions,
   RequestOptions,
   EventHandler,
   EventBus,
+  // 配置
   ConfigProvider,
   ConfigAccess,
   ConfigLayer,
   ConfigChangeHandler,
+  // 可观测性
   LogLevel,
   LogEntry,
   LogSink,
@@ -42,43 +61,61 @@ export type {
   Gauge,
   Histogram,
   MetricsApi,
+  Span,
+  SpanData,
+  Tracer,
+  TraceExporter,
   HealthStatus,
   PluginHealthInfo,
   HealthReport,
   HealthCheckFn,
+  // 权限
   Capability,
   TrustLevel,
   PermissionDecision,
   PermissionSet,
   TrustPolicy,
-  PublicPluginState,
+  // 插件状态
+  PluginStateT,
   PluginInfo,
   PluginsRegistryView,
-  Span,
-  SpanData,
-  Tracer,
-  TraceExporter,
+  // 扩展点
+  ExtensionPointId,
+  ExtensionPointDef,
+  ExtensionConflictPolicy,
+  ExtensionContribution,
+  ExtensionContributorView,
+  ExtensionPointSummary,
+  // UI
+  ThemeDefinition,
+  ThemeRegistry,
+  PanelContribution,
+  PanelRegion,
+  RouteContribution,
 } from './contracts/index.js';
 
-export { ServiceToken } from './contracts/service-token.js';
+// ── 纯函数工厂（唯一的运行期「做点事」的地方） ──
+export { defineToken } from './contracts/service-token.js';
+export { definePlugin } from './define-plugin.js';
+
+// ── 常量表 ──
 export { LOG_LEVEL_ORDER } from './contracts/logging.js';
 export { KERNEL_METRICS } from './contracts/metrics.js';
+export { PLUGIN_STATES, TERMINAL_STATES } from './contracts/plugins.js';
+export { PLUGIN_HOOK_NAMES } from './contracts/plugin.js';
+export { Capabilities } from './contracts/permission.js';
+export { Topics } from './topics.js';
+export type { TopicKey } from './topics.js';
 
 // ── 内核令牌与版本 ──
 export { KernelTokens } from './contracts/kernel-tokens.js';
+export type { KernelToken } from './contracts/kernel-tokens.js';
 export {
   KERNEL_VERSION,
   CONTRACT_VERSION,
   KERNEL_ID,
   MANIFEST_FILENAME,
 } from './version.js';
-
-// ── 编排层 ──
-export { Kernel } from './kernel.js';
-export { defaultKernelOptions } from './bootstrap/options.js';
-export type { KernelOptions, PluginBootstrap } from './bootstrap/options.js';
-export type { KernelStartResult, LoadedPlugin, PluginHealth } from './types.js';
-export { PluginState } from './types.js';
 
 // ── 错误 ──
 export {
@@ -96,40 +133,7 @@ export {
   EntryEscapeError,
   NoResponderError,
   NotWritableError,
+  UnknownExtensionPointError,
+  ExtensionConflictError,
 } from './errors.js';
-
-// ── 内核可被测试/工具复用的公共设施（保持最小集） ──
-export { validateManifest } from './discovery/manifest-validator.js';
-export { DiContainer } from './di/container.js';
-export { ServiceRegistryFacade } from './di/service-registry.js';
-export { Lifetime as LifetimeEnum } from './di/lifetime.js';
-export { KernelEventBus } from './events/event-bus.js';
-export { satisfies, isValidRange } from './semver/range.js';
-export {
-  parseVersion,
-  compareVersions,
-  isValidVersion,
-} from './semver/semver.js';
-export { DependencyResolver } from './dependency/resolver.js';
-export { PluginDiscovery } from './discovery/discovery.js';
-export type { Candidate, CandidateSource } from './discovery/candidate.js';
-export { ConfigService } from './config/config-service.js';
-export { MemoryConfigProvider } from './config/memory-provider.js';
-export { LogService } from './observability/log-service.js';
-export { MemoryLogSink, NullLogSink } from './observability/null-sink.js';
-export { MetricsService } from './observability/metrics-service.js';
-export {
-  MemoryMetricSink,
-  NoopMetricSink,
-} from './observability/noop-metrics-sink.js';
-export { TracingService } from './observability/tracing-service.js';
-export { HealthService } from './observability/health-service.js';
-export { PermissionManager } from './security/permission-manager.js';
-export { CapabilityGuard } from './security/capability-guard.js';
-export {
-  DEFAULT_TRUST_POLICY,
-  trustLevelFor,
-} from './security/trust-policy.js';
-export { SerialScheduler } from './scheduler/serial-scheduler.js';
-export type { Scheduler, SchedulerTask } from './scheduler/scheduler.js';
-export type { ResolveIssue, ResolutionPlan } from './dependency/resolver.js';
+export type { KernelErrorCode } from './errors.js';

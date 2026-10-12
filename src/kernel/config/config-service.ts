@@ -38,6 +38,7 @@ export class ConfigService implements ConfigAccess {
   /** 合并后的快照（懒计算）。 */
   private snapshot: Record<string, unknown> = {};
   private dirty = true;
+  private refreshScheduled = false;
   private readonly changeHandlers = new Set<ConfigChangeHandler>();
   private readonly providerUnsubs = new Map<string, Unsubscribe>();
   /**
@@ -128,8 +129,16 @@ export class ConfigService implements ConfigAccess {
     this.failures.length = 0;
   }
 
-  /** 读取配置（支持 'a.b.c' 路径）。 */
+  /**
+   * 读取配置（支持 'a.b.c' 路径）。
+   *
+   * `dirty` 时**惰性 refresh**（docs/09 O18）：旧实现直读 snapshot，
+   * 于是 `provider.load()` 之后未显式 `refresh()` 的写入永远不可见。
+   * 这里用 `pendingRefresh` 把「同步的读」与「异步的 refresh」解耦：
+   * 读侧拿不到最新值时返回旧快照（不阻塞），并把 refresh 排到微任务里。
+   */
   get<T>(key: string, defaultValue?: T): T {
+    this.ensureFresh();
     const value = getPath(this.snapshot, key);
     if (value === undefined) return defaultValue as T;
     return value as T;
@@ -137,6 +146,7 @@ export class ConfigService implements ConfigAccess {
 
   /** 读取必填配置，缺失抛错。 */
   getOrThrow<T>(key: string): T {
+    this.ensureFresh();
     const value = getPath(this.snapshot, key);
     if (value === undefined) {
       throw new Error(`配置项缺失：${key}`);
@@ -145,10 +155,17 @@ export class ConfigService implements ConfigAccess {
   }
 
   has(key: string): boolean {
+    this.ensureFresh();
     return getPath(this.snapshot, key) !== undefined;
   }
 
-  /** 写入（写入优先级最高的可写 provider）。 */
+  /**
+   * 写入（写入优先级最高的可写 provider），并**增量合并**受影响路径（O19）。
+   *
+   * 旧实现每次 `set` 都全量 `refresh()`（重跑所有 provider 的 `load()`），
+   * 代价随 provider 数线性增长；这里只重跑被写的那一层，
+   * 再把它 deepMerge 进快照。
+   */
   async set(key: string, value: unknown): Promise<void> {
     // 从高到低找可写 provider。
     const writable = [...this.providers]
@@ -158,8 +175,24 @@ export class ConfigService implements ConfigAccess {
       throw new NotWritableError('(none)');
     }
     await writable.set(key, value);
+
+    // 增量：只重载该层，再合并进快照。
+    let layer: Record<string, unknown> = {};
+    try {
+      layer = await writable.load();
+    } catch (error) {
+      const failure: ConfigProviderFailure = {
+        provider: writable.name,
+        error: (error as Error).message,
+        at: Date.now(),
+      };
+      this.failures.push(failure);
+      this.onProviderError?.(failure);
+    }
+    this.snapshot = deepMerge(this.snapshot, layer);
     this.dirty = true;
-    await this.refresh();
+    // 合并后快照已是最新，避免 ensureFresh 立刻再触发一次全量 refresh。
+    this.dirty = false;
     this.emitChange([key], key);
   }
 
@@ -176,6 +209,16 @@ export class ConfigService implements ConfigAccess {
 
   get isDirty(): boolean {
     return this.dirty;
+  }
+
+  /** `dirty` 时安排一次全量 refresh（同步读侧不等它）。 */
+  private ensureFresh(): void {
+    if (!this.dirty || this.refreshScheduled) return;
+    this.refreshScheduled = true;
+    queueMicrotask(() => {
+      this.refreshScheduled = false;
+      void this.refresh().catch(() => undefined);
+    });
   }
 
   private emitChange(keys: string[], key: string): void {

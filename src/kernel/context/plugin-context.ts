@@ -1,26 +1,32 @@
 /**
- * 插件上下文构造（docs/02 §F.3）。
+ * 插件上下文构造：由 Kernel 在加载插件时调用，组装 `PluginContext`。
  *
- * 由 Kernel 在加载插件时调用，组装 PluginContext。
+ * 变更：`ctx.extensions` 是插件**唯一**的能力贡献入口（P3）。
+ * Worker 隔离下的扩展点贡献由 `isolation/worker-plugin-proxy.ts` 承载，
+ * 且只允许 `log.sink` / `metrics.sink` / `trace.exporter` 三类（值须可结构化克隆）。
  */
 
 import path from 'node:path';
 import type { PluginContext } from '../contracts/context.js';
 import type { PluginManifest } from '../contracts/manifest.js';
 import type { LifecyclePhase } from '../contracts/lifecycle.js';
+import type { PluginStateT } from '../contracts/plugins.js';
 import type { PermissionSet } from '../contracts/permission.js';
-import type { Container } from '../contracts/di-container.js';
-import type { ServiceRegistry } from '../contracts/service.js';
+import type { Container } from '../contracts/container.js';
+import type { ServicesView } from '../contracts/service.js';
 import type { EventBus } from '../contracts/event-bus.js';
 import type { ConfigAccess } from '../contracts/config.js';
 import type { Logger } from '../contracts/logging.js';
 import type { MetricsApi } from '../contracts/metrics.js';
 import type { PluginsRegistryView } from '../contracts/plugins.js';
+import type { ExtensionContributorView } from '../contracts/extension-point.js';
 import { PluginApiImpl } from './plugin-api.js';
 import type { PluginApiHooks } from './plugin-api.js';
 import type { Container as DiContainer } from '../di/container.js';
 import type { CapabilityGuard } from '../security/capability-guard.js';
 import type { PluginsRegistry } from '../registry/plugins-registry.js';
+import { PHASE_OF_STATE } from '../state-machine.js';
+import { EntryEscapeError } from '../errors.js';
 
 /** 构造上下文所需的内核设施。 */
 export interface ContextDeps {
@@ -30,20 +36,15 @@ export interface ContextDeps {
   metrics: MetricsApi;
   registry: PluginsRegistry;
   guard: CapabilityGuard;
-  /** 阶段读取器（返回当前插件阶段）。 */
-  phaseOf: (pluginId: string) => LifecyclePhase;
+  /** 本插件的扩展点贡献视图。 */
+  extensions: ExtensionContributorView;
+  /** 状态读取器（返回当前插件的逻辑状态）。 */
+  stateOf: (pluginId: string) => PluginStateT;
   /** 导出挂载钩子（由内核提供，避免插件 API 触碰父容器）。 */
   mountExported: PluginApiHooks['mountExported'];
   unmountExported: PluginApiHooks['unmountExported'];
 }
 
-/**
- * 创建插件上下文。
- *
- * @param candidateRootDir 插件根目录（供 resolvePath）
- * @param container 插件子容器
- * @param permissions 该插件的权限集
- */
 export function createPluginContext(
   manifest: PluginManifest,
   rootDir: string,
@@ -52,18 +53,17 @@ export function createPluginContext(
   deps: ContextDeps,
 ): PluginContext {
   const diContainer = container as DiContainer;
+  const pluginId = manifest.id;
 
-  // 插件 API：导出/使用能力（受能力代理约束；挂载动作委托内核，插件 API 不触碰父容器）。
-  const api = new PluginApiImpl(manifest.id, diContainer, deps.guard, {
+  const api = new PluginApiImpl(pluginId, diContainer, deps.guard, {
     mountExported: deps.mountExported,
     unmountExported: deps.unmountExported,
   });
 
   // services 视图：限定在本插件子容器内注册/解析（解析时可向上到内核容器）。
-  // 安全要点（动机 #7 的修正）：解析路径**必须经过 CapabilityGuard**——
-  // 声明了所需能力的服务（含敏感内核服务令牌），未授权插件解析即抛
-  // CapabilityDeniedError；未声明能力的服务视为公共设施，直接放行。
-  const services: ServiceRegistry = {
+  // 解析路径**必须经过 CapabilityGuard** —— 声明了所需能力的服务未授权即抛
+  // CapabilityDeniedError；未声明能力的服务视为公共设施。
+  const services: ServicesView = {
     register: (token, factory, lifetime) => {
       diContainer.register(token, factory, lifetime);
       return services;
@@ -73,12 +73,12 @@ export function createPluginContext(
       return services;
     },
     resolve: (token) => {
-      deps.guard.assert(token.id, manifest.id);
+      deps.guard.assert(token.id, pluginId);
       return diContainer.resolve(token);
     },
     tryResolve: (token) => {
       try {
-        deps.guard.assert(token.id, manifest.id);
+        deps.guard.assert(token.id, pluginId);
       } catch {
         return undefined;
       }
@@ -89,21 +89,30 @@ export function createPluginContext(
   };
 
   const context: PluginContext = {
-    pluginId: manifest.id,
+    pluginId,
     manifest,
+    get phase(): LifecyclePhase {
+      return PHASE_OF_STATE[deps.stateOf(pluginId)];
+    },
     container,
     services,
     events: deps.events,
     config: deps.config,
-    log: deps.logService.child(`plugin:${manifest.id}`, manifest.id),
+    log: deps.logService.child(`plugin:${pluginId}`, pluginId),
     metrics: deps.metrics,
     permissions,
+    extensions: deps.extensions,
     api,
-    get phase(): LifecyclePhase {
-      return deps.phaseOf(manifest.id);
-    },
     plugins: deps.registry as PluginsRegistryView,
-    resolvePath: (relative: string): string => path.resolve(rootDir, relative),
+    resolvePath: (relative: string): string => {
+      const resolved = path.resolve(rootDir, relative);
+      const rel = path.relative(rootDir, resolved);
+      // 入口沙箱：插件不得借 resolvePath 越出 rootDir（docs/11 §6.3）。
+      if (rel.startsWith('..') || path.isAbsolute(rel)) {
+        throw new EntryEscapeError(pluginId, relative);
+      }
+      return resolved;
+    },
   };
 
   return context;

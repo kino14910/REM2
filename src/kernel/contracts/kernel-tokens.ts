@@ -1,75 +1,86 @@
 /**
- * 内核服务令牌与依赖契约（docs/02 §B.5 / §F.4）。
+ * 内核服务令牌（内核与插件之间的「公共语言」）。
  *
- * 这些 token 是内核与插件之间的"公共语言"，供插件 resolve 内核设施。
- * `KernelTokens` 对象即内核的公共 API 出口之一。
+ * 只描述**服务身份**，不含实现。`Scheduler` 指向实现层的 `Scheduler` 接口
+ * （这是全仓库唯一一处契约层引用实现层类型的地方，理由：`Scheduler` 是可替换端口，
+ * 端口形状本身即契约）。
  */
 
-import { ServiceToken } from './service-token.js';
+import { defineToken } from './service-token.js';
+import type { Scheduler } from '../scheduler/scheduler.js';
 
-/**
- * 内核核心服务令牌。
- *
- * 注意：`KernelTokens` 只描述"服务身份"，不含实现。
- */
 export const KernelTokens = {
-  EventBus: ServiceToken.create<import('./event-bus.js').EventBus>({
+  EventBus: defineToken<import('./event-bus.js').EventBus>({
     id: 'kernel.event-bus',
     describe: '全局事件总线',
   }),
-  Config: ServiceToken.create<import('./config.js').ConfigAccess>({
+  Config: defineToken<import('./config.js').ConfigAccess>({
     id: 'kernel.config',
     describe: '配置只读访问',
   }),
-  ConfigService: ServiceToken.create<import('./config.js').ConfigAccess>({
+  ConfigService: defineToken<import('./config.js').ConfigAccess>({
     id: 'kernel.config-service',
     describe: '配置服务（含 provider 管理）',
   }),
-  Log: ServiceToken.create<unknown>({
+  Log: defineToken<unknown>({
     id: 'kernel.log',
     describe: '日志服务',
   }),
-  Metrics: ServiceToken.create<import('./metrics.js').MetricsApi>({
+  Metrics: defineToken<import('./metrics.js').MetricsApi>({
     id: 'kernel.metrics',
     describe: '指标服务',
   }),
-  Tracer: ServiceToken.create<import('./tracing.js').Tracer>({
+  Tracer: defineToken<import('./tracing.js').Tracer>({
     id: 'kernel.tracer',
     describe: '追踪服务（span 采集与导出）',
   }),
-  Health: ServiceToken.create<unknown>({
+  Health: defineToken<unknown>({
     id: 'kernel.health',
     describe: '健康服务',
   }),
-  Permissions: ServiceToken.create<unknown>({
+  Permissions: defineToken<unknown>({
     id: 'kernel.permissions',
     describe: '权限管理器',
   }),
-  Plugins: ServiceToken.create<import('./plugins.js').PluginsRegistryView>({
+  Plugins: defineToken<import('./plugins.js').PluginsRegistryView>({
     id: 'kernel.plugins',
     describe: '插件注册表视图',
   }),
-  Scheduler: ServiceToken.create<import('../scheduler/scheduler.js').Scheduler>(
-    {
-      id: 'kernel.scheduler',
-      describe: '调度器（可被插件替换）',
-    },
-  ),
-  Resolver: ServiceToken.create<unknown>({
-    id: 'kernel.resolver',
-    describe: '依赖解析器（可被插件替换）',
+  Scheduler: defineToken<Scheduler>({
+    id: 'kernel.scheduler',
+    describe: '调度器（可经 scheduler.replace 扩展点替换）',
   }),
-  Discovery: ServiceToken.create<unknown>({
+  Resolver: defineToken<unknown>({
+    id: 'kernel.resolver',
+    describe: '依赖解析器（可经 resolver.replace 扩展点替换）',
+  }),
+  Discovery: defineToken<unknown>({
     id: 'kernel.discovery',
     describe: '插件发现器',
   }),
-  Loader: ServiceToken.create<unknown>({
+  Loader: defineToken<unknown>({
     id: 'kernel.loader',
-    describe: '插件加载器',
+    describe: '插件加载器（可经 loader.replace 扩展点替换）',
   }),
-  CapabilityGuard: ServiceToken.create<unknown>({
+  CapabilityGuard: defineToken<unknown>({
     id: 'kernel.capability-guard',
     describe: '能力代理',
+  }),
+  Extensions: defineToken<unknown>({
+    id: 'kernel.extensions',
+    describe: '扩展点注册表',
+  }),
+  /** 宿主提供的 UI 侧服务：主题注册表（`ui.theme` 单例槽的宿主默认实现所引用的服务）。 */
+  UiThemeRegistry: defineToken<import('./ui.js').ThemeRegistry>({
+    id: 'host.ui.theme-registry',
+    describe: '宿主主题注册表',
+    capability: 'ui.theme',
+  }),
+  /** 宿主提供的 UI 侧服务：面板/路由宿主读取入口。 */
+  UiPanelHost: defineToken<unknown>({
+    id: 'host.ui.panel-host',
+    describe: '宿主 UI 面板读取入口',
+    capability: 'ui.panel',
   }),
 } as const;
 

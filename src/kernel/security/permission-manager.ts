@@ -1,7 +1,7 @@
 /**
  * 权限管理器（docs/02 §J.2）。
  *
- * 流程：manifest.capabilities → PermissionManager.check(manifest, trustLevel) → PermissionSet。
+ * 流程：manifest.requires → PermissionManager.check(manifest, trustLevel) → PermissionSet。
  * `check` 依据 TrustPolicy 决定授予/拒绝/告警；`grant/revoke` 支持运行期调整。
  */
 
@@ -80,7 +80,7 @@ export class PermissionManager {
    * - 其余能力 → 视为"需显式授予"，默认拒绝。
    */
   check(manifest: PluginManifest, trustLevel: TrustLevel): PermissionDecision {
-    const declared = manifest.capabilities ?? [];
+    const declared = manifest.requires ?? [];
     const defaults = this.policy.defaults[trustLevel] ?? [];
     const warnOn = this.policy.warnOn[trustLevel] ?? [];
 

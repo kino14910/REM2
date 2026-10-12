@@ -1,10 +1,10 @@
 /**
- * 回滚策略（docs/02 §C.1：部分启动失败必须回滚已执行的钩子）。
+ * 回滚策略：致命失败时逆序释放已执行的钩子。
  *
- * 回滚顺序：Dispose → Unload → Stop（逆序释放），且每个钩子带超时、彼此隔离。
+ * 顺序：onDispose → onUnload → onStop（逆序），每个带超时、彼此隔离。
  */
 
-import type { Plugin } from '../contracts/lifecycle.js';
+import type { PluginFactoryHooks } from '../contracts/plugin.js';
 import type { PluginContext } from '../contracts/context.js';
 import type { StopReason } from '../contracts/lifecycle.js';
 import { callWithTimeout } from '../util/timeout.js';
@@ -20,11 +20,9 @@ export interface RollbackResult {
   errors: Array<{ hook: string; message: string }>;
 }
 
-/**
- * 逆序执行 onStop → onUnload → onDispose（幂等），吞掉单个钩子错误。
- */
-export async function rollbackPlugin(
-  plugin: Plugin,
+/** 逆序执行 onStop → onUnload → onDispose（幂等），吞掉单个钩子错误。 */
+export async function rollbackHooks(
+  hooks: PluginFactoryHooks,
   ctx: PluginContext,
   reason: StopReason,
   opts: RollbackOptions,
@@ -32,14 +30,14 @@ export async function rollbackPlugin(
   const errors: Array<{ hook: string; message: string }> = [];
 
   const steps: Array<{ hook: string; run: () => Promise<void> | void }> = [];
-  if (typeof plugin.onDispose === 'function') {
-    steps.push({ hook: 'onDispose', run: () => plugin.onDispose!(ctx) });
+  if (typeof hooks.onDispose === 'function') {
+    steps.push({ hook: 'onDispose', run: () => hooks.onDispose!(ctx) });
   }
-  if (typeof plugin.onUnload === 'function') {
-    steps.push({ hook: 'onUnload', run: () => plugin.onUnload!(ctx) });
+  if (typeof hooks.onUnload === 'function') {
+    steps.push({ hook: 'onUnload', run: () => hooks.onUnload!(ctx) });
   }
-  if (typeof plugin.onStop === 'function') {
-    steps.push({ hook: 'onStop', run: () => plugin.onStop!(ctx, reason) });
+  if (typeof hooks.onStop === 'function') {
+    steps.push({ hook: 'onStop', run: () => hooks.onStop!(ctx, reason) });
   }
 
   for (const step of steps) {

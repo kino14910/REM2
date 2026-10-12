@@ -1,5 +1,7 @@
 /**
- * 服务注册表 / DI 契约（纯类型）。见 docs/02 §F.1。
+ * 服务注册表 / DI 契约（纯类型）。
+ *
+ * 令牌相关类型统一由 `service-token.ts` 定义，本文件不再重复声明（docs/13 §1.1 #29 合并）。
  */
 
 import type {
@@ -8,11 +10,11 @@ import type {
   Lifetime,
 } from './service-token.js';
 
-// 便于消费方（如 contracts/context.ts）从本模块统一取用令牌类型。
 export type {
   ServiceToken,
   ServiceFactory,
   Lifetime,
+  ServiceDescriptor,
 } from './service-token.js';
 
 /**
@@ -30,3 +32,6 @@ export interface ServiceRegistry {
   has(token: ServiceToken<unknown>): boolean;
   list(): string[];
 }
+
+/** 插件可见的服务视图：与 ServiceRegistry 同形；独立命名以免暗示「插件能拿到内核注册表」。 */
+export type ServicesView = ServiceRegistry;

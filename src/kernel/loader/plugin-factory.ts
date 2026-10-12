@@ -1,90 +1,42 @@
 /**
- * 插件实例工厂（docs/02 §C：兼容「类」、「实例」、「default 包装」三种导出）。
- */
-
-import type { Plugin, PluginModuleExport } from '../contracts/lifecycle.js';
-
-/**
- * 把动态 import 的模块对象转换为 `Plugin` 实例。
+ * 插件工厂断言：90 行猜测逻辑 → ~10 行断言（docs/09 O22）。
  *
- * 支持：
- * 1. `export default class X implements Plugin {}`      → 实例化
- * 2. `export default new X()`（已实例化）                → 直接使用
- * 3. `export const plugin = new X()`                    → 使用
- * 4. 类构造器（无 default）                              → 实例化
+ * 唯一形态 = `export default definePlugin(manifest, setup)`，即 `mod.default` 是函数。
+ * 旧的 4 种猜测（class / 实例 / 命名导出 / 双层 default）全部移除 ——
+ * 每多一种形态，就多一处「dev 能跑 prod 炸」的结构性可能（docs/11 P4）。
  */
-export function instantiatePlugin(
+
+import type { PluginFactory } from '../contracts/plugin.js';
+import type { PluginManifestInit } from '../contracts/manifest.js';
+
+/** 工厂函数上由 `definePlugin` 挂载的内联清单。 */
+export type PluginFactoryWithManifest = PluginFactory & {
+  readonly manifest: PluginManifestInit;
+};
+
+/** 断言动态 import 的模块导出唯一形态的工厂函数。 */
+export function assertPluginFactory(
   moduleExports: unknown,
   pluginId: string,
-): Plugin {
-  const mod = moduleExports as Record<string, unknown>;
-  const candidate = pickCandidate(mod, pluginId);
+): PluginFactoryWithManifest {
+  const mod = moduleExports as { default?: unknown } | null;
+  const candidate = mod?.default;
 
-  if (!candidate) {
+  if (typeof candidate !== 'function') {
     throw new TypeError(
-      `插件 ${pluginId} 未导出可识别的插件对象（需 default 导出类/实例，或命名导出 plugin）`,
+      `插件 ${pluginId} 必须 export default definePlugin(manifest, setup)（default 必须是函数，实际为 ${
+        candidate === undefined ? 'undefined' : typeof candidate
+      }）`,
     );
   }
 
-  if (isPluginInstance(candidate)) {
-    return candidate;
-  }
-
-  if (typeof candidate === 'function') {
-    const instance = new (candidate as new () => Plugin)();
-    if (!isPluginInstance(instance) && !hasHooks(instance)) {
-      throw new TypeError(`插件 ${pluginId} 的构造函数未产出有效 Plugin 实例`);
-    }
-    return instance;
-  }
-
-  throw new TypeError(`插件 ${pluginId} 导出类型无法识别：${typeof candidate}`);
+  return candidate as PluginFactoryWithManifest;
 }
 
-function pickCandidate(
-  mod: Record<string, unknown>,
-  pluginId: string,
-): unknown {
-  if (mod.default !== undefined) {
-    const def = mod.default as PluginModuleExport;
-    if (
-      typeof def === 'object' &&
-      def !== null &&
-      'default' in (def as object)
-    ) {
-      // 双层 default 包装
-      return (def as { default: unknown }).default;
-    }
-    return def;
-  }
-  if (mod.plugin !== undefined) return mod.plugin;
-  if (mod.Plugin !== undefined) return mod.Plugin;
-  // 模块本身可能是类（少见）
-  void pluginId;
-  return undefined;
-}
-
-function isPluginInstance(value: unknown): value is Plugin {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'manifest' in (value as object) &&
-    typeof (value as { manifest: unknown }).manifest === 'object'
-  );
-}
-
-function hasHooks(value: unknown): boolean {
-  if (typeof value !== 'object' || value === null) return false;
-  const hooks = [
-    'onDiscover',
-    'onLoad',
-    'onConfigure',
-    'onStart',
-    'onStop',
-    'onUnload',
-    'onDispose',
-  ];
-  return hooks.some(
-    (h) => typeof (value as Record<string, unknown>)[h] === 'function',
-  );
+/** 读取工厂携带的内联清单 id（用于与 `plugin.json` 做漂移检测）。 */
+export function inlineManifestId(
+  factory: PluginFactoryWithManifest,
+): string | undefined {
+  const manifest = factory.manifest;
+  return manifest && typeof manifest.id === 'string' ? manifest.id : undefined;
 }

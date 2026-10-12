@@ -15,6 +15,7 @@
  * - `ctx.log` / `ctx.config`（init 快照 + 变更推送）/ `ctx.events`（emit/on/request）
  *   / `ctx.metrics`：经 RPC 代理，可用。
  * - `ctx.services` / `ctx.api` / `ctx.plugins`：不可跨线程代理，Worker 内调用抛错。
+ * - `ctx.extensions`：仅允许贡献 log.sink / metrics.sink / trace.exporter 三类 sink。
  *   Worker 插件之间的协作必须走事件总线（这也是"能力即服务"的强制解耦）。
  */
 
@@ -28,6 +29,11 @@ import type { Candidate } from '../discovery/candidate.js';
 import { resolveEntry } from '../loader/module-resolver.js';
 import { KernelError, TimeoutError } from '../errors.js';
 import { WORKER_BOOTSTRAP_SOURCE } from './worker-bootstrap.js';
+import {
+  HOST_TO_WORKER,
+  WORKER_TO_HOST,
+  type CtxCallMessage,
+} from './worker-protocol.js';
 
 /** 宿主侧依赖的内核设施。 */
 export interface WorkerHostFacilities {
@@ -35,20 +41,26 @@ export interface WorkerHostFacilities {
   config: ConfigService;
   logService: LogService;
   metrics: MetricsApi;
+  /**
+   * 真实权限快照（docs/13 C8）。
+   * 旧实现在 init 消息里硬编码 `{granted:[],denied:[]}`，导致 Worker 插件
+   * 永远认为「无权限」——这是现存缺陷而非设计选择。
+   */
+  permissions?: { granted: string[]; denied: string[] };
+  /** 扩展点贡献落点（Worker 仅三类 sink）。 */
+  extensions?: {
+    contribute(
+      pluginId: string,
+      point: string,
+      contribution: unknown,
+    ): void;
+  };
   /** Worker 意外退出回调（code 为退出码；内核据此置 Failed）。 */
   onUnexpectedExit: (
     pluginId: string,
     code: number | null,
     error?: string,
   ) => void;
-}
-
-/** Worker → 内核的上下文调用请求。 */
-interface CtxCallMessage {
-  t: 'ctx';
-  id: number;
-  path: string[];
-  args: unknown[];
 }
 
 /** 待决 RPC。 */
@@ -142,22 +154,19 @@ export class WorkerPluginHost {
 
       const readyPromise = this.waitForReady(worker);
       worker.postMessage({
-        t: 'init',
+        t: HOST_TO_WORKER.Init,
         entrySpecifier: specifier,
         manifest,
         rootDir: path.resolve(rootDir),
         configSnapshot: this.facilities.config.snapshotOf(),
-        permissions: {
-          granted: [],
-          denied: [],
-        },
+        permissions: this.facilities.permissions ?? { granted: [], denied: [] },
       });
       await readyPromise;
 
       // 配置变更 → 推送新快照到 Worker。
       this.configUnsub = this.facilities.config.onDidChange(() => {
         worker.postMessage({
-          t: 'config',
+          t: HOST_TO_WORKER.Config,
           snapshot: this.facilities.config.snapshotOf(),
         });
       });
@@ -176,10 +185,10 @@ export class WorkerPluginHost {
   private waitForReady(worker: Worker): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const onMessage = (msg: { t?: string; message?: string }): void => {
-        if (msg.t === 'ready') {
+        if (msg.t === WORKER_TO_HOST.Ready) {
           cleanup();
           resolve();
-        } else if (msg.t === 'init-error') {
+        } else if (msg.t === WORKER_TO_HOST.InitError) {
           cleanup();
           reject(
             new KernelError(
@@ -222,7 +231,7 @@ export class WorkerPluginHost {
   private attachWorkerListeners(worker: Worker): void {
     worker.on('message', (msg: Record<string, unknown>) => {
       switch (msg.t) {
-        case 'result': {
+        case WORKER_TO_HOST.Result: {
           const id = msg.id as number;
           const p = this.pending.get(id);
           if (!p) return;
@@ -232,20 +241,20 @@ export class WorkerPluginHost {
             p.reject(new Error((msg.error as string) ?? 'Worker 钩子执行失败'));
           return;
         }
-        case 'ctx': {
+        case WORKER_TO_HOST.Ctx: {
           void this.handleCtxCall(worker, msg as unknown as CtxCallMessage);
           return;
         }
-        case 'subscribe': {
+        case WORKER_TO_HOST.Subscribe: {
           const subId = msg.subId as number;
           const pattern = msg.pattern as string;
           const unsub = this.facilities.events.on(pattern, (payload) => {
-            worker.postMessage({ t: 'event', subId, payload });
+            worker.postMessage({ t: HOST_TO_WORKER.Event, subId, payload });
           });
           this.eventSubs.set(subId, unsub);
           return;
         }
-        case 'unsub': {
+        case WORKER_TO_HOST.Unsub: {
           const subId = msg.subId as number;
           this.eventSubs.get(subId)?.();
           this.eventSubs.delete(subId);
@@ -274,7 +283,7 @@ export class WorkerPluginHost {
     msg: CtxCallMessage,
   ): Promise<void> {
     const reply = (ok: boolean, value?: unknown, error?: string): void => {
-      worker.postMessage({ t: 'ctx-result', id: msg.id, ok, value, error });
+      worker.postMessage({ t: HOST_TO_WORKER.CtxResult, id: msg.id, ok, value, error });
     };
     try {
       const [domain, ...rest] = msg.path;
@@ -352,6 +361,17 @@ export class WorkerPluginHost {
           `Worker 配置仅支持 get（快照只读）：${rest[0] ?? '(none)'}`,
         );
       }
+      case 'extensions': {
+        if (rest[0] === 'contribute') {
+          this.facilities.extensions?.contribute(
+            this.pluginId,
+            String(args[0]),
+            args[1],
+          );
+          return undefined;
+        }
+        throw new Error(`Worker 扩展点不支持的操作：${rest[0] ?? '(none)'}`);
+      }
       default:
         throw new Error(`Worker 上下文不支持的能力域：${domain}`);
     }
@@ -379,7 +399,7 @@ export class WorkerPluginHost {
       if (typeof timer === 'object' && 'unref' in timer) timer.unref();
       // 超时后清理：结果到达时 pending 已删，自然丢弃。
     });
-    worker.postMessage({ t: 'call', id, hook, args });
+    worker.postMessage({ t: HOST_TO_WORKER.Call, id, hook, args });
     return await promise;
   }
 }

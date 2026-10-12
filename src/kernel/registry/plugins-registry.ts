@@ -1,18 +1,21 @@
 /**
- * 插件注册表（docs/02 §D.6 / 类图 PluginsRegistry）。
+ * 插件注册表：内核与插件只读视图的统一数据源。
+ *
+ * 状态类型改用 `PluginStateT`（单一来源，见 `contracts/plugins.ts`）；
+ * 条目形状 `LoadedPlugin` 定义在 `extensions/ports-types.ts`，以便 `loader.replace`
+ * 端口与本注册表共用同一份结构。
  */
 
-import type { LoadedPlugin, PluginHealth } from '../types.js';
-import { PluginState } from '../types.js';
+import type {
+  LoadedPlugin,
+  PluginHealth,
+} from '../extensions/ports-types.js';
 import type {
   PluginInfo,
   PluginsRegistryView,
-  PublicPluginState,
+  PluginStateT,
 } from '../contracts/plugins.js';
 
-/**
- * 插件注册表：内核与插件视图的统一数据源。
- */
 export class PluginsRegistry implements PluginsRegistryView {
   private readonly plugins = new Map<string, LoadedPlugin>();
 
@@ -21,7 +24,6 @@ export class PluginsRegistry implements PluginsRegistryView {
     this.plugins.set(plugin.manifest.id, plugin);
   }
 
-  /** 获取插件条目。 */
   getLoaded(pluginId: string): LoadedPlugin | undefined {
     return this.plugins.get(pluginId);
   }
@@ -34,28 +36,24 @@ export class PluginsRegistry implements PluginsRegistryView {
   }
 
   /** 按状态过滤（内核用）。 */
-  byStateLoaded(state: PluginState): LoadedPlugin[] {
+  byStateLoaded(state: PluginStateT): LoadedPlugin[] {
     return this.allLoaded().filter((p) => p.state === state);
   }
 
-  /** 设置状态。 */
-  setState(pluginId: string, state: PluginState): void {
+  setState(pluginId: string, state: PluginStateT): void {
     const p = this.plugins.get(pluginId);
     if (p) p.state = state;
   }
 
-  /** 设置健康信息。 */
   setHealth(pluginId: string, health: PluginHealth): void {
     const p = this.plugins.get(pluginId);
     if (p) p.health = health;
   }
 
-  /** 移除插件条目。 */
   remove(pluginId: string): void {
     this.plugins.delete(pluginId);
   }
 
-  /** 是否为空。 */
   get size(): number {
     return this.plugins.size;
   }
@@ -67,8 +65,7 @@ export class PluginsRegistry implements PluginsRegistryView {
   }
 
   isStarted(pluginId: string): boolean {
-    const p = this.plugins.get(pluginId);
-    return p?.state === PluginState.Started;
+    return this.plugins.get(pluginId)?.state === 'Active';
   }
 
   get(pluginId: string): PluginInfo | undefined {
@@ -80,7 +77,7 @@ export class PluginsRegistry implements PluginsRegistryView {
     return this.allLoaded().map(toInfo);
   }
 
-  byState(state: PublicPluginState): PluginInfo[] {
+  byState(state: PluginStateT): PluginInfo[] {
     return this.allLoaded()
       .filter((p) => p.state === state)
       .map(toInfo);
@@ -92,7 +89,7 @@ function toInfo(p: LoadedPlugin): PluginInfo {
     id: p.manifest.id,
     name: p.manifest.name,
     version: p.manifest.version,
-    state: p.state as unknown as PublicPluginState,
+    state: p.state,
     manifest: p.manifest,
   };
 }
