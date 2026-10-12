@@ -2,10 +2,24 @@
   "id": "com.rem2.config-json",
   "name": "JSON Config Provider",
   "version": "1.0.0",
-  "entry": "src/index.ts",
-  "capabilities": ["config.provider", "fs.read"],
-  "compatibility": { "minKernel": "^1.0.0", "contractVersion": "1" },
+  "entry": "dist/index.js",
+  "contributes": [
+    {
+      "point": "config.provider",
+      "id": "json"
+    }
+  ],
+  "requires": [
+    "config.provide",
+    "fs.read"
+  ],
+  "compatibility": {
+    "minKernel": "^1.0.0",
+    "contractVersion": "1"
+  },
   "author": "rem2-team",
   "description": "从 JSON 文件加载配置（证明配置来源是插件）",
-  "tags": ["config"]
+  "tags": [
+    "config"
+  ]
 }

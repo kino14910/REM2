@@ -1,20 +1,14 @@
 /**
- * config-json 插件 —— 配置来源是插件（docs/02 §M.2，动机 #10）。
+ * config-json 插件 —— 配置来源是插件。
  *
- * 内核只定义 `ConfigProvider` 契约；本插件实现"从 JSON 文件读取配置"。
- * 可被 config-env / config-remote 等同契约 provider 替换。
+ * 内核只定义 `ConfigProvider` 契约；本插件实现「从 JSON 文件读取配置」，
+ * 并经 `config.provider` 扩展点贡献该层。
  */
 
 import { readFile } from 'node:fs/promises';
 import process from 'node:process';
-import { KernelTokens, ServiceToken } from 'rem2-kernel';
-import type {
-  ConfigProvider,
-  Plugin,
-  PluginContext,
-  PluginManifest,
-  Unsubscribe,
-} from 'rem2-kernel';
+import { definePlugin, defineToken, KernelTokens } from 'rem2-kernel';
+import type { ConfigProvider, PluginContext, Unsubscribe } from 'rem2-kernel';
 
 /** 对内核 ConfigService 的最小结构类型。 */
 export interface ConfigServiceLike {
@@ -25,11 +19,10 @@ export interface ConfigServiceLike {
 }
 
 /** 与内核 KernelTokens.ConfigService 相同 id 的令牌。 */
-export const ConfigServiceToken: ServiceToken<ConfigServiceLike> =
-  ServiceToken.create<ConfigServiceLike>({
-    id: KernelTokens.ConfigService.id,
-    describe: '内核配置服务',
-  });
+export const ConfigServiceToken = defineToken<ConfigServiceLike>({
+  id: KernelTokens.ConfigService.id,
+  describe: '内核配置服务',
+});
 
 /** JSON 文件配置源。 */
 class JsonConfigProvider implements ConfigProvider {
@@ -53,57 +46,47 @@ class JsonConfigProvider implements ConfigProvider {
   }
 }
 
-/**
- * 插件实现。
- */
-export default class ConfigJsonPlugin implements Plugin {
-  readonly manifest: PluginManifest = {
+export default definePlugin(
+  {
     id: 'com.rem2.config-json',
     name: 'JSON Config Provider',
     version: '1.0.0',
-    entry: 'src/index.ts',
-    capabilities: ['config.provider', 'fs.read'],
-    compatibility: { minKernel: '^1.0.0', contractVersion: '1' },
-    author: 'rem2-team',
-    description: '从 JSON 文件加载配置',
-    tags: ['config'],
-  };
+  },
+  (ctx: PluginContext) => {
+    let filePath = '';
+    let configService: ConfigServiceLike | null = null;
 
-  private provider: JsonConfigProvider | null = null;
-  private configService: ConfigServiceLike | null = null;
-  private filePath = '';
+    return {
+      async onConfigure(): Promise<void> {
+        // 允许通过插件配置指定文件路径；缺省用内核选项中的 configPath，再退回默认。
+        const configured = ctx.config.get<string>('config.json.path');
+        filePath = ctx.resolvePath(
+          configured ??
+            ctx.config.get<string>('config.path') ??
+            'config/app.config.json',
+        );
+      },
 
-  async onConfigure(ctx: PluginContext): Promise<void> {
-    // 允许通过插件配置指定文件路径；缺省用内核选项中的 configPath，再退回默认。
-    const configured = ctx.config.get<string>('config.json.path');
-    const resolved = ctx.resolvePath(
-      configured ??
-        ctx.config.get<string>('config.path') ??
-        'config/app.config.json',
-    );
-    this.filePath = resolved;
-  }
+      async onStart(): Promise<void> {
+        const svc = ctx.services.tryResolve(ConfigServiceToken);
+        if (!svc) {
+          ctx.log.warn('未找到内核 ConfigService，config-json 进入降级');
+          return;
+        }
+        configService = svc;
+        svc.registerProvider(new JsonConfigProvider(filePath));
+        await svc.refresh();
+        ctx.log.info(`JSON 配置源已注册（${filePath}）`);
+        void process;
+      },
 
-  async onStart(ctx: PluginContext): Promise<void> {
-    const svc = ctx.services.tryResolve(ConfigServiceToken);
-    if (!svc) {
-      ctx.log.warn('未找到内核 ConfigService，config-json 进入降级');
-      return;
-    }
-    this.configService = svc;
-    this.provider = new JsonConfigProvider(this.filePath);
-    svc.registerProvider(this.provider);
-    await svc.refresh();
-    ctx.log.info(`JSON 配置源已注册（${this.filePath}）`);
-    void process;
-  }
-
-  async onStop(ctx: PluginContext, reason: string): Promise<void> {
-    if (this.configService && this.provider) {
-      this.configService.unregisterProvider(this.provider.name);
-    }
-    this.provider = null;
-    this.configService = null;
-    ctx.log.info(`JSON 配置源已注销（${reason}）`);
-  }
-}
+      async onStop(hookCtx: PluginContext, reason: string): Promise<void> {
+        if (configService) {
+          configService.unregisterProvider('json');
+        }
+        configService = null;
+        hookCtx.log.info(`JSON 配置源已注销（${reason}）`);
+      },
+    };
+  },
+);

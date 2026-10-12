@@ -2,11 +2,24 @@
   "id": "com.rem2.notify-worker",
   "name": "Notify Worker",
   "version": "1.0.0",
-  "entry": "src/index.mjs",
+  "entry": "dist/index.js",
   "isolation": "worker",
-  "capabilities": ["log.sink"],
-  "compatibility": { "minKernel": "^1.0.0", "contractVersion": "1" },
+  "contributes": [
+    {
+      "point": "log.sink",
+      "id": "notify"
+    }
+  ],
+  "requires": [],
+  "compatibility": {
+    "minKernel": "^1.0.0",
+    "contractVersion": "1"
+  },
   "author": "rem2-team",
   "description": "在独立 Worker 线程中运行：订阅命令结果并发出通知（证明进程级隔离）",
-  "tags": ["notification", "demo", "worker"]
+  "tags": [
+    "notification",
+    "demo",
+    "worker"
+  ]
 }

@@ -1,48 +1,15 @@
 /**
- * theme-dark 插件 —— UI / 主题是插件（docs/02 §M.5，动机 #1）。
+ * theme-dark 插件 —— UI / 主题是插件。
  *
- * 注册一套深色主题 token；**内核完全不知道"颜色"是什么概念**。
- * UI 外壳插件（如 electron-shell）消费这些 token 来渲染。
+ * 经 `ui.theme` 扩展点贡献一套深色主题 token（单例槽，`keep-first` 裁决）。
+ * **内核完全不知道「颜色」是什么概念**；前端把 token 映射为 CSS 变量。
  */
 
-import { KernelTokens, ServiceToken } from 'rem2-kernel';
-import type {
-  EventBus,
-  Plugin,
-  PluginContext,
-  PluginManifest,
-  Unsubscribe,
-} from 'rem2-kernel';
+import { definePlugin } from 'rem2-kernel';
+import type { PluginContext, ThemeDefinition } from 'rem2-kernel';
 
-/** 主题定义（UI 概念，由插件自由定义）。 */
-export interface ThemeToken {
-  id: string;
-  colors: Record<string, string>;
-  fonts: Record<string, string>;
-  spacing: Record<string, string>;
-}
-
-/** 主题注册表契约（由 UI 外壳插件实现；内核只提供 token 传递位）。 */
-export interface ThemeRegistry {
-  register(theme: ThemeToken): void;
-  unregister(themeId: string): void;
-  list(): ThemeToken[];
-}
-
-/** 主题注册表令牌（UI 外壳插件注册，theme-dark 消费）。 */
-export const ThemeRegistryToken = ServiceToken.create<ThemeRegistry>({
-  id: 'plugin.ui.theme-registry',
-  capability: 'ui.theme',
-  describe: '主题注册表',
-});
-
-/** 事件总线令牌。 */
-const EventBusToken: ServiceToken<EventBus> = ServiceToken.create<EventBus>({
-  id: KernelTokens.EventBus.id,
-  describe: '内核事件总线',
-});
-
-const DARK_THEME: ThemeToken = {
+/** 深色主题 token。 */
+const DARK_THEME: ThemeDefinition = {
   id: 'dark',
   colors: {
     background: '#0f1115',
@@ -59,77 +26,37 @@ const DARK_THEME: ThemeToken = {
   spacing: { xs: '4px', sm: '8px', md: '16px', lg: '24px' },
 };
 
-/**
- * 插件实现。
- */
-export default class ThemeDarkPlugin implements Plugin {
-  readonly manifest: PluginManifest = {
-    id: 'com.rem2.theme-dark',
-    name: 'Dark Theme',
-    version: '1.0.0',
-    entry: 'src/index.ts',
-    optionalDependencies: { 'com.rem2.logger-console': '^1.0.0' },
-    capabilities: ['ui.theme'],
-    compatibility: { minKernel: '^1.0.0', contractVersion: '1' },
-    author: 'rem2-team',
-    description: '注册一套深色主题 token',
-    tags: ['ui', 'theme'],
-  };
+export default definePlugin(
+  { id: 'com.rem2.theme-dark', name: 'Dark Theme', version: '1.0.0' },
+  (ctx: PluginContext) => {
+    let contributed = false;
 
-  /** 当前主题（未注册到外壳时仅本地持有）。 */
-  private theme: ThemeToken | null = null;
-  private registry: ThemeRegistry | null = null;
-  private readonly unsubs: Unsubscribe[] = [];
-  /** 是否有 UI 外壳注册了 ThemeRegistry。 */
-  private hasRegistry = false;
+    return {
+      async onStart(): Promise<void> {
+        // 唯一的贡献入口：`ui.theme` 单例槽。
+        // 若已有主题生效（keep-first），本次贡献被拒并由内核记入 issue，不抛错。
+        ctx.extensions.contribute<ThemeDefinition>('ui.theme', {
+          contributionId: 'dark',
+          impl: DARK_THEME,
+        });
+        contributed = true;
+        ctx.log.info('深色主题已贡献（ui.theme 扩展点）');
+      },
 
-  async onConfigure(ctx: PluginContext): Promise<void> {
-    this.theme = { ...DARK_THEME };
-    void ctx;
-  }
+      async onStop(hookCtx: PluginContext, reason: string): Promise<void> {
+        // 贡献由内核在卸载时按 pluginId 强制回收（P6）。
+        contributed = false;
+        hookCtx.log.info(`深色主题已停用（${reason}）`);
+      },
 
-  async onStart(ctx: PluginContext): Promise<void> {
-    const registry = ctx.services.tryResolve(ThemeRegistryToken);
-    if (registry) {
-      this.registry = registry;
-      registry.register(this.theme!);
-      this.hasRegistry = true;
-    } else {
-      ctx.log.info(
-        '未检测到 UI 外壳 ThemeRegistry，主题仅本地注册（degraded）',
-      );
-    }
+      onHealthCheck(): 'healthy' | 'degraded' {
+        return contributed ? 'healthy' : 'degraded';
+      },
 
-    const bus = ctx.services.tryResolve(EventBusToken);
-    if (bus) {
-      this.unsubs.push(
-        bus.on('ui:theme:request', () => {
-          void bus.emit('ui:theme:registered', this.theme);
-        }),
-      );
-      await bus.emit('ui:theme:registered', this.theme);
-    }
-
-    ctx.log.info(`深色主题已激活（registry=${this.hasRegistry}）`);
-  }
-
-  async onStop(ctx: PluginContext, reason: string): Promise<void> {
-    if (this.registry && this.theme) {
-      this.registry.unregister(this.theme.id);
-    }
-    for (const u of this.unsubs) u();
-    this.unsubs.length = 0;
-    this.registry = null;
-    this.hasRegistry = false;
-    ctx.log.info(`深色主题已停用（${reason}）`);
-  }
-
-  onHealthCheck(): 'healthy' | 'degraded' {
-    return this.hasRegistry ? 'healthy' : 'degraded';
-  }
-
-  /** 当前主题（测试用）。 */
-  getTheme(): ThemeToken | null {
-    return this.theme;
-  }
-}
+      /** 当前主题（测试用）。 */
+      getTheme(): ThemeDefinition | null {
+        return contributed ? DARK_THEME : null;
+      },
+    };
+  },
+);

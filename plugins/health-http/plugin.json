@@ -2,11 +2,28 @@
   "id": "com.rem2.health-http",
   "name": "Health HTTP Endpoint",
   "version": "1.0.0",
-  "entry": "src/index.ts",
-  "dependencies": { "com.rem2.logger-console": "^1.0.0" },
-  "capabilities": ["health.expose", "net.listen"],
-  "compatibility": { "minKernel": "^1.0.0", "contractVersion": "1" },
+  "entry": "dist/index.js",
+  "dependencies": {
+    "com.rem2.logger-console": "^1.0.0"
+  },
+  "contributes": [
+    {
+      "point": "health.check",
+      "id": "http"
+    }
+  ],
+  "requires": [
+    "health.expose",
+    "net.listen"
+  ],
+  "compatibility": {
+    "minKernel": "^1.0.0",
+    "contractVersion": "1"
+  },
   "author": "rem2-team",
   "description": "把 HealthService 暴露为 /health 端点（硬依赖 logger-console）",
-  "tags": ["observability", "ops"]
+  "tags": [
+    "observability",
+    "ops"
+  ]
 }

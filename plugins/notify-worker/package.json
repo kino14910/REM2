@@ -1,0 +1,15 @@
+{
+  "name": "@rem2/plugin-notify-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "在独立 Worker 线程中运行：订阅命令结果并发出通知（证明进程级隔离）",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "esbuild src/index.mjs --bundle --format=esm --platform=node --target=node20 --external:node:* --outfile=dist/index.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

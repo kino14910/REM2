@@ -1,0 +1,15 @@
+{
+  "name": "@rem2/plugin-hello-command",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "注册 hello 命令（业务功能是插件，软依赖 config-json）",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --format=esm --platform=node --target=node20 --external:node:* --outfile=dist/index.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

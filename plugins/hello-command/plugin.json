@@ -2,11 +2,27 @@
   "id": "com.rem2.hello-command",
   "name": "Hello Command",
   "version": "1.0.0",
-  "entry": "src/index.ts",
-  "optionalDependencies": { "com.rem2.config-json": "^1.0.0" },
-  "capabilities": ["command.provide"],
-  "compatibility": { "minKernel": "^1.0.0", "contractVersion": "1" },
+  "entry": "dist/index.js",
+  "optionalDependencies": {
+    "com.rem2.config-json": "^1.0.0"
+  },
+  "contributes": [
+    {
+      "point": "command.provide",
+      "id": "hello"
+    }
+  ],
+  "requires": [
+    "command.provide"
+  ],
+  "compatibility": {
+    "minKernel": "^1.0.0",
+    "contractVersion": "1"
+  },
   "author": "rem2-team",
   "description": "注册 hello 命令（业务功能是插件，软依赖 config-json）",
-  "tags": ["command", "demo"]
+  "tags": [
+    "command",
+    "demo"
+  ]
 }
