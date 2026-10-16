@@ -1,5 +1,5 @@
 /**
- * 集成测试 · 故障隔离补充（docs/02 §E：单插件失败不崩内核）。
+ * 集成测试 · 故障隔离补充（docs/01：单插件失败不崩内核）。
  *
  * 补充既有 fault-isolation.test.ts 未覆盖的路径：
  * - onStop 抛错时，内核 shutdown 不崩且其余插件正常停止。
@@ -8,25 +8,24 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { Kernel } from '../../src/kernel/kernel.js';
-import { PluginState } from '../../src/kernel/types.js';
 import {
   createTmpPluginsDir,
   type TmpPluginsDir,
 } from '../helpers/tmp-plugins-dir.js';
 
-/** 生成一个内联 JS 插件源码（manifest 内联，无内核依赖）。 */
-function jsPlugin(id: string, hooks: string): string {
+/**
+ * 生成一个内联 JS 插件源码：**唯一形态** = default 导出工厂函数。
+ *
+ * 权威 manifest 写在 plugin.json 里（内核只认它），因此源码里无需重复声明。
+ */
+function jsPlugin(hooks: string): string {
   return `
-export default {
-  manifest: {
-    id: ${JSON.stringify(id)},
-    name: ${JSON.stringify(id)},
-    version: '1.0.0',
-    entry: 'index.js',
-    compatibility: { minKernel: '^1.0.0', contractVersion: '1' },
-  },
-  ${hooks}
-};
+export default function factory(ctx) {
+  void ctx;
+  return {
+    ${hooks}
+  };
+}
 `;
 }
 
@@ -42,13 +41,12 @@ describe('integration · fault-isolation-extra', () => {
     tmp = await createTmpPluginsDir();
     await tmp.writePlugin(
       { id: 'com.qa.good' },
-      jsPlugin('com.qa.good', 'async onStart() {}'),
+      jsPlugin('async onStart() {}'),
       'index.js',
     );
     await tmp.writePlugin(
       { id: 'com.qa.stopthrow' },
       jsPlugin(
-        'com.qa.stopthrow',
         'async onStart() {}, async onStop() { throw new Error("stop boom"); }',
       ),
       'index.js',
@@ -63,7 +61,7 @@ describe('integration · fault-isolation-extra', () => {
     await expect(kernel.shutdown()).resolves.toBeUndefined();
     expect(kernel.isStarted()).toBe(false);
     expect(kernel.pluginRegistry.getLoaded('com.qa.good')!.state).toBe(
-      PluginState.Stopped,
+      'Stopped',
     );
   });
 
@@ -71,15 +69,12 @@ describe('integration · fault-isolation-extra', () => {
     tmp = await createTmpPluginsDir();
     await tmp.writePlugin(
       { id: 'com.qa.good' },
-      jsPlugin('com.qa.good', 'async onStart() {}'),
+      jsPlugin('async onStart() {}'),
       'index.js',
     );
     await tmp.writePlugin(
       { id: 'com.qa.badcfg' },
-      jsPlugin(
-        'com.qa.badcfg',
-        'async onConfigure() { throw new Error("configure boom"); }',
-      ),
+      jsPlugin('async onConfigure() { throw new Error("configure boom"); }'),
       'index.js',
     );
 
@@ -89,7 +84,7 @@ describe('integration · fault-isolation-extra', () => {
     expect(result.started).toContain('com.qa.good');
     expect(result.failed).toContain('com.qa.badcfg');
     expect(kernel.pluginRegistry.getLoaded('com.qa.badcfg')!.state).toBe(
-      PluginState.Failed,
+      'Failed',
     );
     expect(kernel.isStarted()).toBe(true);
 

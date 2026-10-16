@@ -1,5 +1,5 @@
 /**
- * 集成测试 · 能力/权限边界（docs/02 §J.4、docs/04 §4.2）。
+ * 集成测试 · 能力/权限边界（docs/01）。
  *
  * 架构承诺：
  * - 未授权插件解析其他插件导出的服务 → 抛 `CapabilityDeniedError`（绝不静默返回 undefined）。
@@ -11,7 +11,6 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { Kernel } from '../../src/kernel/kernel.js';
-import { PluginState } from '../../src/kernel/types.js';
 import {
   createTmpPluginsDir,
   type TmpPluginsDir,
@@ -20,37 +19,37 @@ import {
 const SVC_ID = 'plugin.qa.secret';
 const CAP = 'command.provide';
 
-/** 提供者：注册并导出（声明能力）一个服务。 */
+/** 提供者：注册并导出（声明能力）一个服务。唯一形态 = default 导出工厂函数。 */
 const PROVIDER_SOURCE = `
 const TOKEN = { id: ${JSON.stringify(SVC_ID)} };
-export default {
-  manifest: { id: 'com.qa.provider', name: 'qa-provider', version: '1.0.0', entry: 'index.js',
-    compatibility: { minKernel: '^1.0.0', contractVersion: '1' } },
-  async onStart(ctx) {
-    ctx.services.registerInstance(TOKEN, { value: 42 });
-    ctx.api.export(TOKEN, { capability: ${JSON.stringify(CAP)} });
-  },
-};
+export default function factory(ctx) {
+  return {
+    async onStart() {
+      ctx.services.registerInstance(TOKEN, { value: 42 });
+      ctx.api.export(TOKEN, { capability: ${JSON.stringify(CAP)} });
+    },
+  };
+}
 `;
 
 /** 消费者：硬依赖 provider（保证 provider 先启动），尝试跨插件解析。 */
 const CONSUMER_SOURCE = `
 const TOKEN = { id: ${JSON.stringify(SVC_ID)} };
-export default {
-  manifest: { id: 'com.qa.consumer', name: 'qa-consumer', version: '1.0.0', entry: 'index.js',
-    compatibility: { minKernel: '^1.0.0', contractVersion: '1' } },
-  async onStart(ctx) {
-    let result;
-    try {
-      const svc = ctx.api.useCapability(TOKEN);
-      result = 'RESOLVED:' + (svc && svc.value);
-    } catch (e) {
-      result = 'THREW:' + (e && e.name);
-    }
-    // 用失败信息携带观测结果，供测试读取健康报告。
-    throw new Error('CAP_RESULT=' + result);
-  },
-};
+export default function factory(ctx) {
+  return {
+    async onStart() {
+      let result;
+      try {
+        const svc = ctx.api.useCapability(TOKEN);
+        result = 'RESOLVED:' + (svc && svc.value);
+      } catch (e) {
+        result = 'THREW:' + (e && e.name);
+      }
+      // 用失败信息携带观测结果，供测试读取健康报告。
+      throw new Error('CAP_RESULT=' + result);
+    },
+  };
+}
 `;
 
 describe('integration · capability-boundary', () => {
@@ -64,7 +63,7 @@ describe('integration · capability-boundary', () => {
   it('未授权插件解析他人导出服务 → CapabilityDeniedError（不静默）', async () => {
     tmp = await createTmpPluginsDir();
     await tmp.writePlugin(
-      { id: 'com.qa.provider', capabilities: [CAP] },
+      { id: 'com.qa.provider', requires: [CAP] },
       PROVIDER_SOURCE,
       'index.js',
     );
@@ -83,7 +82,7 @@ describe('integration · capability-boundary', () => {
     expect(result.started).toContain('com.qa.provider');
     expect(result.failed).toContain('com.qa.consumer');
     expect(kernel.pluginRegistry.getLoaded('com.qa.consumer')!.state).toBe(
-      PluginState.Failed,
+      'Failed',
     );
     expect(consumer?.message).toContain('THREW:CapabilityDeniedError');
 
@@ -93,7 +92,7 @@ describe('integration · capability-boundary', () => {
   it('已授权插件解析他人导出服务 → 成功解析（跨插件能力消费）', async () => {
     tmp = await createTmpPluginsDir();
     await tmp.writePlugin(
-      { id: 'com.qa.provider', capabilities: [CAP] },
+      { id: 'com.qa.provider', requires: [CAP] },
       PROVIDER_SOURCE,
       'index.js',
     );
@@ -102,7 +101,7 @@ describe('integration · capability-boundary', () => {
       {
         id: 'com.qa.consumer',
         dependencies: { 'com.qa.provider': '^1.0.0' },
-        capabilities: [CAP],
+        requires: [CAP],
       },
       CONSUMER_SOURCE,
       'index.js',

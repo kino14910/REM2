@@ -1,9 +1,9 @@
 /**
- * 生命周期管理器单测（7 阶段 + 超时 + 回滚 + 错误隔离，docs/02 §C.1）。
+ * 生命周期管理器单测（7 阶段 + 超时 + 回滚 + 错误隔离，docs/01）。
  */
 
 import { describe, expect, it } from 'vitest';
-import { LifecycleManager } from '../../src/kernel/lifecycle/lifecycle-manager.js';
+import { LifecycleManager } from '../../src/kernel/lifecycle/manager.js';
 import { isLegalTransition } from '../../src/kernel/lifecycle/phases.js';
 import { makePlugin } from '../helpers/make-plugin.js';
 
@@ -37,7 +37,8 @@ function stubContext(pluginId: string): import('rem2-kernel').PluginContext {
       isGranted: () => true,
     } as never,
     api: {} as never,
-    phase: 'Discover',
+    extensions: {} as never,
+    phase: 'Registered',
     plugins: {
       has: () => false,
       isStarted: () => false,
@@ -50,7 +51,7 @@ function stubContext(pluginId: string): import('rem2-kernel').PluginContext {
 }
 
 describe('lifecycle · 阶段序列', () => {
-  it('正常启动按 Discover→Load→Initialize→Start 执行', async () => {
+  it('正常启动按 onDiscover→onLoad→onConfigure→onStart 执行', async () => {
     const log: Array<{ hook: string; phase: string }> = [];
     const plugin = makePlugin({ id: 'a', log });
     const mgr = new LifecycleManager({
@@ -116,7 +117,6 @@ describe('lifecycle · 阶段序列', () => {
 
   it('缺失钩子视为成功', async () => {
     const plugin = {
-      manifest: { id: 'min' } as never,
       onStart: async (): Promise<void> => undefined,
     };
     const mgr = new LifecycleManager({
@@ -133,16 +133,17 @@ describe('lifecycle · 阶段序列', () => {
 
 describe('lifecycle · 阶段跃迁合法性', () => {
   it('允许顺序前进', () => {
-    expect(isLegalTransition('Discover', 'Load')).toBe(true);
-    expect(isLegalTransition('Load', 'Initialize')).toBe(true);
-    expect(isLegalTransition('Initialize', 'Start')).toBe(true);
+    expect(isLegalTransition('Registered', 'Loaded')).toBe(true);
+    expect(isLegalTransition('Loaded', 'Initialized')).toBe(true);
+    expect(isLegalTransition('Initialized', 'Configured')).toBe(true);
+    expect(isLegalTransition('Configured', 'Stopped')).toBe(true);
   });
 
   it('禁止回退', () => {
-    expect(isLegalTransition('Start', 'Load')).toBe(false);
+    expect(isLegalTransition('Configured', 'Loaded')).toBe(false);
   });
 
   it('任意阶段可进入 Degraded', () => {
-    expect(isLegalTransition('Start', 'Degraded')).toBe(true);
+    expect(isLegalTransition('Configured', 'Degraded')).toBe(true);
   });
 });

@@ -1,5 +1,5 @@
 /**
- * 测试辅助：在临时目录中物化插件（plugin.json + src/index.ts），用于集成测试。
+ * 测试辅助：在临时目录中物化插件（plugin.json + index.js），用于集成测试。
  */
 
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
@@ -35,7 +35,7 @@ export async function createTmpPluginsDir(
     async writePlugin(
       manifestOpts: MakeManifestOptions,
       entrySource: string,
-      entryFileName = 'src/index.ts',
+      entryFileName = 'index.js',
     ): Promise<string> {
       const dirName = manifestOpts.id.replace(/[^a-z0-9._-]/gi, '_');
       const pluginDir = path.join(root, dirName);

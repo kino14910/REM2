@@ -1,10 +1,9 @@
 /**
- * 集成测试 · 故障隔离（docs/02 §E：单插件失败不崩内核）。
+ * 集成测试 · 故障隔离（docs/01：单插件失败不崩内核）。
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Kernel } from '../../src/kernel/kernel.js';
-import { PluginState } from '../../src/kernel/types.js';
 import { materializePlugins } from '../fixtures/fake-kernel.js';
 
 describe('integration · fault-isolation', () => {
@@ -31,7 +30,7 @@ describe('integration · fault-isolation', () => {
     expect(result.started).toContain('com.rem2.good.b');
     expect(result.failed).toContain('com.rem2.bad');
     expect(kernel.pluginRegistry.getLoaded('com.rem2.bad')!.state).toBe(
-      PluginState.Failed,
+      'Failed',
     );
     expect(kernel.isStarted()).toBe(true);
 

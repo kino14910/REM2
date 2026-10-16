@@ -1,5 +1,5 @@
 /**
- * 集成测试 · 可观测性（docs/02 §I：日志/指标/健康都是可插拔基础设施）。
+ * 集成测试 · 可观测性（docs/01：日志/指标/健康都是可插拔基础设施）。
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';

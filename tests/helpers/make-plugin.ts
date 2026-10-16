@@ -1,13 +1,14 @@
 /**
- * 测试辅助：构造内存插件实例（实现 Plugin 接口），记录钩子调用。
+ * 测试辅助：构造内存插件（唯一形态 = 工厂函数），记录钩子调用。
  */
 
-import {
+import { defineToken } from 'rem2-kernel';
+import type {
+  HealthStatus,
+  PluginContext,
+  PluginFactoryHooks,
   ServiceToken,
-  type HealthStatus,
-  type Plugin,
-  type PluginContext,
-  type StopReason,
+  StopReason,
 } from 'rem2-kernel';
 import { makeManifest, type MakeManifestOptions } from './make-manifest.js';
 
@@ -34,13 +35,16 @@ export interface MakePluginOptions extends MakeManifestOptions {
 
 /** 便捷：创建名为 id 的服务令牌。 */
 export function tokenFor<T>(id: string): ServiceToken<T> {
-  return ServiceToken.create<T>({ id, describe: id });
+  return defineToken<T>({ id, describe: id });
 }
 
 /**
- * 创建一个内存插件实例。
+ * 创建一个内存插件的钩子集合。
+ *
+ * 注意：工厂形态下 manifest 由 `plugin.json` 提供，内联 manifest 只作辅助断言用，
+ * 因此这里返回 `PluginFactoryHooks`（不含 manifest 字段）。
  */
-export function makePlugin(opts: MakePluginOptions): Plugin {
+export function makePlugin(opts: MakePluginOptions): PluginFactoryHooks {
   const manifest = makeManifest(opts);
   const hookLog = opts.log ?? [];
 
@@ -48,26 +52,24 @@ export function makePlugin(opts: MakePluginOptions): Plugin {
     hookLog.push(reason ? { hook, phase, reason } : { hook, phase });
   };
 
-  const plugin: Plugin = {
-    manifest,
-
+  return {
     async onDiscover(): Promise<void> {
-      record('onDiscover', 'Discover');
+      record('onDiscover', 'Registered');
     },
 
     async onLoad(): Promise<void> {
-      record('onLoad', 'Load');
+      record('onLoad', 'Loaded');
     },
 
     async onConfigure(): Promise<void> {
-      record('onConfigure', 'Initialize');
+      record('onConfigure', 'Initialized');
       if (opts.configureBehavior && opts.configureBehavior !== 'ok') {
         throw new Error(opts.configureBehavior.throw);
       }
     },
 
     async onStart(ctx: PluginContext): Promise<void> {
-      record('onStart', 'Start');
+      record('onStart', 'Configured');
       if (opts.onStart) {
         await opts.onStart(ctx);
         return;
@@ -85,21 +87,19 @@ export function makePlugin(opts: MakePluginOptions): Plugin {
     },
 
     async onStop(_ctx: PluginContext, reason: StopReason): Promise<void> {
-      record('onStop', 'Stop', reason);
+      record('onStop', 'Stopped', reason);
     },
 
     async onUnload(): Promise<void> {
-      record('onUnload', 'Unload');
+      record('onUnload', 'Unloaded');
     },
 
     async onDispose(): Promise<void> {
-      record('onDispose', 'Dispose');
+      record('onDispose', 'Disposed');
     },
 
     onHealthCheck(): HealthStatus {
       return opts.health ?? 'healthy';
     },
   };
-
-  return plugin;
 }

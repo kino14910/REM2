@@ -1,5 +1,5 @@
 /**
- * 集成测试 · 确定性启动顺序（docs/02 §D.4）。
+ * 集成测试 · 确定性启动顺序（docs/01）。
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';

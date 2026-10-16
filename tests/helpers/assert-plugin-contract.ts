@@ -1,67 +1,55 @@
 /**
- * 测试辅助：断言插件符合契约（impl 可独立于内核验证，见 docs/02 §K.3）。
+ * 测试辅助：断言插件钩子集合符合契约。
+ *
+ * 唯一形态下插件不再有 `instance.manifest`，因此入参是
+ * 「`plugin.json` 里的 manifest」+「工厂产出的钩子集合」。
  */
 
 import { expect } from 'vitest';
-import type { Plugin } from 'rem2-kernel';
+import type { PluginFactoryHooks, PluginManifest } from 'rem2-kernel';
 
 /**
- * 断言某对象满足 Plugin 契约的最低要求：
- * - 具备 manifest，且 manifest.id/name/version/entry/compatibility 齐备；
- * - 至少实现一个可选钩子；
- * - manifest 与实测 id 一致。
+ * 断言：
+ * - manifest 的 id/name/version/entry/compatibility 齐备，且 entry 是构建产物；
+ * - 至少实现一个可选钩子。
  */
 export function assertPluginContract(
-  plugin: Plugin,
+  hooks: PluginFactoryHooks,
+  manifest: PluginManifest,
   expectedId?: string,
 ): void {
-  expect(plugin).toBeDefined();
-  expect(typeof plugin).toBe('object');
-  expect(plugin.manifest).toBeDefined();
-  expect(typeof plugin.manifest.id).toBe('string');
-  expect(plugin.manifest.id.length).toBeGreaterThan(0);
-  expect(typeof plugin.manifest.name).toBe('string');
-  expect(plugin.manifest.version).toMatch(/^\d+\.\d+\.\d+/);
-  expect(typeof plugin.manifest.entry).toBe('string');
-  expect(plugin.manifest.compatibility).toBeDefined();
-  expect(typeof plugin.manifest.compatibility.contractVersion).toBe('string');
-  expect(typeof plugin.manifest.compatibility.minKernel).toBe('string');
+  expect(hooks).toBeDefined();
+  expect(typeof hooks).toBe('object');
+  expect(manifest.id.length).toBeGreaterThan(0);
+  expect(typeof manifest.name).toBe('string');
+  expect(manifest.version).toMatch(/^\d+\.\d+\.\d+/);
+  expect(typeof manifest.entry).toBe('string');
+  // 唯一形态：entry 必须是构建产物。
+  expect(manifest.entry).toMatch(/\.(js|mjs)$/);
+  expect(manifest.compatibility.contractVersion).toBe('string');
+  expect(manifest.compatibility.minKernel).toBe('string');
 
   if (expectedId !== undefined) {
-    expect(plugin.manifest.id).toBe(expectedId);
+    expect(manifest.id).toBe(expectedId);
   }
 
-  const hooks = [
-    'onDiscover',
-    'onLoad',
-    'onConfigure',
-    'onStart',
-    'onStop',
-    'onUnload',
-    'onDispose',
-    'onHealthCheck',
-  ] as const;
-  const implemented = hooks.filter(
-    (h) =>
-      typeof (plugin as unknown as Record<string, unknown>)[h] === 'function',
-  );
-  expect(implemented.length).toBeGreaterThan(0);
+  expect(implementedHooks(hooks).length).toBeGreaterThan(0);
 }
 
+const HOOK_NAMES = [
+  'onDiscover',
+  'onLoad',
+  'onConfigure',
+  'onStart',
+  'onStop',
+  'onUnload',
+  'onDispose',
+  'onHealthCheck',
+] as const;
+
 /** 列出插件实现的钩子。 */
-export function implementedHooks(plugin: Plugin): string[] {
-  const hooks = [
-    'onDiscover',
-    'onLoad',
-    'onConfigure',
-    'onStart',
-    'onStop',
-    'onUnload',
-    'onDispose',
-    'onHealthCheck',
-  ];
-  return hooks.filter(
-    (h) =>
-      typeof (plugin as unknown as Record<string, unknown>)[h] === 'function',
+export function implementedHooks(hooks: PluginFactoryHooks): string[] {
+  return HOOK_NAMES.filter(
+    (h) => typeof (hooks as unknown as Record<string, unknown>)[h] === 'function',
   );
 }

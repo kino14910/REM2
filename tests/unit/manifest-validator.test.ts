@@ -1,5 +1,5 @@
 /**
- * Manifest 校验器单测（手写零依赖校验器，docs/02 §C.2）。
+ * Manifest 校验器单测（手写零依赖校验器，docs/01）。
  */
 
 import { describe, expect, it } from 'vitest';
@@ -9,7 +9,7 @@ const valid = {
   id: 'com.rem2.demo',
   name: 'Demo',
   version: '1.0.0',
-  entry: 'src/index.ts',
+  entry: 'dist/index.js',
   compatibility: { minKernel: '^1.0.0', contractVersion: '1' },
 };
 
@@ -25,13 +25,13 @@ describe('manifest-validator · 合法输入', () => {
       ...valid,
       dependencies: { 'com.rem2.other': '^1.0.0' },
       optionalDependencies: { 'com.rem2.opt': '~1.2.0' },
-      capabilities: ['log.sink', 'config.provider'],
+      requires: ['log.sink', 'config.provide'],
       author: 'team',
       description: 'demo',
       tags: ['a', 'b'],
     });
     expect(r.ok).toBe(true);
-    expect(r.value?.capabilities).toContain('log.sink');
+    expect(r.value?.requires).toContain('log.sink');
   });
 });
 
@@ -64,15 +64,15 @@ describe('manifest-validator · 非法输入', () => {
     expect(r.ok).toBe(false);
   });
 
-  it('capabilities 非法能力名被拒', () => {
-    const r = validateManifest({ ...valid, capabilities: ['Invalid CAP'] });
+  it('requires 非法能力名被拒', () => {
+    const r = validateManifest({ ...valid, requires: ['Invalid CAP'] });
     expect(r.ok).toBe(false);
   });
 
-  it('capabilities 重复被拒', () => {
+  it('requires 重复被拒', () => {
     const r = validateManifest({
       ...valid,
-      capabilities: ['log.sink', 'log.sink'],
+      requires: ['log.sink', 'log.sink'],
     });
     expect(r.ok).toBe(false);
   });

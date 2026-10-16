@@ -1,5 +1,5 @@
 /**
- * 配置服务单测（provider 分层合并 + 变更通知，docs/02 §H）。
+ * 配置服务单测（provider 分层合并 + 变更通知，docs/01）。
  */
 
 import { describe, expect, it } from 'vitest';

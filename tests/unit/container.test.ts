@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Container } from '../../src/kernel/di/container.js';
-import { ServiceToken } from '../../src/kernel/contracts/service-token.js';
+import { defineToken } from '../../src/kernel/contracts/service-token.js';
 import { Lifetime } from '../../src/kernel/di/lifetime.js';
 import {
   CircularDependencyError,
@@ -11,7 +11,7 @@ interface Greeter {
   greet(name: string): string;
 }
 
-const GreeterToken = ServiceToken.create<Greeter>({
+const GreeterToken = defineToken<Greeter>({
   id: 'test.greeter',
   describe: '测试 Greeter',
 });
@@ -95,8 +95,8 @@ describe('DI · Container', () => {
 
   it('循环依赖抛 CircularDependencyError', () => {
     const root = new Container({ scope: 'root' });
-    const A = ServiceToken.create<unknown>({ id: 'a', describe: 'a' });
-    const B = ServiceToken.create<unknown>({ id: 'b', describe: 'b' });
+    const A = defineToken<unknown>({ id: 'a', describe: 'a' });
+    const B = defineToken<unknown>({ id: 'b', describe: 'b' });
     root.register(A, (c) => (c as Container).resolve(B), Lifetime.Singleton);
     root.register(B, (c) => (c as Container).resolve(A), Lifetime.Singleton);
     expect(() => root.resolve(A)).toThrow(CircularDependencyError);

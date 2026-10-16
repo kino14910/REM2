@@ -1,5 +1,8 @@
 /**
  * 测试辅助：构造内存中的插件 manifest（无需触碰磁盘）。
+ *
+ * 默认 `entry` 改为 `dist/index.js`（唯一形态，docs/06 §7 #7）；
+ * `capabilities` 已拆为 `requires`（我需要什么）+ `contributes`（我提供什么）。
  */
 
 import type {
@@ -8,6 +11,7 @@ import type {
 } from '../../src/kernel/discovery/candidate.js';
 import type {
   Compatibility,
+  ManifestContribution,
   PluginManifest,
 } from '../../src/kernel/contracts/manifest.js';
 
@@ -19,7 +23,10 @@ export interface MakeManifestOptions {
   entry?: string;
   dependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
-  capabilities?: string[];
+  /** 我需要什么（能力声明）。 */
+  requires?: string[];
+  /** 我提供什么（扩展点贡献）。 */
+  contributes?: ManifestContribution[];
   compatibility?: Partial<Compatibility>;
   tags?: string[];
   description?: string;
@@ -32,7 +39,7 @@ export function makeManifest(opts: MakeManifestOptions): PluginManifest {
     id: opts.id,
     name: opts.name ?? opts.id,
     version: opts.version ?? '1.0.0',
-    entry: opts.entry ?? 'src/index.ts',
+    entry: opts.entry ?? 'dist/index.js',
     compatibility: {
       minKernel: opts.compatibility?.minKernel ?? '^1.0.0',
       contractVersion: opts.compatibility?.contractVersion ?? '1',
@@ -42,9 +49,11 @@ export function makeManifest(opts: MakeManifestOptions): PluginManifest {
     },
   };
   if (opts.dependencies) manifest.dependencies = opts.dependencies;
-  if (opts.optionalDependencies)
+  if (opts.optionalDependencies) {
     manifest.optionalDependencies = opts.optionalDependencies;
-  if (opts.capabilities) manifest.capabilities = opts.capabilities;
+  }
+  if (opts.requires) manifest.requires = opts.requires;
+  if (opts.contributes) manifest.contributes = opts.contributes;
   if (opts.tags) manifest.tags = opts.tags;
   if (opts.description) manifest.description = opts.description;
   if (opts.isolation) manifest.isolation = opts.isolation;

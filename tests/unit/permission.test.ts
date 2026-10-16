@@ -1,5 +1,5 @@
 /**
- * 权限管理器单测（docs/02 §J：能力 → 授权 → 拦截）。
+ * 权限管理器单测（docs/01：能力 → 授权 → 拦截）。
  */
 
 import { describe, expect, it } from 'vitest';
@@ -12,7 +12,7 @@ describe('permission · 授权判定', () => {
   it('trusted 默认授予常规能力', () => {
     const pm = new PermissionManager();
     const decision = pm.check(
-      makeManifest({ id: 'a', capabilities: ['log.sink', 'command.provide'] }),
+      makeManifest({ id: 'a', requires: ['log.sink', 'command.provide'] }),
       'trusted',
     );
     expect(decision.granted).toContain('log.sink');
@@ -22,7 +22,7 @@ describe('permission · 授权判定', () => {
   it('sandboxed 默认拒绝敏感能力', () => {
     const pm = new PermissionManager();
     const decision = pm.check(
-      makeManifest({ id: 'a', capabilities: ['net.listen', 'fs.write'] }),
+      makeManifest({ id: 'a', requires: ['net.listen', 'fs.write'] }),
       'sandboxed',
     );
     expect(decision.denied).toContain('net.listen');
@@ -33,7 +33,7 @@ describe('permission · 授权判定', () => {
   it('sandboxed 默认拒绝未声明于默认集的能力', () => {
     const pm = new PermissionManager();
     const decision = pm.check(
-      makeManifest({ id: 'a', capabilities: ['command.provide'] }),
+      makeManifest({ id: 'a', requires: ['command.provide'] }),
       'sandboxed',
     );
     expect(decision.denied).toContain('command.provide');
@@ -42,7 +42,7 @@ describe('permission · 授权判定', () => {
   it('运行期 grant 追加授权', () => {
     const pm = new PermissionManager();
     pm.check(
-      makeManifest({ id: 'a', capabilities: ['net.listen'] }),
+      makeManifest({ id: 'a', requires: ['net.listen'] }),
       'sandboxed',
     );
     expect(pm.get('a')!.isGranted('net.listen')).toBe(false);
@@ -56,7 +56,7 @@ describe('permission · CapabilityGuard 拦截', () => {
     const guard = new CapabilityGuard();
     const pm = new PermissionManager(guard);
     pm.check(
-      makeManifest({ id: 'a', capabilities: ['net.listen'] }),
+      makeManifest({ id: 'a', requires: ['net.listen'] }),
       'sandboxed',
     );
 
@@ -67,7 +67,7 @@ describe('permission · CapabilityGuard 拦截', () => {
   it('已授权能力通过', () => {
     const guard = new CapabilityGuard();
     const pm = new PermissionManager(guard);
-    pm.check(makeManifest({ id: 'a', capabilities: ['log.sink'] }), 'trusted');
+    pm.check(makeManifest({ id: 'a', requires: ['log.sink'] }), 'trusted');
     guard.declareServiceCapability('svc.log', 'log.sink');
     expect(() => guard.assert('svc.log', 'a')).not.toThrow();
   });

@@ -1,12 +1,11 @@
 /**
- * 集成测试 · 软依赖（optionalDependencies）语义（docs/02 §D.6 / §M.3）。
+ * 集成测试 · 软依赖（optionalDependencies）语义（docs/01）。
  *
  * 软依赖缺失时插件仍应正常启动（degraded 而非 failed）。
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Kernel } from '../../src/kernel/kernel.js';
-import { PluginState } from '../../src/kernel/types.js';
 import { materializePlugins } from '../fixtures/fake-kernel.js';
 
 describe('integration · optional-dependency', () => {
@@ -56,7 +55,7 @@ describe('integration · optional-dependency', () => {
     expect(result.started).toContain('com.rem2.base');
     expect(result.started).toContain('com.rem2.app');
     expect(kernel.pluginRegistry.getLoaded('com.rem2.app')!.state).toBe(
-      PluginState.Started,
+      'Active',
     );
 
     await kernel.shutdown();

@@ -1,12 +1,11 @@
 /**
- * 集成测试 · 热插拔 / 热重载（docs/02 §C.5）。
+ * 集成测试 · 热插拔 / 热重载（docs/01）。
  */
 
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Kernel } from '../../src/kernel/kernel.js';
-import { PluginState } from '../../src/kernel/types.js';
 import { materializePlugins } from '../fixtures/fake-kernel.js';
 
 /** 覆写某插件目录下 index.js 的内容（模拟磁盘变更）。 */
@@ -35,12 +34,12 @@ describe('integration · reload', () => {
     const kernel = new Kernel({ roots: [fx.root] });
     await kernel.start();
     expect(kernel.pluginRegistry.getLoaded('com.rem2.reloadable')!.state).toBe(
-      PluginState.Started,
+      'Active',
     );
 
     await kernel.reload('com.rem2.reloadable');
     expect(kernel.pluginRegistry.getLoaded('com.rem2.reloadable')!.state).toBe(
-      PluginState.Started,
+      'Active',
     );
 
     await kernel.shutdown();
@@ -57,19 +56,12 @@ describe('integration · reload', () => {
 
     // 改写源码：把健康状态改为 degraded。
     const newSource = `
-const manifest = ${JSON.stringify({
-      id: 'com.rem2.reloadable',
-      name: 'com.rem2.reloadable',
-      version: '1.0.0',
-      entry: 'index.js',
-      compatibility: { minKernel: '^1.0.0', contractVersion: '1' },
-    })};
-const plugin = {
-  manifest,
-  async onStart() {},
-  onHealthCheck() { return 'degraded'; },
-};
-export default plugin;
+export default function factory() {
+  return {
+    async onStart() {},
+    onHealthCheck() { return 'degraded'; },
+  };
+}
 `;
     await overwritePluginEntry(fx.root, 'com.rem2.reloadable', newSource);
 

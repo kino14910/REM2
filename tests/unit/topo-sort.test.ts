@@ -14,7 +14,7 @@ function cand(
       id,
       name: id,
       version: '1.0.0',
-      entry: 'src/index.ts',
+      entry: 'dist/index.js',
       dependencies: Object.fromEntries(deps.map((d) => [d, '^1.0.0'])),
       compatibility: { minKernel: '^1.0.0', contractVersion: '1' },
     },

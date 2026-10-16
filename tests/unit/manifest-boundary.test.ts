@@ -1,5 +1,5 @@
 /**
- * 边界单测 · manifest 校验器（docs/02 §C.2）。
+ * 边界单测 · manifest 校验器（docs/01）。
  *
  * 覆盖：缺失必填字段、非法 id、非法版本、非法能力名、重复能力、非法依赖。
  */
@@ -11,7 +11,7 @@ const base = {
   id: 'com.qa.demo',
   name: 'Demo',
   version: '1.0.0',
-  entry: 'src/index.ts',
+  entry: 'dist/index.js',
   compatibility: { minKernel: '^1.0.0', contractVersion: '1' },
 } as const;
 
@@ -110,7 +110,7 @@ describe('manifest-boundary · version 规则', () => {
   });
 });
 
-describe('manifest-boundary · capabilities 规则', () => {
+describe('manifest-boundary · requires 规则', () => {
   it.each([
     ['Bad Cap'],
     ['1abc'],
@@ -120,13 +120,13 @@ describe('manifest-boundary · capabilities 规则', () => {
     ['-x'],
     [''],
   ])('拒绝非法能力名：%s', (cap) => {
-    expect(validateManifest({ ...base, capabilities: [cap] }).ok).toBe(false);
+    expect(validateManifest({ ...base, requires: [cap] }).ok).toBe(false);
   });
 
   it('重复能力被拒', () => {
     const r = validateManifest({
       ...base,
-      capabilities: ['log.sink', 'log.sink'],
+      requires: ['log.sink', 'log.sink'],
     });
     expect(r.ok).toBe(false);
     expect(r.issues.some((i) => i.message.includes('重复'))).toBe(true);
@@ -136,7 +136,7 @@ describe('manifest-boundary · capabilities 规则', () => {
     expect(
       validateManifest({
         ...base,
-        capabilities: ['log.sink', 'config.provider'],
+        requires: ['log.sink', 'config.provide'],
       }).ok,
     ).toBe(true);
   });

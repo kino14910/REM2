@@ -1,5 +1,5 @@
 /**
- * 集成测试 · Worker 线程隔离（docs/02 §C.6，动机 #6 进程级错误隔离）。
+ * 集成测试 · Worker 线程隔离（docs/01，动机 #6 进程级错误隔离）。
  *
  * 场景：
  * 1. `isolation: 'worker'` 的插件在独立 Worker 线程中启动并响应事件。
@@ -13,10 +13,14 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Kernel } from '../../src/kernel/kernel.js';
-import { PluginState } from '../../src/kernel/types.js';
 import { makeManifest } from '../helpers/make-manifest.js';
 
-/** 物化一个 worker 插件目录。 */
+/**
+ * 物化一个 worker 插件目录。
+ *
+ * entry 指向 `dist/index.mjs`（唯一形态：构建产物）；fixture 直接把源码写在那里，
+ * 因为 Worker 内没有 TS 编译管线。
+ */
 async function writeWorkerPlugin(
   root: string,
   id: string,
@@ -24,15 +28,15 @@ async function writeWorkerPlugin(
 ): Promise<void> {
   const dirName = id.replace(/[^a-z0-9._-]/gi, '_');
   const pluginDir = path.join(root, dirName);
-  await mkdir(path.join(pluginDir, 'src'), { recursive: true });
-  const manifest = makeManifest({ id, entry: 'src/index.mjs' });
+  await mkdir(path.join(pluginDir, 'dist'), { recursive: true });
+  const manifest = makeManifest({ id, entry: 'dist/index.mjs' });
   (manifest as { isolation?: string }).isolation = 'worker';
   await writeFile(
     path.join(pluginDir, 'plugin.json'),
     JSON.stringify(manifest, null, 2),
     'utf8',
   );
-  await writeFile(path.join(pluginDir, 'src/index.mjs'), source, 'utf8');
+  await writeFile(path.join(pluginDir, 'dist/index.mjs'), source, 'utf8');
 }
 
 describe('integration · worker isolation', () => {
@@ -50,25 +54,23 @@ describe('integration · worker isolation', () => {
       root,
       'com.rem2.worker-echo',
       `
-export default class EchoPlugin {
-  constructor() {
-    this.manifest = ${JSON.stringify(makeManifest({ id: 'com.rem2.worker-echo', entry: 'src/index.mjs' }))};
-    this.manifest.isolation = 'worker';
-    this.unsubs = [];
-  }
-  async onStart(ctx) {
-    this.unsubs.push(
-      ctx.events.on('echo:request', async (payload) => {
-        await ctx.events.emit('echo:reply', { echo: payload });
-      }),
-    );
-    ctx.log.info('worker echo 已启动');
-  }
-  async onStop() {
-    for (const u of this.unsubs) u();
-    this.unsubs = [];
-  }
-  onHealthCheck() { return 'healthy'; }
+export default function factory(ctx) {
+  const unsubs = [];
+  return {
+    async onStart() {
+      unsubs.push(
+        ctx.events.on('echo:request', async (payload) => {
+          await ctx.events.emit('echo:reply', { echo: payload });
+        }),
+      );
+      ctx.log.info('worker echo 已启动');
+    },
+    async onStop() {
+      for (const u of unsubs) u();
+      unsubs.length = 0;
+    },
+    onHealthCheck() { return 'healthy'; },
+  };
 }
 `,
     );
@@ -79,7 +81,7 @@ export default class EchoPlugin {
     expect(result.started).toContain('com.rem2.worker-echo');
 
     const loaded = kernel.pluginRegistry.getLoaded('com.rem2.worker-echo');
-    expect(loaded?.state).toBe(PluginState.Started);
+    expect(loaded?.state).toBe('Active');
 
     // 触发一次事件，验证 worker 内的订阅被调用并回发。
     const bus = kernel.root.resolve<{
@@ -105,16 +107,14 @@ export default class EchoPlugin {
       root,
       'com.rem2.worker-crash',
       `
-export default class CrashPlugin {
-  constructor() {
-    this.manifest = ${JSON.stringify(makeManifest({ id: 'com.rem2.worker-crash', entry: 'src/index.mjs' }))};
-    this.manifest.isolation = 'worker';
-  }
-  async onStart(ctx) {
-    ctx.log.info('即将崩溃');
-    // 直接退出 Worker 线程，模拟崩溃。
-    process.exit(1);
-  }
+export default function factory(ctx) {
+  return {
+    async onStart() {
+      ctx.log.info('即将崩溃');
+      // 直接退出 Worker 线程，模拟崩溃。
+      process.exit(1);
+    },
+  };
 }
 `,
     );
@@ -126,7 +126,7 @@ export default class CrashPlugin {
     // 插件失败（无论是钩子里的错误，还是 Worker 意外退出）。
     expect(result.failed).toContain('com.rem2.worker-crash');
     const loaded = kernel.pluginRegistry.getLoaded('com.rem2.worker-crash');
-    expect(loaded?.state).toBe(PluginState.Failed);
+    expect(loaded?.state).toBe('Failed');
 
     // 内核仍然健康（可生成健康报告）。
     const report = await kernel.health();

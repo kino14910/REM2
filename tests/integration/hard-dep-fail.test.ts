@@ -1,5 +1,5 @@
 /**
- * 集成测试 · 硬依赖失败级联（docs/02 §D / §E.5）。
+ * 集成测试 · 硬依赖失败级联（docs/01）。
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';

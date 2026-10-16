@@ -1,5 +1,5 @@
 /**
- * 边界单测 · 容器可见性（docs/02 §F.1 / §E.3）。
+ * 边界单测 · 容器可见性（docs/01）。
  *
  * 覆盖架构承诺：
  * - 插件子容器不通过公开属性暴露父容器引用。
@@ -9,18 +9,18 @@
 
 import { describe, expect, it } from 'vitest';
 import { Container } from '../../src/kernel/di/container.js';
-import { ServiceToken } from '../../src/kernel/contracts/service-token.js';
+import { defineToken } from '../../src/kernel/contracts/service-token.js';
 import { NoProviderError } from '../../src/kernel/errors.js';
 
 interface Svc {
   value: number;
 }
 
-const Exported = ServiceToken.create<Svc>({
+const Exported = defineToken<Svc>({
   id: 'qa.svc.exported',
   describe: 'qa exported',
 });
-const Unexported = ServiceToken.create<Svc>({
+const Unexported = defineToken<Svc>({
   id: 'qa.svc.unexported',
   describe: 'qa unexported',
 });
@@ -99,7 +99,7 @@ describe('container-isolation · 兄弟插件导出（useCapability 底层前提
     provider.markExported(Exported);
     root.mountChildContainer(provider); // api.export() 的反向挂载
 
-    // 设计承诺（docs/04 §4.2）：插件可解析「其他插件导出」的服务。
+    // 设计承诺（docs/01）：插件可解析「其他插件导出」的服务。
     expect(consumer.resolve(Exported).value).toBe(9);
   });
 });
