@@ -1,5 +1,5 @@
 /**
- * Worker 隔离宿主（docs/02 §C.6，动机 #6 的进程级错误隔离）。
+ * Worker 隔离宿主（docs/01，动机 #6 的进程级错误隔离）。
  *
  * 当插件 manifest 声明 `isolation: 'worker'` 时，内核不直接 import 插件代码，
  * 而是由本宿主在独立的 `worker_threads` 线程中加载并驱动它：
@@ -42,7 +42,7 @@ export interface WorkerHostFacilities {
   logService: LogService;
   metrics: MetricsApi;
   /**
-   * 真实权限快照（docs/13 C8）。
+   * 真实权限快照（docs/06 C8）。
    * 旧实现在 init 消息里硬编码 `{granted:[],denied:[]}`，导致 Worker 插件
    * 永远认为「无权限」——这是现存缺陷而非设计选择。
    */

@@ -1,5 +1,5 @@
 /**
- * 依赖解析器（docs/02 §D）：版本兼容判定 + 冲突检测 + 循环检测 + 确定性拓扑排序。
+ * 依赖解析器（见 docs/01）：版本兼容判定 + 冲突检测 + 循环检测 + 确定性拓扑排序。
  */
 
 import type { Candidate, CandidateSource } from '../discovery/candidate.js';

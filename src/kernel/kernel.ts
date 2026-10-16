@@ -1,9 +1,9 @@
 /**
  * 内核编排层：发现 → 解析 → 按拓扑序加载与驱动生命周期 → 回收。
  *
- * 变更（docs/13 C16）：构造器**只接收注入的 `KernelDeps`**，不再 `new` 任何实现类；
+ * 变更（docs/06 C16）：构造器**只接收注入的 `KernelDeps`**，不再 `new` 任何实现类；
  * 全部装配在 `composition.ts`。因此本文件与 `composition.ts` 是全仓库仅有的两个装配点
- * （docs/13 §3.3 D7 的例外）。
+ * （docs/06 §3.3 D7 的例外）。
  *
  * 物理执行序见 `lifecycle/pipeline.ts`；注意依赖解析在**物理上先于**任何插件代码加载。
  */
@@ -91,7 +91,7 @@ export class Kernel {
   /**
    * 启动内核：发现 → 解析 → 按拓扑序加载与启动。
    *
-   * 物理序（docs/11 §4.3）：配置快照 → 发现 → 依赖解析 → 逐个加载并驱动生命周期。
+   * 物理序（docs/03 §4.3）：配置快照 → 发现 → 依赖解析 → 逐个加载并驱动生命周期。
    */
   async start(): Promise<KernelStartResult> {
     if (this.started) {

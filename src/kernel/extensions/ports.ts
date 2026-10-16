@@ -3,7 +3,7 @@
  *
  * 抽象出端口而非直接引用实现类，是为了让 `definitions.ts` 能在**不 import 实现层**
  * 的前提下声明 `scheduler.replace` / `resolver.replace` / `loader.replace` 三个扩展点
- * （docs/13 §3.3 D7 的例外仅限 `kernel.ts` 与 `composition.ts`）。
+ * （docs/06 §3.3 D7 的例外仅限 `kernel.ts` 与 `composition.ts`）。
  */
 
 import type { Candidate } from '../discovery/candidate.js';

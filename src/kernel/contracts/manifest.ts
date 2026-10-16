@@ -1,7 +1,7 @@
 /**
  * 插件清单 / 元数据契约（纯类型，零运行时）。
  *
- * 关键变更（docs/13 C2 / C3）：
+ * 关键变更（docs/06 C2 / C3）：
  * - `entry` **只能是构建产物**（`.js` / `.mjs`），dev 与 prod 同值 → 消除双形态。
  * - 原 `capabilities` 语义含混，拆为：`contributes`（我提供什么）+ `requires`（我需要什么）。
  */

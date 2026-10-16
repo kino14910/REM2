@@ -1,5 +1,5 @@
 /**
- * 追踪服务（docs/02 §I.3 的最小实现）。
+ * 追踪服务（docs/01 的最小实现）。
  *
  * 内核提供 Tracer：span 先在内存中聚合，flush 时分发给所有已注册的
  * TraceExporter（exporter 是插件，契约见 contracts/tracing.ts）。

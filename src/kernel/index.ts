@@ -4,7 +4,7 @@
  * 插件与测试**只能**从本出口引用内核；不得深链 `src/kernel/**` 内部实现。
  * 契约测试 `tests/contract/plugin-contract.test.ts` 断言此约束。
  *
- * 导出面被刻意收窄为四类（docs/11 P7 / docs/13 D8）：
+ * 导出面被刻意收窄为四类（docs/03 P7 / docs/06 D8）：
  * ① 契约类型 + 纯函数工厂；② `KernelTokens`；③ 错误类；④ 版本常量。
  * **不导出任何实现类** —— 旧版导出了 20+ 个实现类，插件可以 `new ConfigService()`
  * 造一个假内核服务，边界形同虚设。

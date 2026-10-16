@@ -1,5 +1,5 @@
 /**
- * 手写零依赖 Manifest 校验器（docs/02 §C.2 / §K）。
+ * 手写零依赖 Manifest 校验器（见 docs/01）。
  *
  * 不使用 zod / ajv —— 内核必须零第三方运行时依赖（§B.2 红线）。
  * 校验器与 `manifest.schema.json` 语义保持一致，并由单测覆盖。
@@ -36,7 +36,7 @@ export interface ManifestValidationResult {
 const ID_RE = /^[a-z0-9]+([._-][a-z0-9]+)*$/;
 const CAP_RE = /^[a-z][a-z0-9-]*(\.[a-z0-9-]+)*$/;
 const VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
-/** entry 只允许构建产物（docs/11 §6.3：消除 dev/prod 双形态）。 */
+/** entry 只允许构建产物（docs/03 §6.3：消除 dev/prod 双形态）。 */
 const ENTRY_RE = /\.(js|mjs)$/;
 
 /** 已声明的扩展点 id 集合（来自 `extensions/definitions.ts`，保证单一来源）。 */

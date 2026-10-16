@@ -1,5 +1,5 @@
 /**
- * 插件发现（docs/02 §D.1）。
+ * 插件发现（见 docs/01）。
  *
  * 扫描 roots 目录下的插件子目录，读取并校验 `plugin.json`；
  * 可选旧式 `manifest.json` 兼容（默认关闭，`legacyFallback`）。

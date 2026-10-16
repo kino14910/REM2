@@ -1,10 +1,10 @@
 /**
  * 插件加载器：把 Candidate + 动态 import 组装为 `LoadedPlugin`。
  *
- * 形态收敛（docs/13 C1）：只接受 `definePlugin` 工厂；`instantiatePlugin` 的
+ * 形态收敛（docs/06 C1）：只接受 `definePlugin` 工厂；`instantiatePlugin` 的
  * 4 种猜测与 `LoadedPluginBuilder`（9 个 `withXxx`，docs/09 O24）一并删除。
  *
- * 权限透传（docs/13 C8）：`isolation: 'worker'` 的插件必须拿到**真实**的权限快照，
+ * 权限透传（docs/06 C8）：`isolation: 'worker'` 的插件必须拿到**真实**的权限快照，
  * 旧实现硬编码 `{granted:[],denied:[]}`，导致 Worker 插件永远认为无权限。
  */
 

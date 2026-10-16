@@ -107,7 +107,7 @@ export function createPluginContext(
     resolvePath: (relative: string): string => {
       const resolved = path.resolve(rootDir, relative);
       const rel = path.relative(rootDir, resolved);
-      // 入口沙箱：插件不得借 resolvePath 越出 rootDir（docs/11 §6.3）。
+      // 入口沙箱：插件不得借 resolvePath 越出 rootDir（docs/03 §6.3）。
       if (rel.startsWith('..') || path.isAbsolute(rel)) {
         throw new EntryEscapeError(pluginId, relative);
       }

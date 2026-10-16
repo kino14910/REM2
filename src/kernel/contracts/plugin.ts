@@ -1,7 +1,7 @@
 /**
  * 插件形态契约（纯类型侧）。
  *
- * 唯一形态（docs/11 §3.1）：`export default definePlugin(manifest, setup)`。
+ * 唯一形态（docs/03 §3.1）：`export default definePlugin(manifest, setup)`。
  * loader 只需断言 `typeof mod.default === 'function'`，不再做 4 种形态猜测。
  */
 

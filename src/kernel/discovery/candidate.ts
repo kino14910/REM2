@@ -1,5 +1,5 @@
 /**
- * 候选插件模型（docs/02 §D.1）。
+ * 候选插件模型（见 docs/01）。
  */
 
 import type { PluginManifest } from '../contracts/manifest.js';

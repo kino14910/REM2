@@ -1,5 +1,5 @@
 /**
- * 服务注册表门面（docs/02 §F.1）。
+ * 服务注册表门面（见 docs/01）。
  *
  * `ServiceRegistry` 是 Container 的窄接口视图。插件拿到的是被裁剪过的注册表，
  * 其 `resolve` 会经过能力代理（由 CapabilityGuard 包装，见 §J.4）。

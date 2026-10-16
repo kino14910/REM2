@@ -1,7 +1,7 @@
 /**
  * 扩展点声明表（P3 的「有哪些扩展点」的唯一来源）。
  *
- * 与 `docs/11 §7.2` 的全表**逐 id 一一对应**（PRD A7）。
+ * 与 `docs/03 §7.2` 的全表**逐 id 一一对应**（PRD A7）。
  * 由 `tests/contract/extension-points.test.ts` 强制二者一致。
  *
  * 字段语义：

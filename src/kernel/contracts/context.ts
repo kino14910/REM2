@@ -1,7 +1,7 @@
 /**
  * 插件上下文与插件 API 契约（纯类型）。
  *
- * 变更（docs/13 D5）：`PluginApi.registerCapability` **已删除** ——
+ * 变更（docs/06 D5）：`PluginApi.registerCapability` **已删除** ——
  * 能力贡献退化为不可枚举的散装注册，且绕过扩展点注册表（P3 红线）。
  * 贡献的唯一入口是 `ctx.extensions.contribute`。
  */

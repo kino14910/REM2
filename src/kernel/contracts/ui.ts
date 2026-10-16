@@ -1,5 +1,5 @@
 /**
- * UI 扩展点契约（从 `plugins/theme-dark` 上移，docs/11 §7.1 / C15）。
+ * UI 扩展点契约（从 `plugins/theme-dark` 上移，docs/03 §7.1 / C15）。
  *
  * 上移的理由：主题/面板/路由是**内核契约**而非某个插件的私有类型 ——
  * 宿主与插件两侧都只依赖 `kernel/contracts/ui.js`，从而消除外壳 import 插件源码的越界（X1）。
@@ -35,7 +35,7 @@ export type PanelRegion = 'main' | 'side';
  * 声明式面板描述。
  *
  * `command` 是**数据来源**：前端请求某面板数据时，主进程按该命令走事件总线，
- * 由插件自己决定返回什么形状（内核不校验，见 docs/12 §10 R2）。
+ * 由插件自己决定返回什么形状（内核不校验，见 docs/04 §10 R2）。
  */
 export interface PanelContribution {
   readonly panelId: string;

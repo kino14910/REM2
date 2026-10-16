@@ -1,7 +1,7 @@
 /**
  * 插件状态与注册表视图契约。
  *
- * 状态定义的**单一来源**（docs/11 §4.4）：删除旧的 `PluginState` 真 enum 与
+ * 状态定义的**单一来源**（docs/03 §4.4）：删除旧的 `PluginState` 真 enum 与
  * `PublicPluginState`，二者合并为此处一份 `PLUGIN_STATES` + `PluginStateT`。
  * 理由：真 enum 是运行期对象（会给 bundle 引入运行期值），且与 `PublicPluginState` 构成双源。
  */

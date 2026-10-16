@@ -2,7 +2,7 @@
  * 权限与能力契约（纯类型）。
  *
  * 三段式模型：manifest `requires` 声明 → PermissionManager 授权 → CapabilityGuard 拦截。
- * 扩展点贡献同样受能力校验（docs/13 C7）——未授权的扩展点贡献 → Failed 而非静默。
+ * 扩展点贡献同样受能力校验（docs/06 C7）——未授权的扩展点贡献 → Failed 而非静默。
  */
 
 /** 能力名（分级命名，如 'log.sink' / 'ui.panel' / 'kernel.internals'）。 */

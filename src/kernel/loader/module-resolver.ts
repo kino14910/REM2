@@ -3,7 +3,7 @@
  *
  * 零依赖：仅 node:url / node:path / node:fs。
  *
- * 补全列表已删除 `.ts` 与 `index.ts`（docs/10 §5.1 / docs/13 §1.2 #55）：
+ * 补全列表已删除 `.ts` 与 `index.ts`（docs/07 §5.1 / docs/06 §1.2 #55）：
  * 允许 `.ts` 入口就是「主进程需要注册 tsx loader」的根因，而那条通道已被 forge Fuses 封死。
  */
 

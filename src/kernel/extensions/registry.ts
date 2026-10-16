@@ -3,7 +3,7 @@
  *
  * 职责：定义扩展点 / 宿主默认实现 / 插件贡献 / 枚举 / **按 pluginId 强制回收**。
  *
- * 三条不变式（docs/11 §7.3）：
+ * 三条不变式（docs/03 §7.3）：
  * 1. 未知 point id → `UnknownExtensionPointError`（不静默）。
  * 2. 能力未授予 → `CapabilityDeniedError`（C7：贡献扩展点也校验能力）。
  * 3. 单例槽冲突 → 按定义里的 `conflict` 显式裁决，并把被拒项记入 `issues`。
@@ -109,7 +109,7 @@ export class ExtensionPointRegistry {
         ? set.isGranted(def.capability)
         : pluginId === HOST_PLUGIN_ID;
       if (!granted) {
-        // 复用内核的拒绝语义：抛 CapabilityDeniedError 而非静默丢弃（docs/13 C7）。
+        // 复用内核的拒绝语义：抛 CapabilityDeniedError 而非静默丢弃（docs/06 C7）。
         throw new CapabilityDeniedError(def.capability, pluginId);
       }
     }

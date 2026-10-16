@@ -2,7 +2,7 @@
  * 内核版本与契约版本常量（单一事实源）。
  *
  * - `KERNEL_VERSION`：内核实现版本，遵循 semver。
- * - `CONTRACT_VERSION`：插件契约版本，仅比较 major（见 docs/02 §C.3）。
+ * - `CONTRACT_VERSION`：插件契约版本，仅比较 major（见 docs/01）。
  * - `KERNEL_ID`：内核实例默认 id。
  */
 

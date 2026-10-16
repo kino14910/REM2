@@ -5,7 +5,7 @@
  * `PluginFactoryHooks` 对象：钩子经 RPC 转发到 Worker 线程中的真实插件，
  * Worker 侧使用自己的简化版上下文（见 `worker-bootstrap.ts`）。
  *
- * 另承载 Worker 侧的扩展点贡献（docs/11 §6.2）：仅 log.sink / metrics.sink /
+ * 另承载 Worker 侧的扩展点贡献（docs/03 §6.2）：仅 log.sink / metrics.sink /
  * trace.exporter 三类，值必须可结构化克隆。贡献由 Worker 内 ctx 的
  * `extensions.contribute` 经 RPC 转发到内核的 `ExtensionPointRegistry`。
  */

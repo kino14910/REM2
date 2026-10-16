@@ -1,5 +1,5 @@
 /**
- * 依赖图构建（docs/02 §D.4）。
+ * 依赖图构建（见 docs/01）。
  *
  * 输入候选集，输出：
  * - 硬依赖边（参与拓扑约束）
@@ -63,7 +63,7 @@ function dedupe(arr: string[]): string[] {
 }
 
 /**
- * 构建「含软依赖」的合并图，仅用于循环检测（软边可被自动断裂，见 docs/02 §D.5）。
+ * 构建「含软依赖」的合并图，仅用于循环检测（软边可被自动断裂，见 docs/01）。
  */
 export function mergeEdges(graph: DependencyGraph): Map<string, string[]> {
   const merged = new Map<string, string[]>();

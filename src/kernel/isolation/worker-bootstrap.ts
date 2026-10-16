@@ -187,7 +187,7 @@ function buildContext(init) {
  * 装配插件：唯一形态 = export default definePlugin(manifest, setup)。
  *
  * 旧实现在这里猜 3 种形态（且与内核的 4 种不一致）——两份不一致的重复实现
- * 本身就是 bug 温床（docs/11 §3.1）。现在两边都是「断言 default 是函数然后调用」。
+ * 本身就是 bug 温床（docs/03 §3.1）。现在两边都是「断言 default 是函数然后调用」。
  */
 async function instantiate(mod, ctx) {
   const factory = mod && mod.default;

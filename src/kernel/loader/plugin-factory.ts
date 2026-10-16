@@ -3,7 +3,7 @@
  *
  * 唯一形态 = `export default definePlugin(manifest, setup)`，即 `mod.default` 是函数。
  * 旧的 4 种猜测（class / 实例 / 命名导出 / 双层 default）全部移除 ——
- * 每多一种形态，就多一处「dev 能跑 prod 炸」的结构性可能（docs/11 P4）。
+ * 每多一种形态，就多一处「dev 能跑 prod 炸」的结构性可能（docs/03 P4）。
  */
 
 import type { PluginFactory } from '../contracts/plugin.js';

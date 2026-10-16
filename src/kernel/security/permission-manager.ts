@@ -1,5 +1,5 @@
 /**
- * 权限管理器（docs/02 §J.2）。
+ * 权限管理器（见 docs/01）。
  *
  * 流程：manifest.requires → PermissionManager.check(manifest, trustLevel) → PermissionSet。
  * `check` 依据 TrustPolicy 决定授予/拒绝/告警；`grant/revoke` 支持运行期调整。

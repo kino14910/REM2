@@ -21,7 +21,7 @@ const VERSION_RE =
  * 解析版本字符串。非法时抛 `TypeError`。
  *
  * 注意：刻意**不**接受 `2.10` 这类两位段——必须是三段 `major.minor.patch`，
- * 以避免 REM 的 `2.10` vs `2.9` 判定错误（见 docs/02 §D.2 正确性对照）。
+ * 以避免 REM 的 `2.10` vs `2.9` 判定错误（docs/01 正确性对照）。
  */
 export function parseVersion(v: string): SemVer {
   if (typeof v !== 'string') {

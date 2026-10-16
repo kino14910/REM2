@@ -1,5 +1,5 @@
 /**
- * Worker 消息协议的**单一来源**（docs/13 §1.2 新增文件）。
+ * Worker 消息协议的**单一来源**（docs/06 §1.2 新增文件）。
  *
  * 之前协议常量内联在 `worker-host.ts`（判别式 `msg.t`）与 `worker-bootstrap.ts`
  * （Worker 内的 `switch (msg.t)`）两处，两份字符串靠人工保持同步。
@@ -66,7 +66,7 @@ export interface CtxCallMessage {
   args: unknown[];
 }
 
-/** Worker 侧允许贡献的扩展点（值必须可结构化克隆，docs/11 §6.2）。 */
+/** Worker 侧允许贡献的扩展点（值必须可结构化克隆，docs/03 §6.2）。 */
 export const WORKER_ALLOWED_EXTENSION_POINTS = [
   'log.sink',
   'metrics.sink',

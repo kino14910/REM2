@@ -4,7 +4,7 @@
  * 安全要点：插件**不得**取得父容器引用，因此「导出后反向挂载到 root 容器」
  * 这一动作由内核通过注入的 `hooks` 完成，插件 API 自身不持有也不读取父容器。
  *
- * 变更（docs/13 D5）：`capabilities` Map 与 `registerCapability` / `getCapability` /
+ * 变更（docs/06 D5）：`capabilities` Map 与 `registerCapability` / `getCapability` /
  * `listCapabilities` 全部删除 —— 能力贡献走 `ctx.extensions`（P3 唯一挂载面）。
  */
 

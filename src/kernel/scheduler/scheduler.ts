@@ -1,5 +1,5 @@
 /**
- * 调度器契约（docs/02 §B.6：Scheduler 是可被插件替换的内核设施）。
+ * 调度器契约（docs/01：Scheduler 是可被插件替换的内核设施）。
  *
  * 内核提供默认串行实现（SerialScheduler），进程隔离/并行调度可由 Scheduler 插件替换。
  */

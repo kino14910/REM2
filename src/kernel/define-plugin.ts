@@ -1,9 +1,9 @@
 /**
- * `definePlugin()`：唯一插件形态入口（docs/11 §3.1）。
+ * `definePlugin()`：唯一插件形态入口（docs/03 §3.1）。
  *
  * 裁决理由（简版）：工厂函数是唯一同时满足
  * ① tree-shaking 友好（setup 是闭包）、② loader 只需 10 行断言、③ 与 esbuild ESM 对齐
- * 的形态。class / 已实例化单例 / 命名导出都各有硬伤（详见 docs/11 §3.1）。
+ * 的形态。class / 已实例化单例 / 命名导出都各有硬伤（详见 docs/03 §3.1）。
  */
 
 import type { PluginManifestInit } from './contracts/manifest.js';

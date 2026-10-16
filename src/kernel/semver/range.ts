@@ -1,7 +1,7 @@
 /**
  * semver-like range 解析与判定（独立实现，动机 #3）。
  *
- * 支持语法（docs/02 §D.2）：
+ * 支持语法（见 docs/01）：
  * - 精确：`1.2.3`
  * - 比较：`>1.2.3` `>=1.2.3` `<2.0.0` `<=2.0.0`
  * - 脱字符：`^1.2.3` → `>=1.2.3 <2.0.0`；`^0.x.y` 特化为 `>=0.x.y <0.(x+1).0`
@@ -297,7 +297,7 @@ function testComparator(ver: SemVer, c: Comparator): boolean {
  * 判断版本是否满足 range。
  *
  * 预发布规则：若被测版本含预发布标识，则仅当某个比较子句同样显式含预发布
- * 且同 [major,minor,patch] 时才可能满足（简化实现，符合 docs/02 §D.2）。
+ * 且同 [major,minor,patch] 时才可能满足（简化实现，符合 见 docs/01）。
  */
 export function satisfies(version: string, range: string): boolean {
   if (typeof version !== 'string' || typeof range !== 'string') return false;

@@ -1,5 +1,5 @@
 /**
- * 事件总线契约（纯类型）。见 docs/02 §G.1。
+ * 事件总线契约（纯类型）。见 docs/01
  */
 
 /** 退订函数。 */
@@ -24,7 +24,7 @@ export type EventHandler<T = unknown> = (payload: T) => void | Promise<void>;
 /**
  * 事件总线契约。
  *
- * 语义（docs/02 §G.3）：异步顺序派发；优先级降序、同级按订阅时间升序；
+ * 语义（见 docs/01）：异步顺序派发；优先级降序、同级按订阅时间升序；
  * 订阅者抛错被隔离，不影响其他订阅者与发布者（动机 #6）。
  */
 export interface EventBus {

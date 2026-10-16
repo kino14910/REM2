@@ -2,7 +2,7 @@
  * 默认服务装配（`Kernel` 构造器里 14 个 `new` 的唯一去处）。
  *
  * 这是全仓库**仅有的两个装配点**之一（另一个是 `kernel.ts` 本身）——
- * docs/13 §3.3 明确把这两处列为 D7「不得 import 具体实现类」的例外。
+ * docs/06 §3.3 明确把这两处列为 D7「不得 import 具体实现类」的例外。
  *
  * 装配顺序有依赖，不可随意调换：
  * ① guard（无依赖）→ ② permissions（依赖 guard）→ ③ extensions（依赖 permissions，
@@ -48,7 +48,7 @@ import type { ResolveIssue } from './dependency/resolver.js';
 /**
  * `Kernel` 的全部依赖。
  *
- * `Kernel` 构造器只接收本对象，**不 new 任何实现类**（docs/13 C16）。
+ * `Kernel` 构造器只接收本对象，**不 new 任何实现类**（docs/06 C16）。
  * 这让测试可以注入替身，也让「装配」与「编排」两件事在类型上分离。
  */
 export interface KernelDeps extends CoreServices {

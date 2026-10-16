@@ -1,7 +1,7 @@
 /**
  * 服务令牌与 DI 描述契约（品牌化接口 + 纯函数工厂）。
  *
- * `ServiceToken` 从 class 改为**品牌化 interface**（docs/11 §3.3）：
+ * `ServiceToken` 从 class 改为**品牌化 interface**（docs/03 §3.3）：
  * class 形态会在 bundle 里引入原型链与构造器，且 `static create` 依赖模块级状态；
  * 品牌化 interface + `defineToken` 纯函数让任意副本的令牌行为完全一致。
  */

@@ -1,5 +1,5 @@
 /**
- * 超时工具（docs/02 §C.1：每个生命周期钩子带超时）。
+ * 超时工具（docs/01：每个生命周期钩子带超时）。
  */
 
 import { TimeoutError } from '../errors.js';
