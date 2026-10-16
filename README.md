@@ -141,7 +141,7 @@ export default class MyPlugin implements Plugin {
 
 7 阶段生命周期（全部可选）：`onDiscover` → `onLoad` → `onConfigure` → `onStart` → `onStop` → `onUnload` → `onDispose`
 
-完整 API 参考见 **[docs/04-plugin-api.md](docs/04-plugin-api.md)**。
+完整 API 参考见 **[docs/02-plugin-api.md](docs/02-plugin-api.md)**。
 
 ---
 
@@ -185,23 +185,31 @@ pnpm typecheck:shell # Electron 外壳类型检查
 | 层次 | 文件数 | 测试数 | 覆盖内容                                                                                                           |
 | ---- | ------ | ------ | ------------------------------------------------------------------------------------------------------------------ |
 | 单元 | 15     | 183    | semver / 拓扑排序 / 环检测 / DI 容器 / 容器隔离 / 事件总线 / 生命周期 / manifest 校验 / 权限 / 配置服务 / 健康服务 |
-| 集成 | 12     | 35     | 启动顺序 / 软依赖降级 / 硬依赖级联 / 故障隔离 / 配置插件 / 可观测性 / 热重载 / 卸载级联 / 安全边界 / Worker 隔离   |
-| 契约 | 2      | 4      | 插件导入边界 / 内核依赖白名单                                                                                      |
+| 集成 | 14     | 46     | 启动顺序 / 软依赖降级 / 硬依赖级联 / 故障隔离 / 配置插件 / 可观测性 / 热重载 / 卸载级联 / 安全边界 / Worker 隔离 / **命令链路** / **主题链路** |
+| 契约 | 4      | 30     | 插件导入边界 / 内核依赖白名单 / 扩展点清单一致性 / **构建产物为浏览器版 svelte** / **IPC 白名单与内核 Topics 一致** |
 
 ---
 
 ## 文档
 
-| 文档                                                                                                            | 内容                                                                                  |
-| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| [01-rem-architecture-analysis.md](docs/01-rem-architecture-analysis.md)                                         | REM 架构只读分析（对照基线，未修改 REM）                                              |
-| [02-architecture-design.md](docs/02-architecture-design.md)                                                     | 架构设计（内核边界 / 契约 / 依赖解析 / 隔离 / DI / 事件 / 配置 / 观测 / 安全 / 测试） |
-| [03-comparison-rem-vs-rem2.md](docs/03-comparison-rem-vs-rem2.md)                                               | 与 REM 的 12 维度对比                                                                 |
-| [04-plugin-api.md](docs/04-plugin-api.md)                                                                       | **插件开发 API 参考**                                                                 |
-| [05-build-plan-and-risks.md](docs/05-build-plan-and-risks.md)                                                   | 构建计划 / 里程碑 / 风险 / 扩展路线图                                                 |
-| [06-implementation-summary.md](docs/06-implementation-summary.md)                                               | 实现总结与验证结果                                                                    |
-| [07-architecture-review.md](docs/07-architecture-review.md)                                                     | 第二轮缺陷审查报告（13 项 Bug/安全/完整性缺口 + 修正记录）                            |
-| [class-diagram.mermaid](docs/class-diagram.mermaid) · [sequence-diagram.mermaid](docs/sequence-diagram.mermaid) | 类图与启动时序图                                                                      |
+文档按**阅读顺序**编号（`01` 最先读），完整索引见 **[docs/README.md](docs/README.md)**。
+
+| # | 文档 | 内容 |
+| --- | --- | --- |
+| — | **[docs/README.md](docs/README.md)** | **文档索引与阅读路径**（从这里开始） |
+| 01 | **[01-architecture-overview.md](docs/01-architecture-overview.md)** | **架构设计文档（权威）**：分层、职责、扩展点机制、4 条调用链路、数据流、部署拓扑、决策权衡、扩展流程 |
+| 02 | **[02-plugin-api.md](docs/02-plugin-api.md)** | **插件开发指南**：`definePlugin`、生命周期、12 个扩展点、命令链路 |
+| 03 | [03-target-architecture.md](docs/03-target-architecture.md) | 目标架构设计：生命周期两层模型、契约、扩展点全表 |
+| 04 | [04-svelte-integration.md](docs/04-svelte-integration.md) | Svelte 接入设计：进程/构建边界、IPC 契约、CSP/HMR |
+| 05 | [05-architecture-skeleton.md](docs/05-architecture-skeleton.md) | 骨架落地说明：实际目录树、扩展点注册表、构建产物流 |
+| 06 | [06-migration-and-skeletonspec.md](docs/06-migration-and-skeletonspec.md) | 迁移映射表与破坏式变更清单（迁移已完成） |
+| 07 | [07-form-evaluation.md](docs/07-form-evaluation.md) | 5 种「打通打包态」形式裁决 + 4 条实测证据 |
+| 08 | [08-current-state-diagnosis.md](docs/08-current-state-diagnosis.md) | 重构前诊断：24 条优化项 |
+| 09 | [09-prd-arch-refactor.md](docs/09-prd-arch-refactor.md) | 重构 PRD：需求锚点与验收判据 |
+
+架构图：[class-diagram-v2.mermaid](docs/class-diagram-v2.mermaid) · [sequence-diagram-v2.mermaid](docs/sequence-diagram-v2.mermaid)
+
+> **文档整理记录（2026-10-16）**：原 `01`–`07`（重构前文档）与两份旧 mermaid 图已删除 —— 它们描述的 `src/electron-shell/`、`src/runtime/`、`registerCapability`、`entry: src/index.ts`、`ServiceToken.create` 均已不存在，其中旧 `04-plugin-api.md` 会教插件作者使用三个已删除的 API。同日文档按阅读顺序从 `01` 重新编号（原 `08`–`15` → `01`–`09`），全部交叉引用已同步。
 
 ---
 
@@ -209,27 +217,43 @@ pnpm typecheck:shell # Electron 外壳类型检查
 
 ```
 src/
-├── kernel/               # 内核（零第三方依赖）
-│   ├── contracts/        # 16 个纯类型契约（无逻辑）
-│   ├── di/               # DI 容器
-│   ├── discovery/        # 发现 + manifest 校验
+├── kernel/               # 极小内核（零第三方运行时依赖，契约测试硬断言）
+│   ├── contracts/        # 纯类型契约 + defineToken / definePlugin 工厂
+│   ├── extensions/       # 12 个扩展点的声明与槽位（唯一挂载面）
+│   ├── di/               # DI 容器（父引用藏模块私有 WeakMap）
+│   ├── discovery/        # 候选发现 + manifest 校验
 │   ├── dependency/       # 依赖图 / 拓扑排序 / 环检测
-│   ├── lifecycle/        # 7 阶段 + 超时 + 回滚
-│   ├── loader/           # 动态 import + 缓存击穿 + Worker 分支
-│   ├── isolation/        # Worker 线程隔离（RPC 上下文 + 崩溃隔离）
-│   ├── security/         # 权限 + 能力代理
-│   ├── observability/    # 日志 / 指标 / 追踪 / 健康
+│   ├── lifecycle/        # 阶段定义 + 管理器 + 物理管线 + 回滚
+│   ├── loader/           # 动态 import（唯一 definePlugin 形态）
+│   ├── isolation/        # Worker 故障隔离（RPC 白名单）
+│   ├── security/         # 权限 + 能力守卫
+│   ├── observability/    # 日志 / 指标 / 追踪 / 健康 + 扩展点 sink 桥
 │   ├── config/           # 配置服务（provider 可插拔）
 │   ├── events/           # 事件总线（通配 + RPC）
-│   ├── scheduler/        # 调度器（可被插件覆盖）
+│   ├── scheduler/        # 调度器（可被插件替换）
 │   ├── semver/           # 独立实现的 semver
-│   └── bootstrap/        # 内核选项与核心服务注册
-├── runtime/              # CLI 引导 + IPC 桥
-├── cli/                  # 开发者 CLI（scaffold / validate / list）
-└── electron-shell/       # 可选 Electron 外壳（内核不依赖）
-plugins/                  # 6 个示例插件
+│   ├── bootstrap/        # 内核选项与核心服务注册
+│   ├── registry/         # 插件注册表
+│   ├── context/          # PluginContext 与 PluginApi 构造
+│   ├── util/
+│   ├── composition.ts    # KernelDeps 唯一装配点（Kernel 不 new 实现类）
+│   ├── state-machine.ts  # 7 阶段逻辑状态机
+│   ├── define-plugin.ts  # 唯一插件形态入口
+│   └── index.ts          # 唯一公共出口（rem2-kernel）
+├── host/                 # 宿主适配层（内核之外，与内核并列）
+│   ├── electron/         # main / preload / window / theme-registry
+│   ├── ipc/              # IpcBridge + 通道白名单 + 事件降维映射
+│   └── cli/              # run / args / paths / cli / scaffold / validate
+├── frontend/             # Svelte 5 渲染层（唯一跑 Svelte 的地方）
+│   ├── app/              # App / Shell / PanelHost / RouteHost + components
+│   └── lib/              # ipc-client / bridge-types / channels / stores / theme
+├── main.ts               # Electron Forge 主进程入口（转发壳）
+└── preload.ts            # Forge preload 入口（转发壳）
+plugins/                  # 6 个示例插件（源码 + plugin.json + 独立 tsconfig）
+plugins-dist/             # 插件构建产物（esbuild ESM bundle，进 extraResource）
+dist/                     # 内核产物（tsc，含 .d.ts）
 tests/                    # 单元 / 集成 / 契约测试
-docs/                     # 架构与 API 文档
+docs/                     # 架构与 API 文档（入口见 docs/README.md）
 examples/                 # 示例配置与说明
 ```
 
