@@ -2,7 +2,7 @@
  * 主题注册表实现（宿主侧）。
  *
  * 类型来源已从 `plugins/theme-dark/src/index.js` 改为 `kernel/contracts/ui.js`
- * （docs/13 C15）—— 消除了诊断报告里的 X1 越界：外壳不再 import 插件源码。
+ * （docs/06 C15）—— 消除了诊断报告里的 X1 越界：外壳不再 import 插件源码。
  * 两侧现在只依赖内核契约这一个方向。
  */
 

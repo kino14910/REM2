@@ -1,7 +1,7 @@
 /**
- * IPC 通道契约与白名单 —— renderer 能做的事的**唯一上限**（docs/12 §4）。
+ * IPC 通道契约与白名单 —— renderer 能做的事的**唯一上限**（docs/04 §4）。
  *
- * 变更（docs/13 C10 / C11）：
+ * 变更（docs/06 C10 / C11）：
  * - 3 个通道（request / response / broadcast）→ **2 个**（`rem2:invoke` / `rem2:event`）。
  *   响应与事件拆开，前端的 `subscribe` 只需监听一个 channel。
  * - 白名单从前缀匹配（`['command:', 'health:']`）改为 **`Set<string>` 精确匹配**。

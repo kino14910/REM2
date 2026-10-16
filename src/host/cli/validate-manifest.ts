@@ -1,5 +1,5 @@
 /**
- * Manifest 校验 CLI（docs/02 §L.6 T05）。
+ * Manifest 校验 CLI（docs/01 T05）。
  *
  * 用法：`pnpm cli validate <plugin-dir | plugin.json>`。
  */

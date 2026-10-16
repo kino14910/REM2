@@ -1,5 +1,5 @@
 /**
- * Electron preload 脚本 —— **唯一的契约边界**（docs/12 B2）。
+ * Electron preload 脚本 —— **唯一的契约边界**（docs/04 B2）。
  *
  * 暴露 `window.rem2 = { invoke, onEvent }`（2 个方法，替代旧的
  * `execute` + `onBroadcast`），方法名与事件名由 `host/ipc/channels.ts` 的白名单约束。

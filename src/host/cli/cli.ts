@@ -1,5 +1,5 @@
 /**
- * 开发者 CLI 入口（docs/02 §L.6 T05）。
+ * 开发者 CLI 入口（docs/01 T05）。
  *
  * 用法：`pnpm cli <command> [args]`
  *   scaffold <plugin-id> [--dir <dir>] [--name "<name>"]  生成插件骨架
