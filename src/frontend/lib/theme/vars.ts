@@ -2,7 +2,7 @@
  * 主题 token → CSS 变量映射（纯函数，便于单测）。
  *
  * 注入方式：`document.documentElement.style.setProperty(k, v)`。
- * 这是 **CSSOM 写入**，不受 CSP `style-src` 约束（docs/12 §6.4）——
+ * 这是 **CSSOM 写入**，不受 CSP `style-src` 约束（docs/04 §6.4）——
  * 所以主题切换不需要放宽 CSP，也不需要 `unsafe-eval`。
  */
 

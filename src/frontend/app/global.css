@@ -2,7 +2,7 @@
  * 全局样式与 CSS 变量 fallback。
  *
  * 每个变量都在这里有编译期常量兜底：主题注入前页面也可读
- * （docs/12 §6.3）。主题切换只做 CSSOM 写入，不受 CSP `style-src` 约束。
+ * （docs/04 §6.3）。主题切换只做 CSSOM 写入，不受 CSP `style-src` 约束。
  */
 
 :root {

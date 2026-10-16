@@ -1,5 +1,5 @@
 /**
- * 前端 DTO：与内核契约的**投影**（docs/12 §5.3）。
+ * 前端 DTO：与内核契约的**投影**（docs/04 §5.3）。
  *
  * 为什么要有 DTO 而不是直接用内核类型：内核的 `PluginInfo` / `LoadedPlugin` /
  * `HealthReport` 含 container、permissions、绝对路径等内部字段。DTO 是显式的

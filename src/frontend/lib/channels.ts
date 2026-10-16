@@ -3,7 +3,7 @@
  *
  * ★ 必须与 `src/host/ipc/channels.ts` 的白名单**逐条对应**。
  * 本文件刻意**不 import** 宿主那份：`src/frontend/**` 不得依赖 `src/host/**`
- * （契约测试 R8 / docs/11 §9.2 R6），所以这里是「按契约手抄的镜像」，
+ * （契约测试 R8 / docs/03 §9.2 R6），所以这里是「按契约手抄的镜像」，
  * 由 `tests/contract/plugin-contract.test.ts` 断言两侧长度与内容一致。
  */
 

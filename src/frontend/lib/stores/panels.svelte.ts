@@ -2,7 +2,7 @@
  * 面板列表与激活项（Svelte 5 runes）。
  *
  * 文件名**必须**以 `.svelte.ts` 结尾：`$state` / `$derived` 是编译期识别的，
- * 放在普通 `.ts` 里不生效且不报错（docs/12 §10 R6）。
+ * 放在普通 `.ts` 里不生效且不报错（docs/04 §10 R6）。
  */
 
 import { ipc } from '../ipc-client';
