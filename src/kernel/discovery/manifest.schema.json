@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://rem2.dev/schemas/plugin-manifest.schema.json",
+  "title": "rem2 Plugin Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name", "version", "entry", "compatibility"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+([._-][a-z0-9]+)*$",
+      "minLength": 3,
+      "maxLength": 128
+    },
+    "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "entry": { "type": "string", "minLength": 1 },
+    "dependencies": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
+    "optionalDependencies": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*(\\.[a-z0-9-]+)*$"
+      },
+      "uniqueItems": true
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minKernel", "contractVersion"],
+      "properties": {
+        "minKernel": { "type": "string" },
+        "maxKernel": { "type": "string" },
+        "contractVersion": { "type": "string" }
+      }
+    },
+    "author": { "type": "string" },
+    "description": { "type": "string", "maxLength": 512 },
+    "icon": { "type": "string" },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "homepage": { "type": "string" },
+    "configSchema": { "type": "object" },
+    "isolation": { "type": "string", "enum": ["in-process", "worker"] }
+  }
+}
