@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "rem2 —— 最小内核 + 一切皆插件（Kernel + Everything-as-Plugin）的独立实现",
+  "description": "rem2 — an independent implementation of a minimal kernel + everything-as-plugin (Kernel + Everything-as-Plugin)",
   "keywords": [
     "plugin",
     "kernel",
@@ -23,24 +23,37 @@
     "pnpm": ">=9"
   },
   "exports": {
-    ".": "./src/kernel/index.ts",
+    ".": {
+      "types": "./dist/kernel/index.d.ts",
+      "default": "./dist/kernel/index.js"
+    },
+    "./src": "./src/kernel/index.ts",
     "./package.json": "./package.json"
   },
   "imports": {
     "rem2-kernel": "./src/kernel/index.ts"
   },
   "scripts": {
-    "dev": "tsx src/runtime/bootstrap/run.ts",
+    "dev": "tsx src/host/cli/run.ts",
+    "build": "pnpm build:kernel && pnpm build:plugins",
+    "build:kernel": "tsc -p tsconfig.build.json",
+    "build:plugins": "node scripts/build-plugins.mjs",
+    "build:renderer": "vite build --config vite.renderer.config.mts",
+    "predev": "pnpm build",
+    "premake": "pnpm build",
     "test": "vitest",
     "test:run": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "typecheck": "tsc --noEmit",
-    "typecheck:shell": "tsc -p tsconfig.shell.json --noEmit",
-    "typecheck:all": "pnpm run typecheck && pnpm run typecheck:shell",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck:electron": "tsc --noEmit -p tsconfig.electron.json",
+    "typecheck:frontend": "tsc --noEmit -p tsconfig.frontend.json",
+    "typecheck:shell": "tsc --noEmit -p tsconfig.shell.json",
+    "typecheck:all": "pnpm typecheck && pnpm typecheck:electron && pnpm typecheck:frontend",
     "lint": "oxlint && oxfmt --check",
     "lint:fix": "oxlint --fix && oxfmt --write",
-    "cli": "tsx src/cli/cli.ts",
+    "verify:render": "electron scripts/verify-render.cjs",
+    "cli": "tsx src/host/cli/cli.ts",
     "start": "electron-forge start",
     "package": "electron-forge package",
     "make": "electron-forge make"
@@ -56,12 +69,15 @@
     "@electron-forge/plugin-fuses": "^8.0.1",
     "@electron-forge/plugin-vite": "^8.0.1",
     "@electron/fuses": "^2.1.3",
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@types/electron-squirrel-startup": "^1.0.2",
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^3.0.0",
     "electron": "44.5.1",
+    "esbuild": "^0.28.2",
     "oxfmt": "^0.41.0",
     "oxlint": "^1.86.0",
+    "svelte": "^5.57.1",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "vite": "^8.3.2",

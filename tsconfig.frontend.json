@@ -1,0 +1,19 @@
+{
+  "//": "Svelte frontend: DOM only. Node types are deliberately withheld to keep the frontend away from Node APIs at the type level.",
+  "//why": "The renderer has no Node capability anyway under contextIsolation + sandbox; encoding that constraint in types is more reliable than discipline. moduleResolution=Bundler is also required for the svelte plugin to resolve extensionless ./X.svelte imports (NodeNext does not accept them).",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": [],
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true
+  },
+  "include": [
+    "src/frontend/**/*.ts",
+    "src/shared/**/*.ts",
+    "src/declarations.d.ts"
+  ]
+}

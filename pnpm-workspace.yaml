@@ -1,3 +1,13 @@
+# Plugins join the workspace: each plugin is an independent package
+# (@rem2/plugin-<id>), so they each have their own package.json / tsconfig.json /
+# build script — only then can the plugin shape stay uniform.
+#
+# Note: plugin node_modules are hoisted; esbuild comes from the root
+# devDependencies and is not redeclared in each plugin package.json —
+# the contract test forbids plugins from importing third-party packages.
+packages:
+  - 'plugins/*'
+
 allowBuilds:
   electron-winstaller: true
   esbuild: true

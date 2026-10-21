@@ -1,12 +1,49 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Hello World!</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Content Security Policy (CSP).
+
+      Why it is needed: when a renderer lacks a CSP (or enables unsafe-eval), Electron
+      prints an "Insecure Content-Security-Policy" warning — that is not just noise,
+      it is a real XSS exposure.
+
+      Svelte 5 needs no 'unsafe-eval': $state / $derived compile to plain JS.
+      That is exactly why CSP need not be relaxed for Svelte.
+
+      Value notes:
+      - script-src 'self': only same-origin scripts (Vite dev's /@vite/client is same-origin too).
+        Deliberately WITHOUT 'unsafe-eval' — the key to silencing the Electron warning.
+      - style-src 'unsafe-inline': required by Svelte's compiled <style> output and inline style attributes.
+        Note: theme switching writes via CSSOM (setProperty), which style-src does not constrain,
+        but a component's scoped <style> is compiled into a CSS file loaded via <link> ('self' suffices).
+      - connect-src explicitly allows ws://localhost: Vite HMR runs over WebSocket,
+        and CSP's 'self' does not cover the ws:// scheme, so it must be listed separately.
+      - object-src / base-uri tightened to reduce injection surface.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self';
+               script-src 'self';
+               style-src 'self' 'unsafe-inline';
+               img-src 'self' data:;
+               font-src 'self';
+               connect-src 'self' ws://localhost:* ws://127.0.0.1:* http://localhost:* http://127.0.0.1:*;
+               object-src 'none';
+               base-uri 'none';"
+    />
+    <title>rem2 · Kernel Console</title>
   </head>
+  <!--
+    No inline styles on <body>: an inline `background: #0f1115` used to sit here and,
+    being inline, beat global.css's `background: var(--rem2-color-background)` — the
+    page stayed dark for every theme. Layout and colors come from global.css, which is
+    driven by theme tokens.
+  -->
   <body>
-    <h1>💖 Hello World!</h1>
-    <p>Welcome to your Electron application.</p>
-    <script type="module" src="/src/renderer.ts"></script>
+    <div id="app"></div>
+    <script type="module" src="/src/frontend/entry-client.ts"></script>
   </body>
 </html>

@@ -1,0 +1,28 @@
+{
+  "//": "The only compile config for kernel artifacts.",
+  "//why": "The kernel is the zero-third-party-dependency layer and the only part distributed with .d.ts. host/frontend do not go to dist — they are host artifacts, owned by vite/forge respectively.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "src",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "module": "NodeNext",
+    "types": ["node"]
+  },
+  "include": ["src/kernel/**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "coverage",
+    ".vite",
+    "plugins-dist",
+    "src/host/**",
+    "src/frontend/**",
+    "plugins/**",
+    "tests/**",
+    "*.mts"
+  ]
+}

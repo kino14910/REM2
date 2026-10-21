@@ -1,0 +1,5 @@
+{
+  "//": "Superseded by tsconfig.electron.json; kept only to stay compatible with the legacy script name `typecheck:shell`.",
+  "//why": "The acceptance script runs pnpm typecheck:shell; renaming the script would break that. A pure forwarding shell is safer than changing the acceptance command.",
+  "extends": "./tsconfig.electron.json"
+}

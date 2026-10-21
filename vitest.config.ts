@@ -1,24 +1,30 @@
-import { fileURLToPath } from 'node:url';
-import { defineConfig } from 'vitest/config';
+import { defineConfig } from 'vitest/config'
+import { KERNEL_ALIAS } from './vite.shared.mjs'
 
 /**
- * Vitest 配置。
+ * Vitest configuration.
  *
- * - 运行环境：node（内核是纯 Node 库，绝不依赖 Electron / DOM）。
- * - pool：threads（隔离好、启动快）。
- * - 别名 rem2-kernel → src/kernel/index.ts，使插件与测试以「公共出口」方式引用内核，
- *   从而在契约测试中强制「插件不得 import 内核内部实现」这一架构约束（见 docs/02 §K.3）。
+ * - environment: node (the kernel is a pure Node library; it never depends on
+ *   Electron or the DOM).
+ * - pool: threads (good isolation, fast startup).
+ * - alias rem2-kernel -> src/kernel/index.ts: shares one source with the vite
+ *   configs, eliminating drift from declaring the same alias in several places.
  *
- * ## 并发与超时（重要）
+ * ## Concurrency and timeouts (important)
  *
- * 集成测试每个用例都会：物化临时插件目录 → 启动真实内核（含定时器与超时保护）→
- * 逆序关闭 → 递归删除临时目录。这是 **CPU + Windows 文件 IO 双高负载** 的用例。
- * 若按默认并发（= CPU 核数）全部并行，进程间会互相饿死，表现为
- * `Hook timed out in 15000ms`（afterEach 的临时目录清理超时），**并非真实缺陷**。
- * 实测：默认并发下 transform 耗时 86s 且出现 5 个文件超时；
- * 限制到 maxWorkers=2 后 transform 降至 1.9s、26 文件 203 测试全绿。
+ * Every integration case materializes a temp plugin directory, boots a real
+ * kernel (with timers and timeout guards), shuts down in reverse order, then
+ * recursively deletes the temp directory. These cases are doubly heavy on CPU
+ * and Windows file IO. Running them all in parallel under the default
+ * concurrency (= CPU cores) starves them against each other, surfacing as
+ * `Hook timed out in 15000ms` (the afterEach temp-dir cleanup timing out) —
+ * NOT a real defect.
+ * Measured: default concurrency took 86s of transform time with 5 files
+ * timing out; capped at maxWorkers=2 it dropped to 1.9s with all 26 files /
+ * 203 tests green.
  *
- * 因此这里显式限制 worker 数并放宽超时，保证结果**确定性**（不随机器核数漂移）。
+ * So the worker count is capped explicitly and timeouts loosened, keeping
+ * results deterministic (independent of the machine's core count).
  */
 export default defineConfig({
   test: {
@@ -26,16 +32,20 @@ export default defineConfig({
     pool: 'threads',
     include: ['tests/**/*.test.ts'],
     globals: false,
-    // 限制并发：避免重型集成测试互相饿死（见上）。
     maxWorkers: 4,
     minWorkers: 1,
-    // 单用例超时：内核启动/重载 + 临时目录 IO，在并发下需要更宽裕的窗口。
     testTimeout: 30_000,
     hookTimeout: 30_000,
     coverage: {
       provider: 'v8',
       include: ['src/kernel/**/*.ts'],
-      exclude: ['src/kernel/index.ts', 'src/kernel/contracts/**'],
+      // index.ts is pure re-export, contracts is pure types, definitions is a
+      // pure declaration table — counting them in coverage is meaningless.
+      exclude: [
+        'src/kernel/index.ts',
+        'src/kernel/contracts/**',
+        'src/kernel/extensions/definitions.ts',
+      ],
       reporter: ['text', 'lcov'],
       thresholds: {
         lines: 85,
@@ -45,9 +55,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      'rem2-kernel': fileURLToPath(
-        new URL('./src/kernel/index.ts', import.meta.url),
-      ),
+      'rem2-kernel': KERNEL_ALIAS,
     },
   },
-});
+})

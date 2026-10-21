@@ -1,5 +1,7 @@
 {
   "singleQuote": true,
   "printWidth": 80,
-  "sortPackageJson": false
+  "sortPackageJson": false,
+  "semi": false,
+  "arrowParens": "avoid"
 }

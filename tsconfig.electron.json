@@ -1,0 +1,17 @@
+{
+  "//": "Electron main process + preload: needs DOM (BrowserWindow) and node (fs/path).",
+  "//why": "Evolved from tsconfig.shell.json: the renderer is covered by the Svelte frontend and the frontend config, leaving the main-process side with only the DOM + node combination.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "noEmit": true
+  },
+  "include": [
+    "src/main.ts",
+    "src/preload.ts",
+    "src/shared/**/*.ts",
+    "src/host/electron/**/*.ts",
+    "src/declarations.d.ts"
+  ]
+}
