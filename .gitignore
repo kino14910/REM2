@@ -31,6 +31,9 @@ build/
 out/
 .vite/
 
+# 插件构建产物聚合目录（scripts/build-plugins.mjs 生成，forge extraResource 的输入）
+plugins-dist/
+
 # Dependency directories
 node_modules/
 jspm_packages/
