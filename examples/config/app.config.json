@@ -1,0 +1,20 @@
+{
+  "app": {
+    "name": "rem2",
+    "greeting": "Hello from JSON config",
+    "environment": "development"
+  },
+  "health": {
+    "http": {
+      "port": 0
+    }
+  },
+  "config": {
+    "json": {
+      "path": "config/app.config.json"
+    }
+  },
+  "logging": {
+    "level": "info"
+  }
+}

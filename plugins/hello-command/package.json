@@ -1,0 +1,15 @@
+{
+  "name": "@rem2/plugin-hello-command",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Registers the hello command (business features are plugins; soft-depends on config-json)",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --format=esm --platform=node --target=node20 --external:node:* --outfile=dist/index.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

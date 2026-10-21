@@ -1,0 +1,20 @@
+{
+  "id": "com.rem2.logger-console",
+  "name": "Console Logger",
+  "version": "1.0.0",
+  "entry": "dist/index.js",
+  "contributes": [
+    {
+      "point": "log.sink",
+      "id": "console"
+    }
+  ],
+  "requires": ["log.sink"],
+  "compatibility": {
+    "minKernel": "^1.0.0",
+    "contractVersion": "1"
+  },
+  "author": "rem2-team",
+  "description": "Streams kernel logs to the console (proves observability is a plugin)",
+  "tags": ["observability", "logging"]
+}

@@ -1,0 +1,23 @@
+{
+  "id": "com.rem2.health-http",
+  "name": "Health HTTP Endpoint",
+  "version": "1.0.0",
+  "entry": "dist/index.js",
+  "dependencies": {
+    "com.rem2.logger-console": "^1.0.0"
+  },
+  "contributes": [
+    {
+      "point": "health.check",
+      "id": "http"
+    }
+  ],
+  "requires": ["health.expose", "net.listen"],
+  "compatibility": {
+    "minKernel": "^1.0.0",
+    "contractVersion": "1"
+  },
+  "author": "rem2-team",
+  "description": "Exposes HealthService as a /health endpoint (hard-depends on logger-console)",
+  "tags": ["observability", "ops"]
+}

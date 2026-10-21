@@ -1,0 +1,21 @@
+{
+  "id": "com.rem2.notify-worker",
+  "name": "Notify Worker",
+  "version": "1.0.0",
+  "entry": "dist/index.js",
+  "isolation": "worker",
+  "contributes": [
+    {
+      "point": "log.sink",
+      "id": "notify"
+    }
+  ],
+  "requires": [],
+  "compatibility": {
+    "minKernel": "^1.0.0",
+    "contractVersion": "1"
+  },
+  "author": "rem2-team",
+  "description": "Runs in a dedicated worker thread: subscribes to command results and emits notifications (proves process-level isolation)",
+  "tags": ["notification", "demo", "worker"]
+}
