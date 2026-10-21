@@ -1,0 +1,517 @@
+%% docs/class-diagram-v2.mermaid
+%% rem2 类图（配合 docs/01-architecture-overview.md）
+%% 阅读要点：
+%%   1. contracts 是插件唯一可引用的语言：纯类型 + defineToken / definePlugin
+%%   2. ExtensionPointRegistry 是唯一能力挂载面，卸载时按 pluginId 强制回收
+%%   3. PluginApiImpl 只有 export / unexport / useCapability
+%%   4. Kernel 只持有 KernelDeps，不 new 任何实现类
+%%   5. ui.* 契约在内核 contracts/ui.ts，宿主与前端只消费其 DTO 投影
+
+classDiagram
+    direction TB
+
+    %% ══════════ 契约层（插件唯一可引用的语言）══════════
+    namespace contracts {
+        class PluginManifest {
+            <<interface>>
+            +string id
+            +string name
+            +string version
+            +string entry
+            +Record~string,string~ dependencies
+            +Record~string,string~ optionalDependencies
+            +ContributionDecl[] contributes
+            +string[] requires
+            +Isolation isolation
+            +Compatibility compatibility
+        }
+        class PluginFactory {
+            <<type>>
+            +(ctx) PluginFactoryHooks
+        }
+        class PluginFactoryHooks {
+            <<type>>
+            +onDiscover(ctx)?
+            +onLoad(ctx)?
+            +onConfigure(ctx)?
+            +onStart(ctx)?
+            +onStop(ctx, reason)?
+            +onUnload(ctx)?
+            +onDispose(ctx)?
+            +onHealthCheck()?
+        }
+        class PluginContext {
+            <<interface>>
+            +string pluginId
+            +Readonly~PluginManifest~ manifest
+            +LifecyclePhase phase
+            +Container container
+            +ServicesView services
+            +EventBus events
+            +ConfigAccess config
+            +Logger log
+            +MetricsApi metrics
+            +PermissionSet permissions
+            +ExtensionContributorView extensions
+            +PluginsRegistryView plugins
+            +resolvePath(rel) string
+        }
+        class PluginApi {
+            <<interface>>
+            +export(token, opts?) void
+            +unexport(token) void
+            +useCapability(token) T
+        }
+        class ServicesView {
+            <<interface>>
+            +register(token, factory, lifetime?) this
+            +registerInstance(token, instance) this
+            +resolve(token) T
+            +tryResolve(token) T?
+            +has(token) boolean
+            +list() string[]
+        }
+        class ServiceToken~T~ {
+            <<interface>>
+            +string id
+            +string describe
+            +string capability
+        }
+        class LifecyclePhase {
+            <<type>>
+            Discover | Load | Initialize | Configure | Start | Stop | Unload | Dispose
+        }
+        class PluginStateT {
+            <<type>>
+            Registered | Resolved | Dropped | Loaded | Initialized
+            Configured | Active | Degraded | Failed | Stopped | Unloaded | Disposed
+        }
+        class StopReason {
+            <<type>>
+            user-disable | reload | dependency-failed | health-degraded | shutdown | start-failed | timeout
+        }
+    }
+
+    %% ══════════ 扩展点（P3 唯一挂载面）══════════
+    namespace extensions {
+        class ExtensionPointRegistry {
+            -Map~ExtensionPointId, ExtensionPointDef~ defs
+            -Map~ExtensionPointId, Contribution~ singleSlots
+            -Map~ExtensionPointId, Contribution[]~ multiSlots
+            -Map~string, Set~ExtensionPointId~~ byPlugin
+            +define(def) void
+            +registerHostDefault(point, contribution) void
+            +contribute(pluginId, point, contribution) void
+            +resolve(point) T | readonly T[]
+            +list() ExtensionPointListing[]
+            +retractAll(pluginId) void
+        }
+        class ExtensionPointDef~T~ {
+            <<interface>>
+            +ExtensionPointId id
+            +string describe
+            +boolean multi
+            +boolean hasHostDefault
+            +ConflictPolicy conflict
+            +string capability
+        }
+        class ExtensionContribution~T~ {
+            <<interface>>
+            +string contributionId
+            +T impl
+        }
+        class ExtensionContributorView {
+            <<interface>>
+            +contribute(point, contribution) void
+            +retract(point, contributionId) void
+        }
+        class Definitions {
+            <<static>>
+            +EXTENSION_POINTS ExtensionPointDef[]
+            +UI_PANEL_POINT ExtensionPointDef~PanelContribution~
+            +UI_ROUTE_POINT ExtensionPointDef~RouteContribution~
+            +UI_THEME_POINT ExtensionPointDef~ThemeDefinition~
+        }
+    }
+
+    %% ══════════ UI 契约（新：Svelte 前端消费）══════════
+    namespace ui {
+        class PanelContribution {
+            <<interface>>
+            +string panelId
+            +string title
+            +string icon
+            +PanelRegion region
+            +number order
+            +string command
+        }
+        class RouteContribution {
+            <<interface>>
+            +string path
+            +string title
+            +string panelId
+            +string commandPrefix
+        }
+        class ThemeDefinition {
+            <<interface>>
+            +string id
+            +Record~string,string~ colors
+            +Record~string,string~ fonts
+            +Record~string,string~ spacing
+        }
+        class ThemeRegistry {
+            <<interface>>
+            +register(theme) void
+            +unregister(themeId) void
+            +list() ThemeDefinition[]
+            +get(themeId) ThemeDefinition?
+            +activate(themeId) void
+        }
+        class PanelHost {
+            <<svelte>>
+            +mount(contributions)
+        }
+        class RouteHost {
+            <<svelte>>
+            +mount(contributions)
+        }
+    }
+
+    %% ══════════ 内核实现层══════════
+    namespace kernel {
+        class Kernel {
+            -id
+            -options
+            -KernelDeps deps
+            -Container rootContainer
+            -PluginsRegistry registry
+            -LifecyclePipeline pipeline
+            -ExtensionPointRegistry extensions
+            +start() KernelStartResult
+            +reload(pluginId) void
+            +unloadPlugin(pluginId, reason) void
+            +disablePlugin(pluginId) void
+            +shutdown() void
+            +health() HealthReport
+            -startOnePlugin(candidate, opts) Outcome
+            -teardownPluginArtifacts(loaded) void
+        }
+        class KernelDeps {
+            <<interface>>
+            +ConfigService config
+            +EventBus events
+            +LogService log
+            +MetricsService metrics
+            +TracingService tracer
+            +HealthService health
+            +PermissionManager permissions
+            +CapabilityGuard guard
+            +PluginsRegistry registry
+            +Scheduler scheduler
+            +DependencyResolver resolver
+            +PluginDiscovery discovery
+            +PluginLoader loader
+        }
+        class Composition {
+            <<static>>
+            +createDeps(options) KernelDeps
+            +registerHostExtensions(registry) void
+        }
+        class LifecyclePipeline {
+            -LifecycleManager manager
+            -ExtensionPointRegistry extensions
+            +runStart(instance, ctx, missingOptional) LifecycleOutcome
+            +runStop(instance, ctx, reason) StopOutcome
+        }
+        class LifecycleManager {
+            -startTimeoutMs
+            -stopTimeoutMs
+            +runPhase(plugin, ctx, def) PhaseResult
+        }
+        class PluginDiscovery {
+            -lastCandidates
+            +discoverDetailed(opts) DiscoverResult
+            +scanRoot(root, source, legacyFallback, issues) Candidate[]
+        }
+        class DependencyResolver {
+            +resolve(candidates, opts) ResolutionPlan
+        }
+        class PluginLoader {
+            -LoaderOptions opts
+            +load(candidate, options) LoadedPlugin
+        }
+        class ModuleResolver {
+            <<static>>
+            +resolveEntry(rootDir, entry, pluginId) ResolvedEntry
+            +COMPLETION_SUFFIXES[]
+        }
+        class PluginFactoryResolver {
+            <<static>>
+            +instantiate(mod, pluginId) PluginFactoryHooks
+        }
+        class Container {
+            -string scope
+            -Map~string, Registration~ registrations
+            -Set~string~ exported
+            -Map~string, Container~ mountedChildren
+            -WeakMap parents
+            +register(token, factory, lifetime) this
+            +registerInstance(token, instance) this
+            +resolve(token) T
+            +tryResolve(token) T?
+            +markExported(token) void
+            +mountChildContainer(child) void
+            +unmountChildContainer(child) void
+            +dispose() void
+        }
+        class WorkerPluginHost {
+            -Worker worker
+            +callHook(hook, args, timeoutMs) unknown
+            +terminate() void
+            -dispatchCtx(domain, rest, args) unknown
+        }
+        class WorkerPluginProxy {
+            <<implements Plugin>>
+            +callHook(hook, args) unknown
+        }
+    }
+
+    %% ══════════ 安全 / 可观测 / 配置 / 事件══════════
+    namespace services {
+        class PermissionManager {
+            -Map~string, MutablePermissionSet~ grants
+            +check(manifest, trustLevel) PermissionDecision
+            +grant(pluginId, capability) void
+            +revoke(pluginId, capability) void
+            +unregister(pluginId) void
+        }
+        class CapabilityGuard {
+            -Map~string, string~ serviceCapabilities
+            -Map~string, PermissionSet~ permissionLookup
+            +declareServiceCapability(serviceId, capability) void
+            +assert(serviceId, callerPluginId) void
+            +assertCapability(capability, callerPluginId) void
+        }
+        class TrustPolicy {
+            +defaults
+            +warnOn
+        }
+        class LogService {
+            -Map~string, LogSink~ sinks
+            +addSink(sink) void
+            +child(scope, pluginId) Logger
+            +dispatch(entry) void
+            +flush() Promise
+        }
+        class MetricsService {
+            -Map~string, MetricSink~ sinks
+            +addSink(sink) void
+            +dispatch(record) void
+        }
+        class TracingService {
+            -Span[] buffer
+            +addExporter(exporter) void
+            +startSpan(name, attrs) Span
+            +flush() Promise
+        }
+        class HealthService {
+            -Map~string, HealthCheckFn~ checks
+            +registerCheck(pluginId, fn) void
+            +unregisterCheck(pluginId) void
+            +report() HealthReport
+        }
+        class ConfigService {
+            -ConfigProvider[] providers
+            -Record snapshot
+            -boolean dirty
+            +registerProvider(provider) void
+            +refresh() Promise
+            +get(key, defaultValue) T
+            +set(key, value) Promise
+            +onDidChange(cb) Unsubscribe
+        }
+        class EventBusImpl {
+            -Map~string, Subscription[]~ buckets
+            -Subscription[] ordered
+            -Responder[] responders
+            +emit(event, payload) Promise
+            +on(pattern, handler, opts) Unsubscribe
+            +request(topic, payload, opts) Promise
+            +respond(topic, handler) Unsubscribe
+        }
+        class PluginsRegistry {
+            -Map~string, LoadedPlugin~ loaded
+            +add(loaded) void
+            +setState(pluginId, state) void
+            +getLoaded(pluginId) LoadedPlugin?
+        }
+    }
+
+    %% ══════════ 宿主层══════════
+    namespace host {
+        class ElectronMain {
+            +startKernel() Promise
+            +createWindow() void
+        }
+        class Preload {
+            +exposeInMainWorld(window, api)
+        }
+        class WindowRem2Api {
+            <<interface>>
+            +request(method, args) Promise
+            +invoke(method, args) Promise
+            +subscribe(eventName, handler) Unsubscribe
+        }
+        class IpcBridge {
+            -EventBus bus
+            -Set~string~ allowedMethods
+            +bind(transport) void
+            +unbind() void
+            -handleRequest(payload) Promise
+        }
+        class IpcChannels {
+            <<static>>
+            +INVOKE 'rem2:invoke'
+            +EVENT 'rem2:event'
+            +ALLOWED Set~string~
+        }
+        class ThemeRegistryImpl {
+            -Map~string, ThemeDefinition~ themes
+            +register(theme) void
+            +activate(themeId) void
+        }
+        class CliRun {
+            +run(argv) Promise
+        }
+        class ScaffoldPlugin {
+            +scaffoldPlugin(opts) ScaffoldResult
+        }
+    }
+
+    %% ══════════ 前端层══════════
+    namespace frontend {
+        class EntryClient {
+            +mount(target) void
+        }
+        class App {
+            <<svelte>>
+        }
+        class Shell {
+            <<svelte>>
+        }
+        class IpcClient {
+            +request(method, args) Promise
+            +subscribe(eventName, handler) Unsubscribe
+        }
+        class PanelStore {
+            <<svelte5 runes>>
+            +panels PanelContribution[]
+            +theme ThemeDefinition?
+            +health HealthReport?
+        }
+    }
+
+    %% ══════════ 关系：内核核心 ══════════
+    Kernel *-- KernelDeps : 持有（不再 new 具体实现）
+    KernelDeps *-- Container : root
+    KernelDeps *-- LifecyclePipeline
+    KernelDeps *-- ExtensionPointRegistry
+    KernelDeps *-- PluginDiscovery
+    KernelDeps *-- DependencyResolver
+    KernelDeps *-- PluginLoader
+    KernelDeps *-- ConfigService
+    KernelDeps *-- EventBusImpl
+    KernelDeps *-- LogService
+    KernelDeps *-- MetricsService
+    KernelDeps *-- TracingService
+    KernelDeps *-- HealthService
+    KernelDeps *-- PermissionManager
+    KernelDeps *-- CapabilityGuard
+    KernelDeps *-- PluginsRegistry
+
+    Composition ..> KernelDeps : 工厂创建
+    Composition ..> ExtensionPointRegistry : 注册宿主默认实现
+
+    Kernel --> PluginDiscovery : start() 步骤1 扫描
+    Kernel --> DependencyResolver : start() 步骤2 解析
+    Kernel --> PluginLoader : 步骤3 逐个装载
+    Kernel --> LifecyclePipeline : 驱动阶段
+    Kernel --> PluginsRegistry : 状态与健康
+
+    LifecyclePipeline *-- LifecycleManager
+    LifecyclePipeline --> ExtensionPointRegistry : 卸载时 retractAll
+
+    %% ══════════ 关系：装载链 ══════════
+    PluginLoader --> ModuleResolver : 解析 entry（只补全 .js/.mjs）
+    PluginLoader --> PluginFactoryResolver : 实例化（唯一形态：工厂函数）
+    PluginLoader --> Container : createChild
+    PluginLoader --> PluginContext : createContext
+    PluginLoader --> WorkerPluginHost : isolation=worker 分支
+    WorkerPluginHost --> WorkerPluginProxy : 在内核侧代理
+    WorkerPluginProxy ..|> PluginFactoryHooks : RPC 转发
+
+    PluginDiscovery --> PluginManifest : 读取并校验
+    DependencyResolver --> PluginManifest : 读 dependencies/compatibility
+    DependencyResolver --> PluginStateT : 产出 Resolved / Dropped
+
+    %% ══════════ 关系：扩展点 ══════════
+    ExtensionPointRegistry *-- ExtensionPointDef
+    ExtensionPointRegistry *-- ExtensionContribution
+    ExtensionPointRegistry --> Definitions : 启动期 define
+    PluginContext --> ExtensionContributorView : ctx.extensions
+    ExtensionContributorView ..> ExtensionPointRegistry : contribute / retract
+    ExtensionPointDef --> ExtensionContribution : multi ? 数组 : 单例
+    ExtensionPointDef ..> PluginContext : capability 门槛经 CapabilityGuard
+
+    ExtensionPointDef <|-- PanelContribution : ui.panel
+    ExtensionPointDef <|-- RouteContribution : ui.route
+    ExtensionPointDef <|-- ThemeDefinition : ui.theme
+    ThemeRegistryImpl ..|> ThemeRegistry
+    PanelHost --> PanelContribution : 渲染插槽
+    RouteHost --> RouteContribution : 渲染插槽
+
+    %% ══════════ 关系：隔离与权限 ══════════
+    PermissionManager --> CapabilityGuard : registerPermissions
+    CapabilityGuard --> PermissionSet : 校验
+    CapabilityGuard ..> TrustPolicy : 策略来源
+    Container *-- ServiceToken : 按 token.id 索引（不按对象身份）
+    PluginContext --> Container : ctx.container（父引用不可达）
+    PluginContext --> ServicesView : ctx.services（resolve 经 guard）
+    PluginContext --> PluginApi : ctx.api
+    PluginContext --> PluginFactoryHooks : 由工厂接收
+
+    ServiceToken <.. KernelTokens : 内核服务令牌集合
+    ServiceToken <.. defineToken : 纯函数工厂（bundle 副本行为一致）
+
+    %% ══════════ 关系：宿主与前端 ══════════
+    ElectronMain --> Kernel : 作为库启动
+    ElectronMain --> IpcBridge : bind(IpcTransport)
+    ElectronMain --> ThemeRegistryImpl : 在内核启动前注册（通用，不再针对具体插件）
+    ElectronMain --> Preload : 挂载 preload.cjs
+    Preload ..> WindowRem2Api : contextBridge 暴露
+    IpcBridge --> IpcChannels : 白名单校验
+    IpcBridge --> EventBusImpl : request / 事件订阅
+    IpcBridge --> ExtensionPointRegistry : 解析 ui.panel / ui.theme / health
+    CliRun --> Kernel
+    ScaffoldPlugin ..> PluginManifest : 生成新骨架
+
+    EntryClient --> App : 挂载
+    App --> Shell
+    Shell --> PanelHost
+    Shell --> RouteHost
+    Shell --> IpcClient
+    PanelHost --> PanelStore
+    IpcClient ..> WindowRem2Api : window.rem2（唯一通道）
+    IpcClient --> PanelStore : 写入 runes 状态
+
+    classDef contract fill:#e8f4f8,stroke:#17a2b8
+    classDef ext fill:#fff3cd,stroke:#d39e00
+    classDef svc fill:#f8f9fa,stroke:#6c757d
+    classDef host fill:#e9ecef,stroke:#495057
+    classDef fe fill:#d4edda,stroke:#28a745
+
+    class PluginManifest,PluginFactory,PluginFactoryHooks,PluginContext,PluginApi,ServicesView,ServiceToken,LifecyclePhase,PluginStateT,StopReason,ExtensionPointDef,ExtensionContribution,ExtensionContributorView,PanelContribution,RouteContribution,ThemeDefinition contract
+    class ExtensionPointRegistry,ExtensionPointDef,ExtensionContribution,ExtensionContributorView,Definitions ext
+    class Kernel,KernelDeps,Composition,LifecyclePipeline,LifecycleManager,PluginDiscovery,DependencyResolver,PluginLoader,ModuleResolver,PluginFactoryResolver,Container,WorkerPluginHost,WorkerPluginProxy,PermissionManager,CapabilityGuard,TrustPolicy,LogService,MetricsService,TracingService,HealthService,ConfigService,EventBusImpl,PluginsRegistry svc
+    class ElectronMain,Preload,WindowRem2Api,IpcBridge,IpcChannels,ThemeRegistryImpl,CliRun,ScaffoldPlugin host
+    class EntryClient,App,Shell,PanelHost,RouteHost,IpcClient,PanelStore,ThemeRegistry fe

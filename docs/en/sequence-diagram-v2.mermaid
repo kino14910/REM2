@@ -1,0 +1,248 @@
+%% docs/en/sequence-diagram-v2.mermaid
+%% rem2 sequence diagram (companion to docs/01-architecture-overview.md §3 / §6; frontend chain in docs/03-frontend-ipc.md)
+%% 5 main chains: startup / command / event / config / unload + Svelte panel subscription
+
+%% ═══════════════════════════════════════════════════════
+%% Chain ① Startup: logical 7-stage state machine × physical execution pipeline
+%%   Physical steps: 1 discover → 2 resolve → 3 load → 4 configure → 5 Start
+%%   Note ★ marks where dependency resolution physically precedes load
+%% ═════════════════════════════════════════════════════
+sequenceDiagram
+    autonumber
+    participant EM as ElectronMain<br/>(host/electron)
+    participant K as Kernel
+    participant CFG as ConfigService
+    participant DISC as PluginDiscovery
+    participant RES as DependencyResolver
+    participant EP as ExtensionPointRegistry
+    participant LD as PluginLoader
+    participant PIPE as LifecyclePipeline
+    participant PL as Plugin hello-command
+
+    EM->>K: new Kernel(options)
+    Note over K: 14 services injected by Composition.createDeps()<br/>Kernel ctor no longer new's concrete impl
+    EM->>K: start()
+
+    rect rgb(232,244,248)
+    Note over CFG: Physical step 0: config snapshot must precede any plugin onConfigure
+    K->>CFG: refresh()
+    CFG->>CFG: load() each provider by priority → deepMerge → snapshot
+    end
+
+    rect rgb(232,244,248)
+    Note over DISC: Physical step 1: discover
+    K->>DISC: discoverDetailed({roots, builtinRoot, workspaceRoot})
+    DISC->>DISC: scan dir → read plugin.json → validateManifest
+    DISC->>DISC: ★ entry check: only .js / .mjs allowed
+    DISC-->>K: candidates[] (state=Registered) + issues[]
+    end
+
+    rect rgb(255,243,205)
+    Note over RES: Physical step 2: resolve
+    K->>RES: resolve(candidates, kernelVersion, contractVersion)
+    RES->>RES: dedup → compat → hard/soft deps → propagateDrops → cycle → deterministic topo sort
+    RES-->>K: plan{loadOrder, steps, issues, dropped}
+    Note over K: each candidate marked Resolved;<br/>dropped ones marked Dropped and not loaded
+    end
+
+    rect rgb(255,243,205)
+    Note over EP: host registers default impl before start (ui.theme / log.sink / scheduler.replace …)
+    K->>EP: registerHostDefault(...) × N
+    EP-->>K: ok (conflict ruled per def.conflict and issue recorded)
+    end
+
+    loop for each pluginId in plan.loadOrder
+        K->>K: permissions.check(manifest, trustLevelFor(source))
+        Note over K: Physical step 3: load
+        K->>LD: load(candidate, loadOptions)
+        LD->>LD: resolveEntry(rootDir, 'dist/index.js')
+        LD->>LD: await import(fileURL) → assert mod.default is function
+        LD->>LD: ★ verify definePlugin first-arg .id matches manifest.id
+        LD->>LD: rootContainer.createChild('plugin:<id>')
+        LD->>LD: createPluginContext(...) → inject ExtensionContributorView
+        LD-->>K: LoadedPlugin (state=Loaded)
+
+        Note over PIPE: Logical ④ initialize
+        K->>PIPE: runStart(instance, ctx, missingOptional)
+        PIPE->>PL: onDiscover() → onLoad()
+        Note over PIPE: Physical step 4: configure (runtime precedes start)
+        PIPE->>PL: onConfigure(ctx) —— ctx.config reads snapshot directly
+        PL->>EP: ctx.extensions.contribute('command.provide', {contributionId:'hello', impl})
+        EP-->>PL: ok (if capability not granted → CapabilityDeniedError → Failed)
+
+        Note over PIPE: Physical step 5: Start
+        PIPE->>PL: onStart()
+        PL-->>PIPE: void
+        PIPE-->>K: LifecycleOutcome{ok, degraded, rolledBack}
+        K->>K: setState(Active | Degraded | Failed) + setHealth
+    end
+
+    K-->>EM: KernelStartResult{loadOrder, started, degraded, failed}
+    EM->>K: health()
+    K-->>EM: HealthReport
+
+%% ═══════════════════════════════════════════════════════
+%% Chain ② Command: renderer → preload → ipcMain → whitelist → bus
+%% ═════════════════════════════════════════════════════
+sequenceDiagram
+    autonumber
+    participant S as Shell.svelte
+    participant IC as IpcClient
+    participant PL as preload.ts
+    participant IM as ipcMain
+    participant BR as IpcBridge
+    participant CH as IpcChannels
+    participant EB as EventBusImpl
+    participant EP as ExtensionPointRegistry
+    participant HP as hello-command
+
+    S->>IC: execute('hello', {name:'rem2'})
+    IC->>PL: window.rem2.invoke('command:hello')
+    PL->>IM: send('rem2:invoke', {id, method, args})
+    IM->>BR: transport.on('rem2:invoke')
+    BR->>CH: isAllowed('command:hello')
+    alt not in whitelist (e.g. 'ui.panel.resolve' not yet open)
+        CH-->>BR: false
+        BR-->>PL: {id, ok:false, error:'method not within IPC contract surface'}
+        PL-->>IC: reject
+        IC-->>S: Error
+    else in whitelist
+        CH-->>BR: true
+        BR->>EB: request('command:hello', args, {timeoutMs:5000})
+        EB->>EB: pickResponder('command:hello') (by seq)
+        Note over EB: responder routed via EP when contributed by command extension point;<br/>here is the direct respond path
+        EB->>HP: handler(payload)
+        HP-->>EB: result
+        EB-->>BR: result
+        BR-->>PL: {id, ok:true, result}
+        PL-->>IC: resolve
+        IC-->>S: result written to runes store
+    end
+
+%% ═══════════════════════════════════════════════════════
+%% Chain ③ Event dispatch: bucket index + subscription-time ordering + error isolation
+%% ═════════════════════════════════════════════════════
+sequenceDiagram
+    autonumber
+    participant P1 as Plugin A
+    participant EB as EventBusImpl
+    participant H1 as Subscriber 1 (priority 10)
+    participant H2 as Subscriber 2 (priority 0)
+    participant M as MetricsService
+
+    P1->>EB: emit('plugin.state-changed', payload)
+    EB->>EB: buckets.get('plugin') ★ O(bucket size), no longer full-table filter+sort
+    EB->>EB: ordered within snapshot by priority/seq (ordered at subscription time, no sort here)
+    loop serial await within snapshot
+        EB->>H1: handler(payload)
+        H1-->>EB: ok
+        EB->>H2: handler(payload)
+        H2--xEB: throw
+        EB->>EB: errors.push(...)  ★ error isolation, does not affect other subscribers
+        EB->>M: counter('event_handler_error').add(1)
+    end
+    EB-->>P1: return (no throw)
+
+%% ═══════════════════════════════════════════════════════
+%% Chain ④ Config: provider layering + change push + Worker snapshot sync
+%% ═════════════════════════════════════════════════════
+sequenceDiagram
+    autonumber
+    participant PJ as Plugin config-json
+    participant CFG as ConfigService
+    participant P1 as Plugin onConfigure
+    participant WK as Worker plugin
+
+    P1->>CFG: registerProvider(jsonProvider, priority=100)
+    CFG->>CFG: sort by priority ascending + dirty=true
+    CFG->>CFG: subscribe provider.onDidChange → dirty=true + emitChange
+    CFG->>CFG: refresh() ★ serial await each provider → deepMerge → snapshot
+
+    P1->>CFG: ctx.config.get('health.http.port', 0)
+    Note over CFG: ★ lazy refresh when dirty=true (fixes O18)
+
+    CFG->>WK: onDidChange → postMessage({t:'config', snapshot})
+    Note over WK: Worker overwrites entire snapshot<br/>(onDidChange returns empty fn on Worker side)
+
+    P1->>CFG: await set('feature.x', v)
+    CFG->>CFG: highest writable provider.set(key, value)
+    CFG->>CFG: ★ only incrementally merge affected paths (fixes O19), no full refresh
+    CFG->>CFG: emitChange(['feature.x'], 'feature.x')
+    CFG->>WK: postMessage({t:'config', snapshot})
+
+%% ═══════════════════════════════════════════════════════
+%% Chain ⑤ Unload: dependents unload first + kernel forced reclaim
+%% ═════════════════════════════════════════════════════
+sequenceDiagram
+    autonumber
+    participant EM as ElectronMain
+    participant K as Kernel
+    participant REG as PluginsRegistry
+    participant PIPE as LifecyclePipeline
+    participant EP as ExtensionPointRegistry
+    participant PM as PermissionManager
+    participant HS as HealthService
+    participant RC as rootContainer
+    participant DEP as Dependent plugin
+
+    EM->>K: unloadPlugin('com.rem2.config-json', 'user-disable')
+    K->>REG: allLoaded().filter(hard-depends on this plugin)
+    loop recursive (dependents stop first)
+        K->>K: unloadPlugin(dependent, 'dependency-failed')
+        K->>PIPE: runStop(dependent)
+        PIPE->>DEP: onStop → onUnload → onDispose
+    end
+
+    K->>PIPE: runStop(instance, ctx, 'user-disable')
+    PIPE->>DEP: onStop(ctx, reason)
+    DEP->>EP: (if plugin did not actively retract, kernel does not depend on it)
+    PIPE->>DEP: onUnload(ctx)
+    PIPE->>DEP: onDispose(ctx)
+
+    Note over K: teardownPluginArtifacts —— P6 forced reclaim, not dependent on plugin discipline
+    K->>EP: retractAll('com.rem2.config-json') ★ retract all its extension-point contributions
+    K->>HS: unregisterCheck(pluginId)
+    K->>PM: unregister(pluginId) (incl. guard.unregisterPermissions)
+    K->>RC: unmountChildContainer(container)
+    K->>RC: container.dispose() (cascade dispose child containers and disposable services)
+    K->REG: remove(pluginId) + drop from four startResult arrays
+    K->K: emit('kernel.plugin.unloaded', {pluginId, reason})
+
+%% ═══════════════════════════════════════════════════════
+%% Chain ⑥ Svelte frontend: panel subscription + theme consumption (see docs/04)
+%% ═════════════════════════════════════════════════════
+sequenceDiagram
+    autonumber
+    participant EN as entry-client.ts
+    participant AP as App.svelte
+    participant SH as Shell.svelte
+    participant IC as IpcClient
+    participant BR as IpcBridge
+    participant EP as ExtensionPointRegistry
+    participant TH as ThemeRegistryImpl
+
+    EN->>AP: mount(#app)
+    AP->>SH: render layout
+    SH->>IC: request('ui.panel.list')
+    IC->>BR: invoke('rem2:invoke', {method:'ui.panel.list'})
+    BR->>EP: resolve('ui.panel') → readonly PanelContribution[]
+    EP-->>BR: panel declaration list
+    BR-->>IC: PanelDto[]
+    IC-->>SH: write $state panels
+    SH->>SH: PanelHost.svelte renders slot (plugin provides no Svelte component, only description)
+
+    SH->>IC: subscribe('ui.theme.changed')
+    IC->>BR: subscribe (whitelisted event name)
+    BR->>TH: on('ui.theme.changed')
+    Note over TH: theme held by host registry<br/>plugin contributes token via ui.theme extension point
+
+    BR-->>IC: ThemeDto{id, colors, fonts, spacing}
+    IC-->>SH: $state theme
+    SH->>SH: lib/theme/vars.ts maps token to CSS variables
+    SH->>SH: document.documentElement.style.setProperty('--color-bg', …)
+    Note over SH: CSP style-src includes 'unsafe-inline' → CSSOM write feasible<br/>(no unsafe-eval needed)
+
+    SH->>IC: report('ui.event', {panelId, kind:'click'})
+    IC->>BR: invoke('ui.event')
+    BR->>EP: route to the panel's corresponding command
+    Note over BR: ★ renderer must not arbitrarily request kernel theme or config<br/>only the shared/ipc-contract.ts whitelist

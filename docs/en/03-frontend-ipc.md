@@ -1,0 +1,305 @@
+# 03 · Frontend and IPC Contract
+
+> The renderer is the only place Svelte runs and **must not import kernel or host sources**; its only channel to the kernel is `window.rem2`.
+>
+> Companions: [`01-architecture-overview.md`](01-architecture-overview.md) §7 (data paths and DTO reduction), [`04-development-guide.md`](04-development-guide.md) (build and debugging).
+>
+> 中文版：[`../03-frontend-ipc.md`](../03-frontend-ipc.md)
+
+---
+
+## 1. Process and build boundaries
+
+```mermaid
+graph LR
+  subgraph Main["main process (Node / Electron)"]
+    EM["host/electron/main.ts"]
+    K["Kernel"]
+    BR["host/ipc/bridge.ts"]
+  end
+  subgraph Pre["preload (contextBridge)"]
+    PL["host/electron/preload.ts"]
+  end
+  subgraph Rend["renderer (Chromium)"]
+    EN["frontend/entry-client.ts"]
+    IC["lib/ipc-client.ts"]
+    AP["App.svelte"]
+  end
+
+  EM --> K
+  EM --> BR
+  BR ==>|"rem2:invoke / rem2:event<br/>contextIsolation=true, sandbox=true"| PL
+  PL ==>|"window.rem2"| IC
+  IC --> AP
+  AP -.->|"❌ forbidden"| K
+```
+
+| Rule | Content                                              | Enforcement                                                                                |
+| ---- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| B1   | the renderer is the **only** place Svelte runs        | only `vite.renderer.config.mts` mounts `@sveltejs/vite-plugin-svelte`                       |
+| B2   | preload is the **only** contract boundary            | `contextIsolation: true` + `sandbox: true`; `window.rem2` is the only global the renderer sees |
+| B3   | the renderer **must not** import the kernel           | `tests/contract/plugin-contract.test.ts` R6 scans `src/frontend/**`; `rem2-kernel` or `src/kernel` fails it |
+| B4   | the main process is the kernel's **host**, not the authority | host defaults are registered only through extension points; `main.ts` imports no plugin source and contains no plugin id |
+
+`window.rem2` (`preload.ts` → `Rem2Bridge`) has exactly two methods:
+
+```ts
+interface Rem2Bridge {
+  invoke(method: string, args?: unknown): Promise<unknown>
+  onEvent(event: string, handler: (payload: unknown) => void): () => void
+}
+```
+
+---
+
+## 2. Frontend layout and responsibilities
+
+```
+src/frontend/
+├── entry-client.ts              # renderer entry: import './app/global.css' + mount(App); mounting only
+├── app/
+│   ├── App.svelte               # first paint: four stores load in parallel, subscribes to theme events, returns unsubscribe
+│   ├── Shell.svelte             # layout: left nav (RouteHost) + main area (PanelHost) + bottom bar (HealthBadge)
+│   ├── PanelHost.svelte         # ★ ui.panel slot: renders the panel list, owns the active panel
+│   ├── RouteHost.svelte         # ★ ui.route slot: derives nav entries from route declarations
+│   ├── components/
+│   │   ├── PanelShell.svelte    # single-panel chrome (border / title / empty state), content-semantics agnostic
+│   │   ├── ThemeToggle.svelte   # light/dark switch: renders only when the catalog holds both modes, sends ui.theme.set
+│   │   ├── HealthBadge.svelte   # health badge reading the health report
+│   │   └── CommandPrompt.svelte # command input and result display
+│   └── global.css               # global styles + fallback values for theme variables
+└── lib/
+    ├── ipc-client.ts            # the only typed wrapper around window.rem2 (method/event params are allowlist unions)
+    ├── bridge-types.ts          # DTOs: Panel / Route / Theme / ThemeCatalog / Health / CommandResult / PluginStateChanged
+    ├── stores/                  # Svelte 5 runes; file names must end with .svelte.ts
+    │   └── panels · routes · theme · health · command (one .svelte.ts each)
+    └── theme/vars.ts            # ThemeDto → CSS variables (--rem2-*)
+```
+
+**Why stores must be `.svelte.ts`**: `$state` / `$derived` require the compiler to recognize them. Inside a plain `.ts` the code is syntactically legal but silently loses reactivity — no error, just no updates.
+
+**Slot semantics**: `PanelHost` / `RouteHost` contain **no plugin id**. Everything is driven by the data contributed to `ui.panel` / `ui.route`: the frontend is written once, plugins decide the content.
+
+**`index.html` must carry no inline styles.** `<body style="background:…">` outranks `global.css`'s `body { background: var(--rem2-color-background) }`, which shows up as "text and borders follow the theme, the background does not" — visible only with multiple themes.
+
+---
+
+## 3. IPC contract
+
+### 3.1 Channels
+
+```ts
+// src/shared/ipc-contract.ts
+export const Ipc = {
+  Invoke: 'rem2:invoke', // renderer → main: request (carries an id; main replies by id)
+  Event: 'rem2:event',   // main → renderer: event push (no id)
+} as const
+```
+
+Responses and events live on separate channels so the frontend `subscribe` only listens to one. Request/response pairing still uses ids (done inside preload) rather than relying on `ipcRenderer.invoke` pairing.
+
+### 3.2 Method allowlist (8, exhaustive)
+
+| #   | method (`channels.*`)  | payload                       | Response                                   | Host implementation                                          |
+| --- | ---------------------- | ----------------------------- | ------------------------------------------ | ------------------------------------------------------------ |
+| 1   | `ui.panel.list`        | —                             | `PanelDto[]`                               | `kernel.extensions.listAll('ui.panel')`                      |
+| 2   | `ui.panel.data`        | `{ panelId }`                 | `unknown` (plugin-defined)                 | `bus.request` using the panel's declared `command`            |
+| 3   | `ui.route.list`        | —                             | `RouteDto[]`                               | `kernel.extensions.listAll('ui.route')`                      |
+| 4   | `ui.theme.list`        | —                             | `ThemeCatalogDto` (`{themes, activeId?}`)  | `ThemeRegistry.list()` + `.active()` (pull-syncs the slot before reading) |
+| 5   | `ui.theme.set`         | `{ themeId }`                 | `{ ok }`                                   | `ThemeRegistry.activate()`; emits **only when the active theme really changes** |
+| 6   | `ui.event`             | `{ panelId, kind, payload? }` | `{ ok }`                                   | routes to the panel's declared `command`                     |
+| 7   | `command.execute`      | `{ command, args? }`          | `CommandResultDto`                         | **`null`** — a command plugin responds directly; the host does not implement it |
+| 8   | `health.report`        | —                             | `HealthDto`                                | `kernel.health()` + trimming                                  |
+
+### 3.3 Event allowlist (5)
+
+| #   | event (`events.*`)     | topic (kernel `Topics`)     | payload                                    | Purpose                     |
+| --- | ---------------------- | --------------------------- | ------------------------------------------ | --------------------------- |
+| 1   | `ui.theme.changed`     | `Topics.UiThemeChanged`     | `ThemeDto`                                 | recompute CSS variables      |
+| 2   | `plugin.state-changed` | `Topics.PluginStateChanged` | `{ pluginId, state }`                      | reflect plugin start/stop    |
+| 3   | `panel.data-changed`   | `Topics.PanelDataChanged`   | `{ panelId, data }`                        | plugin-pushed panel refresh  |
+| 4   | `command.result`       | `Topics.CommandResult`      | `CommandResultDto`                         | command result               |
+| 5   | `kernel.ready`         | `Topics.KernelReady`        | `{ loadOrder, started, degraded, failed }` | first-paint availability     |
+
+### 3.4 Explicitly forbidden
+
+| Forbidden                                                        | Reason                                                                                   |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| any `bus.request(method)` passthrough                            | prefix matching would hand over a whole namespace; judgment must be an exact set of 8 names |
+| reading config (any `config.*`)                                  | config may hold sensitive values; when a panel needs config, the plugin decides what to expose in its `ui.panel.data` response |
+| reading kernel services (`services.*` / `kernel.*`)              | the renderer deals in DTOs, not in the kernel object graph                                |
+| triggering plugin lifecycle (`plugin.start` / `stop` / `unload`)  | lifecycle is a kernel/host privilege                                                      |
+| subscribing to arbitrary kernel events                           | only the 5 in §3.3; other topics (e.g. `config.changed`) carry internal state             |
+| receiving raw plugin events (e.g. `ui.theme.registered`)          | only DTO-ized semantic events are exposed                                                 |
+
+**Enforcement point**: `IpcBridge.handleInvoke` checks `allowedMethods.has(method)` (exact `Set` match) **before** `bus.request`. Not in the set → replies `{ok:false,error}` immediately, **never entering the event bus**.
+
+### 3.5 DTOs
+
+```ts
+// src/frontend/lib/bridge-types.ts — each type comment names the kernel contract it projects from
+interface PanelDto { panelId; title; icon; region: 'main' | 'side'; order: number; command: string }
+interface RouteDto { path; title; panelId; commandPrefix: string; order: number }
+interface ThemeDto { id; mode: 'light' | 'dark'; colors; fonts; spacing }
+interface ThemeCatalogDto { themes: ThemeDto[]; activeId?: string }
+interface HealthDto { status: 'healthy' | 'degraded' | 'unhealthy'; plugins: Array<{ id; state; status; message? }> }
+interface CommandResultDto { command: string; ok: boolean; output?: string; error?: string }
+```
+
+A DTO is an **explicit projection whitelist**, not a rename of a kernel type. `CommandResultDto` field names must match what command plugins actually return: `IpcBridge` puts the plugin's return value into `reply.result` unchanged, preload unwraps `payload.result`, so the frontend `invoke` receives the plugin's original object (`{ok, output}`). A wrong field name produces no type error, a blank UI and a clean console — the most typical silent-defect shape in this project.
+
+The `command` field is filled in by the frontend store (`command.svelte.ts` → `{...res, command}`); plugins are not required to return it.
+
+---
+
+## 4. store ↔ event bridge
+
+| Direction             | Allowed                                        | Implementation                                                       |
+| --------------------- | ---------------------------------------------- | -------------------------------------------------------------------- |
+| kernel → renderer     | ✅ one-way push, only the 5 events in §3.3      | `IpcBridge` subscribes the topic → `toDto` → `Ipc.Event`             |
+| renderer → kernel     | ✅ one-way requests, only the 8 methods in §3.2 | `ipc.request`                                                        |
+| renderer ↔ kernel bus | ❌ **never proxied**                            | proxying the bus would let the renderer `emit` / subscribe any topic, defeating every capability guard |
+
+Two red lines:
+
+1. Never expose `bus.emit` to the renderer — the event bus is a plugin-to-plugin channel and the renderer is not a plugin.
+2. Never forward `bus.on('*')` — that leaks every internal topic.
+
+### 4.1 Subscription lifetime
+
+`ipc.subscribe` returns an unsubscribe function that must be returned from `onMount` / `$effect`. `ipc-client.ts` keeps an active-subscription counter (`subscriptionCount()`) so a component destroyed before cleanup does not leak the `rem2:event` listener.
+
+### 4.2 First-paint pattern
+
+```svelte
+onMount(() => {
+  void panels.load()
+  void routes.load()
+  void theme.load()
+  void health.load()
+
+  const offTheme = ipc.subscribe(events.themeChanged, (p) => theme.applyRemote(p as ThemeDto))
+  return () => offTheme()
+})
+```
+
+The four data sets load **in parallel and each degrades to empty**: no failure blocks rendering, and each store records its own error.
+
+---
+
+## 5. Theme path
+
+```mermaid
+sequenceDiagram
+  participant TD as "theme-dark plugin"
+  participant EP as "ExtensionPointRegistry"
+  participant BR as "method-handlers"
+  participant TR as "ThemeRegistryImpl (host)"
+  participant TH as "ThemeToggle.svelte"
+  participant V as "lib/theme/vars.ts"
+
+  TD->>EP: contribute('ui.theme', {contributionId: 'light' | 'dark', impl: themeDef})
+  BR->>BR: syncThemeFromExtension() (pull sync on every read)
+  BR->>TR: list() / active()
+  TH->>BR: ui.theme.list → ThemeCatalogDto
+  TH->>V: applyTheme(dto)
+  V->>V: token → CSS variable mapping
+  V-->>TH: document.documentElement.style.setProperty('--rem2-color-bg', …)
+```
+
+Three invariants:
+
+1. **`ui.theme` is a multi slot = a theme catalog**, not "one active theme". `ThemeDefinition` carries `mode: 'light' | 'dark'`; both must be resident for a switch to exist.
+2. **The active theme belongs to the host** (`ThemeRegistryImpl.active()`). `ui.theme.list` returns `{themes, activeId}` — catalog and selection together, because deriving the selection twice (both sides guessing) makes the applied theme depend on who guessed last.
+3. **`ui.theme.set` emits only on a real change.** Otherwise the frontend `setActive` (apply locally, then request) triggers `set → emit → set` forever.
+
+**Pull model**: the extension slot is the single source of truth and `ThemeRegistry` degrades to a cache that syncs on every read. On unload the kernel force-reclaims contributions by `pluginId`, so the next pull is naturally empty — no unload listener needed.
+
+**Themes pushed by the host go through `applyRemote()` and never write back**: it only updates local state and CSS variables.
+
+### 5.1 token → CSS variable
+
+```ts
+// lib/theme/vars.ts
+const COLOR_KEYS = ['background', 'surface', 'text', 'textMuted', 'accent', 'border'] as const
+const FONT_KEYS = ['ui', 'mono'] as const
+const SPACING_KEYS = ['xs', 'sm', 'md', 'lg'] as const
+// → [['--rem2-color-background', '#0f1115'], ['--rem2-font-ui', '…'], ['--rem2-space-md', '16px'], …]
+```
+
+`global.css` declares a fallback for every variable (a compile-time constant), so the page stays readable before any variable is injected.
+
+---
+
+## 6. Build configuration
+
+### 6.1 `vite.shared.mts`: what is shared and what is not
+
+| Item              | Value                                               | Reason                                                                                                        |
+| ----------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `resolve.alias`   | `{ 'rem2-kernel': <abs>/src/kernel/index.ts }`      | lets Vite treat the kernel as source; `.js` → `.ts` falls back automatically                                   |
+| `ssr.noExternal`  | `['rem2-kernel']`                                   | **critical**. By default the bare name is externalized, leaving `require('rem2-kernel')` in the main bundle, which resolves to the `.ts` entry in a packaged app and explodes |
+| `build.target`    | `node20` (main / preload) · `chrome120` (renderer)  | aligned with `engines.node` and Electron 44's Chromium                                                         |
+| `build.sourcemap` | `true`                                              | matches `tsconfig.json` `sourceMap`; the contract test uses the sourcemap to prove the artifact is the browser build |
+
+**`resolve.conditions` must not be shared — it differs per target**:
+
+| Target         | `resolve.conditions`              |
+| -------------- | --------------------------------- |
+| main / preload | `['node', 'import', 'module']`    |
+| renderer       | `['browser', 'import', 'module']` |
+
+Reason: Vite 8 **replaces** the default condition set rather than merging it. svelte's `exports["."]` is `{ worker: index-server, browser: index-client, default: index-server }` — `worker` precedes `browser`, and under Node semantics the `node` condition implies `worker`. Putting `['node', …]` in the shared block makes the renderer lose `browser`, hit `worker` → `index-server.js` → `mount()` throws `lifecycle_function_unavailable` → **build succeeds, page is blank**.
+
+This class of defect lives only at the "browser condition × bundled artifact" intersection: `tsc` sees nothing and vitest (`environment: 'node'`) is right too. The criterion must be a **module-graph fact**: `tests/contract/build-artifact.test.ts` asserts the sourcemap contains `index-client.js` and not `index-server.js`.
+
+### 6.2 Required settings per config
+
+| Config                     | Required                                                                                          |
+| -------------------------- | ------------------------------------------------------------------------------------------------- |
+| `vite.main.config.mts`     | `external: ['electron']`; shared alias / `ssr.noExternal`; no extra `define` (forge injects them)   |
+| `vite.preload.config.mts`  | `external: ['electron']`; `target: node20`; **CJS** output named exactly `preload.cjs` (hardcoded in the main process) |
+| `vite.renderer.config.mts` | `plugins: [svelte()]` (the only config mounting svelte); `conditions` explicitly include `browser`; `input: index.html` |
+
+### 6.3 Compile-time constants injected by Forge
+
+| Constant                          | Use                                                                |
+| --------------------------------- | ------------------------------------------------------------------ |
+| `MAIN_WINDOW_VITE_DEV_SERVER_URL` | dev branch loads the Vite dev server                               |
+| `MAIN_WINDOW_VITE_NAME`           | prod branch `path.join(__dirname, '../renderer/<name>/index.html')` |
+
+Both are **bare-identifier substitutions**: writing `process.env.MAIN_WINDOW_…` is never replaced, so it stays `undefined` at runtime and the window always takes the `file://` branch. The names come from uppercasing the renderer process name (`main_window` here); renaming the renderer process requires renaming both.
+
+---
+
+## 7. CSP
+
+`index.html` CSP (meta form):
+
+```
+script-src 'self';                      ← no 'unsafe-eval'
+style-src  'self' 'unsafe-inline';
+connect-src 'self' ws://localhost:* ws://127.0.0.1:* http://localhost:* http://127.0.0.1:*;
+object-src 'none'; base-uri 'none';
+```
+
+| Operation                              | Blocked?  | Notes                                                                         |
+| -------------------------------------- | --------- | ----------------------------------------------------------------------------- |
+| `style.setProperty('--x', v)` (CSSOM)  | ✅ no     | CSP governs `<style>` blocks and inline `style` attribute parsing, not CSSOM   |
+| Svelte compiled output                 | ✅ allowed | a component's scoped `<style>` compiles into a CSS file loaded via `<link>` (`'self'`) |
+| `$state` / `$derived`                  | ✅ allowed | compiled to plain JS, **no `eval` needed**                                     |
+| HMR WebSocket                          | ✅ allowed | `connect-src` lists `ws://localhost:*` explicitly (CSP `'self'` does not cover `ws://`) |
+
+`style-src` needs `'unsafe-inline'`; `script-src` must not add `'unsafe-eval'` — adding it makes Electron print an "Insecure Content-Security-Policy" warning, and that warning is not just noise. In meta form `frame-ancestors` / `form-action` are ignored; do not bother writing them.
+
+---
+
+## 8. Known limitations
+
+| #   | Limitation                                                                   | Impact                                                                   |
+| --- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| F1  | `ui.panel.data` shape is plugin-defined and unvalidated by the kernel         | a buggy plugin can return a huge object and stall the renderer; a DTO size cap would be the fix |
+| F2  | `bridge-types.ts` DTOs are hand-written, so kernel changes do not break the frontend build | mitigated by source comments plus type alignment at assignment sites; `ui.*` `impl` types come from kernel contracts |
+| F3  | `preload.cjs` filename is an implicit contract (hardcoded in main)            | renaming it fails as "preload script failed to load" with no hint about the filename |
+| F4  | Runes in a plain `.ts` silently do nothing                                    | only the `.svelte.ts` naming convention catches it                       |
+| F5  | No builtin plugin contributes `ui.panel` / `ui.route`                        | `PanelHost` / `RouteHost` are always empty                                |

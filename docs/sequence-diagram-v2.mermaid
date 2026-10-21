@@ -1,0 +1,248 @@
+%% docs/sequence-diagram-v2.mermaid
+%% rem2 时序图（配合 docs/01-architecture-overview.md §3 / §6，前端链路见 docs/03-frontend-ipc.md）
+%% 5 条主链路：启动 / 命令 / 事件 / 配置 / 卸载 + Svelte 面板订阅
+
+%% ═══════════════════════════════════════════════════════
+%% 链路 ① 启动：逻辑 7 段状态机 × 物理执行管线
+%%   物理步骤：1 发现 → 2 解析 → 3 加载 → 4 配置 → 5 Start
+%%   注意 ★ 标记处：依赖解析在物理上早于加载
+%% ═══════════════════════════════════════════════════════
+sequenceDiagram
+    autonumber
+    participant EM as ElectronMain<br/>(host/electron)
+    participant K as Kernel
+    participant CFG as ConfigService
+    participant DISC as PluginDiscovery
+    participant RES as DependencyResolver
+    participant EP as ExtensionPointRegistry
+    participant LD as PluginLoader
+    participant PIPE as LifecyclePipeline
+    participant PL as 插件 hello-command
+
+    EM->>K: new Kernel(options)
+    Note over K: 由 Composition.createDeps() 注入 14 个服务<br/>Kernel 构造器不再 new 具体实现
+    EM->>K: start()
+
+    rect rgb(232,244,248)
+    Note over CFG: 物理第 0 步：配置快照必须先于任何插件 onConfigure
+    K->>CFG: refresh()
+    CFG->>CFG: 按 priority 串行 load() 每个 provider → deepMerge → snapshot
+    end
+
+    rect rgb(232,244,248)
+    Note over DISC: 物理步骤 1：发现
+    K->>DISC: discoverDetailed({roots, builtinRoot, workspaceRoot})
+    DISC->>DISC: 扫描目录 → 读 plugin.json → validateManifest
+    DISC->>DISC: ★ entry 校验：只允许 .js / .mjs
+    DISC-->>K: candidates[] (state=Registered) + issues[]
+    end
+
+    rect rgb(255,243,205)
+    Note over RES: 物理步骤 2：解析
+    K->>RES: resolve(candidates, kernelVersion, contractVersion)
+    RES->>RES: 去重 → 兼容性 → 硬/软依赖 → propagateDrops → 环检测 → 确定性拓扑排序
+    RES-->>K: plan{loadOrder, steps, issues, dropped}
+    Note over K: 每个候选标记为 Resolved；<br/>被丢弃者标记 Dropped 且不再加载
+    end
+
+    rect rgb(255,243,205)
+    Note over EP: 宿主在启动前注册默认实现（ui.theme / log.sink / scheduler.replace …）
+    K->>EP: registerHostDefault(...) × N
+    EP-->>K: ok（冲突按 def.conflict 裁决并记 issue）
+    end
+
+    loop 对 plan.loadOrder 中每个 pluginId
+        K->>K: permissions.check(manifest, trustLevelFor(source))
+        Note over K: 物理步骤 3：加载
+        K->>LD: load(candidate, loadOptions)
+        LD->>LD: resolveEntry(rootDir, 'dist/index.js')
+        LD->>LD: await import(fileURL) → 断言 mod.default 是函数
+        LD->>LD: ★ 校验 definePlugin 首参 .id 与 manifest.id 一致
+        LD->>LD: rootContainer.createChild('plugin:<id>')
+        LD->>LD: createPluginContext(...) → 注入 ExtensionContributorView
+        LD-->>K: LoadedPlugin (state=Loaded)
+
+        Note over PIPE: 逻辑④初始化
+        K->>PIPE: runStart(instance, ctx, missingOptional)
+        PIPE->>PL: onDiscover() → onLoad()
+        Note over PIPE: 物理步骤 4：配置（运行期早于启动）
+        PIPE->>PL: onConfigure(ctx) —— ctx.config 直读 snapshot
+        PL->>EP: ctx.extensions.contribute('command.provide', {contributionId:'hello', impl})
+        EP-->>PL: ok（若 capability 未授予 → CapabilityDeniedError → Failed）
+
+        Note over PIPE: 物理步骤 5：Start
+        PIPE->>PL: onStart()
+        PL-->>PIPE: void
+        PIPE-->>K: LifecycleOutcome{ok, degraded, rolledBack}
+        K->>K: setState(Active | Degraded | Failed) + setHealth
+    end
+
+    K-->>EM: KernelStartResult{loadOrder, started, degraded, failed}
+    EM->>K: health()
+    K-->>EM: HealthReport
+
+%% ═══════════════════════════════════════════════════════
+%% 链路 ② 命令：renderer → preload → ipcMain → 白名单 → bus
+%% ═══════════════════════════════════════════════════════
+sequenceDiagram
+    autonumber
+    participant S as Shell.svelte
+    participant IC as IpcClient
+    participant PL as preload.ts
+    participant IM as ipcMain
+    participant BR as IpcBridge
+    participant CH as IpcChannels
+    participant EB as EventBusImpl
+    participant EP as ExtensionPointRegistry
+    participant HP as hello-command
+
+    S->>IC: execute('hello', {name:'rem2'})
+    IC->>PL: window.rem2.invoke('command:hello')
+    PL->>IM: send('rem2:invoke', {id, method, args})
+    IM->>BR: transport.on('rem2:invoke')
+    BR->>CH: isAllowed('command:hello')
+    alt 不在白名单（如 'ui.panel.resolve' 未开放时）
+        CH-->>BR: false
+        BR-->>PL: {id, ok:false, error:'方法不在 IPC 契约面内'}
+        PL-->>IC: reject
+        IC-->>S: Error
+    else 在白名单内
+        CH-->>BR: true
+        BR->>EB: request('command:hello', args, {timeoutMs:5000})
+        EB->>EB: pickResponder('command:hello')（按 seq 确定）
+        Note over EB: responder 由命令扩展点贡献时<br/>经 EP 路由；此处为直接 respond 路径
+        EB->>HP: handler(payload)
+        HP-->>EB: result
+        EB-->>BR: result
+        BR-->>PL: {id, ok:true, result}
+        PL-->>IC: resolve
+        IC-->>S: result 写入 runes store
+    end
+
+%% ═══════════════════════════════════════════════════════
+%% 链路 ③ 事件派发：桶索引 + 订阅期定序 + 错误隔离
+%% ═══════════════════════════════════════════════════════
+sequenceDiagram
+    autonumber
+    participant P1 as 插件 A
+    participant EB as EventBusImpl
+    participant H1 as 订阅者 1（priority 10）
+    participant H2 as 订阅者 2（priority 0）
+    participant M as MetricsService
+
+    P1->>EB: emit('plugin.state-changed', payload)
+    EB->>EB: buckets.get('plugin') ★ O(桶大小)，不再全表 filter+sort
+    EB->>EB: 快照内按 priority/seq 有序（订阅期已定序，此处不再 sort）
+    loop 快照内串行 await
+        EB->>H1: handler(payload)
+        H1-->>EB: ok
+        EB->>H2: handler(payload)
+        H2--xEB: throw
+        EB->>EB: errors.push(...)  ★ 错误隔离，不影响其他订阅者
+        EB->>M: counter('event_handler_error').add(1)
+    end
+    EB-->>P1: 返回（不抛）
+
+%% ═══════════════════════════════════════════════════════
+%% 链路 ④ 配置：provider 分层 + 变更推送 + Worker 快照同步
+%% ═══════════════════════════════════════════════════════
+sequenceDiagram
+    autonumber
+    participant PJ as 插件 config-json
+    participant CFG as ConfigService
+    participant P1 as 插件 onConfigure
+    participant WK as Worker 插件
+
+    P1->>CFG: registerProvider(jsonProvider, priority=100)
+    CFG->>CFG: 按 priority 升序排序 + dirty=true
+    CFG->>CFG: 订阅 provider.onDidChange → dirty=true + emitChange
+    CFG->>CFG: refresh() ★ 串行 await 每个 provider → deepMerge → snapshot
+
+    P1->>CFG: ctx.config.get('health.http.port', 0)
+    Note over CFG: ★ dirty=true 时惰性 refresh（修复 O18）
+
+    CFG->>WK: onDidChange → postMessage({t:'config', snapshot})
+    Note over WK: Worker 覆盖整个快照<br/>（onDidChange 在 Worker 侧返回空函数）
+
+    P1->>CFG: await set('feature.x', v)
+    CFG->>CFG: 最高可写 provider.set(key, value)
+    CFG->>CFG: ★ 仅增量合并受影响路径（修复 O19），不再全量 refresh
+    CFG->>CFG: emitChange(['feature.x'], 'feature.x')
+    CFG->>WK: postMessage({t:'config', snapshot})
+
+%% ═══════════════════════════════════════════════════════
+%% 链路 ⑤ 卸载：依赖者先卸载 + 内核强制回收
+%% ═══════════════════════════════════════════════════════
+sequenceDiagram
+    autonumber
+    participant EM as ElectronMain
+    participant K as Kernel
+    participant REG as PluginsRegistry
+    participant PIPE as LifecyclePipeline
+    participant EP as ExtensionPointRegistry
+    participant PM as PermissionManager
+    participant HS as HealthService
+    participant RC as rootContainer
+    participant DEP as 依赖者插件
+
+    EM->>K: unloadPlugin('com.rem2.config-json', 'user-disable')
+    K->>REG: allLoaded().filter(硬依赖本插件)
+    loop 递归（依赖者先停）
+        K->>K: unloadPlugin(依赖者, 'dependency-failed')
+        K->>PIPE: runStop(依赖者)
+        PIPE->>DEP: onStop → onUnload → onDispose
+    end
+
+    K->>PIPE: runStop(instance, ctx, 'user-disable')
+    PIPE->>DEP: onStop(ctx, reason)
+    DEP->>EP: （若插件未主动 retract，内核也不依赖它）
+    PIPE->>DEP: onUnload(ctx)
+    PIPE->>DEP: onDispose(ctx)
+
+    Note over K: teardownPluginArtifacts —— P6 强制回收，不依赖插件自觉
+    K->>EP: retractAll('com.rem2.config-json') ★ 撤回其全部扩展点贡献
+    K->>HS: unregisterCheck(pluginId)
+    K->>PM: unregister(pluginId)（含 guard.unregisterPermissions）
+    K->>RC: unmountChildContainer(container)
+    K->>RC: container.dispose()（级联 dispose 子容器与 disposable 服务）
+    K->>REG: remove(pluginId) + 从 startResult 四个数组剔除
+    K->>K: emit('kernel.plugin.unloaded', {pluginId, reason})
+
+%% ═══════════════════════════════════════════════════════
+%% 链路 ⑥ Svelte 前端：面板订阅 + 主题消费（详见 docs/03-frontend-ipc.md）
+%% ═══════════════════════════════════════════════════════
+sequenceDiagram
+    autonumber
+    participant EN as entry-client.ts
+    participant AP as App.svelte
+    participant SH as Shell.svelte
+    participant IC as IpcClient
+    participant BR as IpcBridge
+    participant EP as ExtensionPointRegistry
+    participant TH as ThemeRegistryImpl
+
+    EN->>AP: mount(#app)
+    AP->>SH: 渲染布局
+    SH->>IC: request('ui.panel.list')
+    IC->>BR: invoke('rem2:invoke', {method:'ui.panel.list'})
+    BR->>EP: resolve('ui.panel') → readonly PanelContribution[]
+    EP-->>BR: 面板声明列表
+    BR-->>IC: PanelDto[]
+    IC-->>SH: 写入 $state panels
+    SH->>SH: PanelHost.svelte 渲染插槽（插件不提供 Svelte 组件，只提供描述）
+
+    SH->>IC: subscribe('ui.theme.changed')
+    IC->>BR: 订阅（白名单事件名）
+    BR->>TH: on('ui.theme.changed')
+    Note over TH: 主题由宿主注册表持有<br/>插件经 ui.theme 扩展点贡献 token
+
+    BR-->>IC: ThemeDto{id, colors, fonts, spacing}
+    IC-->>SH: $state theme
+    SH->>SH: lib/theme/vars.ts 把 token 映射为 CSS 变量
+    SH->>SH: document.documentElement.style.setProperty('--color-bg', …)
+    Note over SH: CSP style-src 含 'unsafe-inline' → CSSOM 写入可行<br/>（不需 unsafe-eval）
+
+    SH->>IC: report('ui.event', {panelId, kind:'click'})
+    IC->>BR: invoke('ui.event')
+    BR->>EP: 路由到对应面板的 command
+    Note over BR: ★ renderer 不能任意 request 内核主题或配置<br/>只能走 shared/ipc-contract.ts 白名单
