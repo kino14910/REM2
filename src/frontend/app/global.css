@@ -1,0 +1,43 @@
+/*
+ * Global styles and CSS variable fallbacks.
+ *
+ * Every variable has a compile-time constant fallback here, so the page stays
+ * readable before theme injection (docs/03 §5.1). Theme switching only writes
+ * via CSSOM and is not constrained by the CSP `style-src` directive.
+ */
+
+:root {
+  /* Matches the dark fallbacks below, so native widgets do not flash light before a theme arrives. */
+  color-scheme: dark;
+
+  --rem2-color-background: #0f1115;
+  --rem2-color-surface: #161922;
+  --rem2-color-text: #e6e6e6;
+  --rem2-color-text-muted: #9aa4b2;
+  --rem2-color-accent: #4f9cf9;
+  --rem2-color-border: #232838;
+
+  --rem2-font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --rem2-font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  --rem2-space-xs: 4px;
+  --rem2-space-sm: 8px;
+  --rem2-space-md: 16px;
+  --rem2-space-lg: 24px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family: var(--rem2-font-ui);
+  background: var(--rem2-color-background);
+  color: var(--rem2-color-text);
+}
