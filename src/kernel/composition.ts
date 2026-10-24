@@ -30,6 +30,7 @@ import { PluginDiscovery } from './discovery/discovery.js'
 import { PluginLoader } from './loader/loader.js'
 import { LifecycleManager } from './lifecycle/manager.js'
 import { ExtensionPointRegistry } from './extensions/registry.js'
+import { CommandDispatcher } from './extensions/command-dispatcher.js'
 import { EXTENSION_POINT_DEFS } from './extensions/definitions.js'
 import {
   registerHostConfigLayer,
@@ -72,6 +73,12 @@ export interface KernelDeps extends CoreServices {
     candidate: Candidate,
     container: ContainerContract,
   ) => PluginContext
+  /**
+   * Single dispatch path for `command.execute` (registered as a bus responder
+   * by the kernel at start(); not a KernelToken because the host and plugins
+   * never resolve it - they only observe its effect).
+   */
+  commandDispatcher: CommandDispatcher
 }
 
 export type CreateDepsOptions = Partial<KernelOptions>
@@ -92,6 +99,8 @@ export function createDeps(partial: CreateDepsOptions = {}): KernelDeps {
   const permissions = new PermissionManager(guard)
   const extensions = new ExtensionPointRegistry({ permissions })
   extensions.defineAll(EXTENSION_POINT_DEFS)
+  // Reads the command.provide slot directly; never requests the bus itself.
+  const commandDispatcher = new CommandDispatcher(extensions)
 
   const log = new LogService(options.logLevel)
   const metrics = new MetricsService()
@@ -268,6 +277,7 @@ export function createDeps(partial: CreateDepsOptions = {}): KernelDeps {
       return plan
     },
     contextOf,
+    commandDispatcher,
   }
 }
 

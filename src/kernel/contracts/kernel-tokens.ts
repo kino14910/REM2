@@ -84,12 +84,6 @@ export const KernelTokens = {
     describe: 'host theme registry',
     capability: 'ui.theme',
   }),
-  /** Host-provided UI service: entry point for the panel/route host. */
-  UiPanelHost: defineToken<unknown>({
-    id: 'host.ui.panel-host',
-    describe: 'host UI panel read entry',
-    capability: 'ui.panel',
-  }),
 } as const
 
 export type KernelToken = (typeof KernelTokens)[keyof typeof KernelTokens]

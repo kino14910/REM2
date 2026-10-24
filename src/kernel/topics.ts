@@ -23,7 +23,6 @@ export const Topics = {
   CommandResult: 'command.result',
 
   /** UI (consumed by the frontend via an IPC allowlist; raw plugin events never leak) */
-  UiThemeRegistered: 'ui.theme.registered',
   UiThemeChanged: 'ui.theme.changed',
   /** Plugins proactively push panel data refreshes (`panel.data-changed`). */
   PanelDataChanged: 'ui.panel.data-changed',

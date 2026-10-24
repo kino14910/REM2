@@ -88,7 +88,9 @@ export const EXTENSION_POINT_DEFS = [
     id: 'ui.panel',
     describe: 'Declarative UI panel description (chrome rendered by the host)',
     multi: true,
-    hasHostDefault: true,
+    // No host default: with no panel plugin installed the slot is legitimately
+    // empty and the shell shows its explicit empty state.
+    hasHostDefault: false,
     conflict: 'reject-new',
     capability: 'ui.panel',
   },

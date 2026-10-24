@@ -22,6 +22,8 @@ import type { LoadedPlugin } from './extensions/ports-types.js'
 import type { Candidate } from './discovery/candidate.js'
 import type { HealthReport } from './contracts/health.js'
 import type { StopReason } from './contracts/lifecycle.js'
+import type { PluginStateT } from './contracts/plugins.js'
+import type { Unsubscribe } from './contracts/event-bus.js'
 import type { TrustLevel } from './contracts/permission.js'
 import { trustLevelFor } from './security/trust-policy.js'
 import type { LoadOptions } from './loader/loader.js'
@@ -38,6 +40,8 @@ export class Kernel {
 
   private started = false
   private reloadCounter = 0
+  /** Unsubscribe for the kernel's own command dispatcher responder (set in start()). */
+  private commandExecuteUnsub: Unsubscribe | null = null
   private startResult: KernelStartResult = {
     loadOrder: [],
     started: [],
@@ -93,6 +97,19 @@ export class Kernel {
     }
     const log = this.deps.log.child('kernel')
     log.info(`kernel starting v${this.version} (contract v${CONTRACT_VERSION})`)
+
+    // Register the command dispatcher here, before any plugin starts:
+    // - `pickResponder` prefers the earliest registration, so this responder
+    //   deterministically shadows any plugin-side responder for the same
+    //   topic (single dispatch path, no competing command responders).
+    // - It is deliberately NOT registered in createDeps(): the recursion
+    //   regression sentinel in tests/integration/command-chain.test.ts
+    //   registers a rogue responder between construction and start(), and
+    //   only this timing keeps its seq smaller so the sentinel still fires.
+    this.commandExecuteUnsub = this.deps.events.respond(
+      Topics.CommandExecute,
+      payload => this.deps.commandDispatcher.dispatch(payload),
+    )
 
     // Config: plugins read configuration during Initialize, so providers must be merged into a snapshot first.
     await this.deps.config.refresh()
@@ -207,7 +224,7 @@ export class Kernel {
     // Re-resolve: compatibility and hard dependencies may have changed; if dropped, mark Failed (never bypass the resolver).
     const plan = this.deps.planOf(rediscovered.candidates)
     if (!plan.loadOrder.includes(pluginId)) {
-      this.deps.registry.setState(pluginId, 'Failed')
+      this.applyPluginState(pluginId, 'Failed')
       const issue = plan.issues.find(i => i.pluginId === pluginId)
       throw new KernelError(
         'E_GENERIC',
@@ -255,7 +272,12 @@ export class Kernel {
       loaded.context,
       reason,
     )
+    // Reclaim contributions BEFORE publishing the state change: when the
+    // frontend receives the event and re-pulls the panel/route lists, the
+    // slot must already be free of this plugin's contributions (no race
+    // between "still listed" and "already stopped").
     this.teardownPluginArtifacts(loaded)
+    this.applyPluginState(pluginId, 'Stopped')
     this.deps.registry.remove(pluginId)
 
     this.startResult.loadOrder = this.startResult.loadOrder.filter(
@@ -301,7 +323,7 @@ export class Kernel {
           'shutdown',
         )
         if (loaded.state === 'Active' || loaded.state === 'Degraded') {
-          this.deps.registry.setState(loaded.manifest.id, 'Stopped')
+          this.applyPluginState(loaded.manifest.id, 'Stopped')
         }
       } catch {
         // Isolation: a single plugin failing to stop does not block overall shutdown.
@@ -309,6 +331,8 @@ export class Kernel {
       this.teardownPluginArtifacts(loaded)
     }
 
+    this.commandExecuteUnsub?.()
+    this.commandExecuteUnsub = null
     this.deps.events.clear()
     await this.deps.log.flush()
     await this.deps.tracer.flush()
@@ -349,7 +373,7 @@ export class Kernel {
         permissions: this.deps.permissions.get(pluginId) ?? loaded.permissions,
       }
       this.deps.registry.add(withPerms)
-      this.deps.registry.setState(pluginId, 'Loaded')
+      this.applyPluginState(pluginId, 'Loaded')
 
       const outcome = await this.deps.lifecycle.runStartSequence(
         withPerms.hooks,
@@ -358,7 +382,7 @@ export class Kernel {
       )
 
       if (outcome.ok && outcome.degraded) {
-        this.deps.registry.setState(pluginId, 'Degraded')
+        this.applyPluginState(pluginId, 'Degraded')
         this.deps.registry.setHealth(pluginId, {
           status: 'degraded',
           message: 'soft dependency missing or non-fatal phase failure',
@@ -374,7 +398,7 @@ export class Kernel {
       }
 
       if (outcome.ok) {
-        this.deps.registry.setState(pluginId, outcome.finalState)
+        this.applyPluginState(pluginId, outcome.finalState)
         this.deps.registry.setHealth(pluginId, {
           status: 'healthy',
           checkedAt: Date.now(),
@@ -387,7 +411,7 @@ export class Kernel {
         return 'started'
       }
 
-      this.deps.registry.setState(pluginId, 'Failed')
+      this.applyPluginState(pluginId, 'Failed')
       this.deps.registry.setHealth(pluginId, {
         status: 'unhealthy',
         ...(outcome.error ? { message: outcome.error } : {}),
@@ -403,7 +427,7 @@ export class Kernel {
       })
       return 'failed'
     } catch (error) {
-      this.deps.registry.setState(pluginId, 'Failed')
+      this.applyPluginState(pluginId, 'Failed')
       log.error(`plugin load/authorization failed: ${(error as Error).message}`)
       this.deps.metrics
         .counter(KERNEL_METRICS.pluginState, { pluginId, state: 'Failed' })
@@ -428,6 +452,19 @@ export class Kernel {
       contributionId: loaded.manifest.id,
       impl: () => check.call(loaded.hooks),
     })
+  }
+
+  /**
+   * Apply a plugin state change and publish it.
+   *
+   * The single producer of `plugin.state-changed`: every transition (including
+   * error and rollback paths) emits, because the frontend re-pulls its lists
+   * on any state change and a missed event leaves stale UI. The emit is
+   * fire-and-forget (subscriber errors are isolated by the bus).
+   */
+  private applyPluginState(pluginId: string, state: PluginStateT): void {
+    this.deps.registry.setState(pluginId, state)
+    void this.deps.events.emit(Topics.PluginStateChanged, { pluginId, state })
   }
 
   /**
