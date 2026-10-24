@@ -3,12 +3,14 @@
 
   It does not care about content semantics: plugins only contribute a
   `PanelDto` (declarative description); the main process fetches data over
-  the event bus according to `panel.command`, and the shape is up to the plugin.
+  the event bus according to `panel.command`, and the shape is up to the
+  plugin (classified by dto-guards into table / json / empty / invalid).
 -->
 <script lang="ts">
   import { ipc } from '../../lib/ipc-client'
-  import { channels } from '../../../shared/ipc-contract'
+  import { channels, events } from '../../../shared/ipc-contract'
   import type { PanelDto } from '../../lib/bridge-types'
+  import { parsePanelData } from '../../lib/dto-guards'
 
   let { panel }: { panel: PanelDto } = $props()
 
@@ -16,26 +18,42 @@
   let loading = $state<boolean>(false)
   let error = $state<string | undefined>(undefined)
 
-  // Refetch data whenever the active panel changes.
+  const parsed = $derived(parsePanelData(data))
+
+  async function reload(): Promise<void> {
+    loading = true
+    error = undefined
+    try {
+      data = await ipc.request(channels.panelData, { panelId: panel.panelId })
+    } catch (e) {
+      error = (e as Error).message
+    } finally {
+      loading = false
+    }
+  }
+
+  // Refetch when the active panel changes, and consume pushed refreshes
+  // (a plugin emitting panel.data-changed for this panel updates in place).
   $effect(() => {
     const panelId = panel.panelId
-    loading = true
-    void ipc
-      .request(channels.panelData, { panelId })
-      .then((d) => {
-        data = d
+    const unsub = ipc.subscribe(events.panelDataChanged, (payload) => {
+      const p = payload as { panelId?: unknown; data?: unknown } | null
+      if (p && typeof p.panelId === 'string' && p.panelId === panelId) {
+        data = p.data
         error = undefined
-      })
-      .catch((e: Error) => {
-        error = e.message
-      })
-      .finally(() => {
-        loading = false
-      })
+      }
+    })
+    void reload()
+    return () => unsub()
   })
 
-  function report(kind: string, payload?: unknown): void {
-    void ipc.request(channels.uiEvent, { panelId: panel.panelId, kind, payload })
+  function onRefresh(): void {
+    // Notify the plugin first (failure is silent: the plugin may not care),
+    // then re-fetch locally so the refresh is visible even without a push.
+    void ipc
+      .request(channels.uiEvent, { panelId: panel.panelId, kind: 'refresh' })
+      .catch(() => undefined)
+    void reload()
   }
 </script>
 
@@ -43,17 +61,38 @@
   <header class="panel-head">
     <span class="icon">{panel.icon}</span>
     <h2>{panel.title}</h2>
-    <button type="button" onclick={() => report('refresh')}>Refresh</button>
+    <button type="button" onclick={onRefresh}>Refresh</button>
   </header>
   <div class="panel-body">
     {#if loading}
       <p class="muted">Loading…</p>
     {:else if error}
       <p class="error">{error}</p>
-    {:else if data === undefined}
-      <p class="muted">This panel provides no data</p>
+    {:else if parsed.kind === 'table'}
+      <table>
+        <thead>
+          <tr>
+            {#each parsed.columns as col}
+              <th>{col}</th>
+            {/each}
+          </tr>
+        </thead>
+        <tbody>
+          {#each parsed.rows as row}
+            <tr>
+              {#each row as cell}
+                <td>{cell}</td>
+              {/each}
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {:else if parsed.kind === 'json'}
+      <pre>{parsed.text}</pre>
+    {:else if parsed.kind === 'invalid'}
+      <p class="error">{parsed.reason}</p>
     {:else}
-      <pre>{JSON.stringify(data, null, 2)}</pre>
+      <p class="muted">This panel provides no data</p>
     {/if}
   </div>
 </section>
@@ -85,12 +124,30 @@
     font-size: 12px;
     white-space: pre-wrap;
   }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-family: var(--rem2-font-mono);
+    font-size: 12px;
+  }
+  th {
+    text-align: left;
+    padding: var(--rem2-space-xs) var(--rem2-space-sm);
+    border: 1px solid var(--rem2-color-border);
+    background: var(--rem2-color-surface);
+    color: var(--rem2-color-text-muted);
+  }
+  td {
+    padding: var(--rem2-space-xs) var(--rem2-space-sm);
+    border: 1px solid var(--rem2-color-border);
+    color: var(--rem2-color-text);
+  }
   .muted {
     color: var(--rem2-color-text-muted);
     margin: 0;
   }
   .error {
-    color: var(--rem2-color-text);
+    color: #ff6b6b;
     margin: 0;
   }
 </style>

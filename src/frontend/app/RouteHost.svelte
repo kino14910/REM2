@@ -13,6 +13,9 @@
 </script>
 
 <nav class="route-host">
+  {#if routes.error}
+    <p class="empty error">{routes.error}</p>
+  {/if}
   {#each routes.ordered as route (route.path)}
     <button
       type="button"
@@ -51,5 +54,8 @@
     color: var(--rem2-color-text-muted);
     font-size: 12px;
     padding: var(--rem2-space-xs);
+  }
+  .error {
+    color: #ff6b6b;
   }
 </style>

@@ -17,7 +17,18 @@
   import { routes } from '../lib/stores/routes.svelte'
   import { theme } from '../lib/stores/theme.svelte'
   import { health } from '../lib/stores/health.svelte'
+  import { resolveActivePanel } from '../lib/nav-link'
   import type { ThemeDto } from '../lib/bridge-types'
+
+  // Route drives which panel is active. The four loads start in parallel, so
+  // neither store is guaranteed to arrive first: this effect re-resolves
+  // whenever any input lands. It reads only routes.active / panels.items /
+  // panels.loading and writes only activeId + notice, so it never re-triggers
+  // itself.
+  $effect(() => {
+    const res = resolveActivePanel(routes.active, panels.items, !panels.loading)
+    panels.applyResolution(res)
+  })
 
   onMount(() => {
     void panels.load()
@@ -29,8 +40,17 @@
     const offTheme = ipc.subscribe(events.themeChanged, (payload) => {
       theme.applyRemote(payload as ThemeDto)
     })
+    // Any plugin state change can add contributions (Active) or reclaim them
+    // (Stopped / Failed): re-pull unconditionally, because filtering by state
+    // set would miss a late-arriving Active.
+    const offPluginState = ipc.subscribe(events.pluginStateChanged, () => {
+      void panels.load()
+      void routes.load()
+      void health.load()
+    })
     return () => {
       offTheme()
+      offPluginState()
     }
   })
 </script>

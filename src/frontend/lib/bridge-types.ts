@@ -31,6 +31,16 @@ export interface RouteDto {
   order: number
 }
 
+/**
+ * Minimal structured panel-data contract: the only shape PanelShell renders
+ * as a table; everything else falls back to JSON (see `dto-guards.ts`).
+ */
+export interface PanelTableDto {
+  kind: 'table'
+  columns: string[]
+  rows: Array<Array<string | number>>
+}
+
 /** Theme DTO, projected from `ThemeDefinition` in `kernel/contracts/ui.ts`. */
 export interface ThemeDto {
   id: string
