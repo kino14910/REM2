@@ -78,24 +78,12 @@ export default definePlugin(
             },
           ),
         )
-        // Register an RPC responder (for IPC bridge requests).
-        unsubs.push(
-          bus.respond<
-            { command: string; args?: unknown },
-            { ok: boolean; output?: string; error?: string }
-          >(Topics.CommandExecute, p => {
-            if (!p || p.command !== 'hello') {
-              return {
-                ok: false,
-                error: `Unknown command: ${p?.command ?? '(empty)'}`,
-              }
-            }
-            const g = ctx.services.resolve(GreeterToken)
-            return { ok: true, output: g.greet('rem2') }
-          }),
-        )
 
-        // The single contribution entry point: the extension registry.
+        // The single contribution entry point: the extension registry. The
+        // kernel CommandDispatcher is the only consumer of this contribution
+        // (it dispatches command.execute from the command.provide slot), so a
+        // plugin must never respond Topics.CommandExecute directly - such a
+        // responder is shadowed by the kernel's earlier registration.
         ctx.extensions.contribute('command.provide', {
           contributionId: 'hello',
           impl: async (args: unknown) => {

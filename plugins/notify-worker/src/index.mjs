@@ -7,7 +7,7 @@
  *    a crash or infinite loop does not affect the kernel.
  * 2. Context proxying: ctx.log / ctx.events / ctx.metrics / ctx.config reach
  *    the kernel cross-thread via RPC.
- * 3. Event-driven collaboration: subscribes to command:result (emitted by
+ * 3. Event-driven collaboration: subscribes to Topics.CommandResult (emitted by
  *    hello-command) and forwards it as a notification event.
  *
  * Shape: the only form is a default-exported factory function. There is no TS
@@ -18,6 +18,8 @@
  * across threads); ctx.extensions only allows contributing log.sink /
  * metrics.sink / trace.exporter sinks.
  */
+
+import { Topics } from 'rem2-kernel'
 
 /** Notification event topics (subscribable by other plugins or the shell). */
 const NotifyTopics = {
@@ -32,7 +34,7 @@ export default function notifyWorkerPlugin(ctx) {
   return {
     async onStart() {
       unsubs.push(
-        ctx.events.on('command:result', async payload => {
+        ctx.events.on(Topics.CommandResult, async payload => {
           notificationsSent += 1
           const message = (payload && payload.output) || '(empty)'
           // Cross-thread event emission: routed through the Worker host RPC to the kernel bus.

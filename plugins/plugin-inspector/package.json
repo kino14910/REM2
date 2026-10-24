@@ -1,0 +1,15 @@
+{
+  "name": "@rem2/plugin-plugin-inspector",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Runtime plugin inspector panel: lists every loaded plugin with health (the inspector is itself a plugin)",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --format=esm --platform=node --target=node20 --external:node:* --outfile=dist/index.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

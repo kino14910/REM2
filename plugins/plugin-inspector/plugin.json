@@ -1,0 +1,15 @@
+{
+  "id": "com.rem2.plugin-inspector",
+  "name": "Plugin Inspector",
+  "version": "1.0.0",
+  "entry": "dist/index.js",
+  "contributes": [
+    { "point": "ui.panel", "id": "plugin-inspector" },
+    { "point": "ui.route", "id": "/plugins" }
+  ],
+  "requires": ["ui.panel", "ui.route"],
+  "compatibility": { "minKernel": "^1.0.0", "contractVersion": "1" },
+  "author": "rem2-team",
+  "description": "Runtime plugin inspector panel (UI is a plugin)",
+  "tags": ["ui", "inspector", "demo"]
+}
