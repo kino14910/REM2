@@ -73,7 +73,11 @@ describe('integration · allowlisted method implementation table', () => {
     }
   })
 
-  it('ui.panel.list / ui.route.list read the extension slots (no contributions yet → empty arrays)', async () => {
+  it('ui.panel.list / ui.route.list read the extension slots (inspector contributes them)', async () => {
+    // The builtin plugin-inspector is in plugins-dist and contributes exactly
+    // one panel + one route; these assertions prove the handlers read the
+    // extension slots (not a hardcoded list) because the values correspond to
+    // the inspector's plugin.json contributes.
     const kernel = createKernel()
     try {
       await kernel.start()
@@ -86,8 +90,25 @@ describe('integration · allowlisted method implementation table', () => {
 
       const panelList = handlers[channels.panelList]!
       const routeList = handlers[channels.routeList]!
-      expect(await panelList(undefined)).toEqual([])
-      expect(await routeList(undefined)).toEqual([])
+      const panels = (await panelList(undefined)) as Array<
+        Record<string, unknown>
+      >
+      const routes = (await routeList(undefined)) as Array<
+        Record<string, unknown>
+      >
+      expect(panels).toHaveLength(1)
+      expect(panels).toMatchObject([
+        {
+          panelId: 'plugin-inspector',
+          command: 'com.rem2.plugin-inspector.data',
+          region: 'main',
+          order: 10,
+        },
+      ])
+      expect(routes).toHaveLength(1)
+      expect(routes).toMatchObject([
+        { path: '/plugins', panelId: 'plugin-inspector', order: 10 },
+      ])
     } finally {
       await kernel.shutdown()
     }

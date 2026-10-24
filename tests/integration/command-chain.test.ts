@@ -86,7 +86,10 @@ describe('integration · command chain', () => {
     }
   })
 
-  it('request throws NoResponderError when no command plugin exists (not silent, no recursion)', async () => {
+  it('an explicit error result when no command plugin exists (not silent, no recursion)', async () => {
+    // With no command plugin the kernel dispatcher still answers (it is the
+    // only responder for the topic): an explicit {ok:false} result, never a
+    // NoResponderError escape and never recursion.
     const kernel = new Kernel({
       id: 'rem2-no-command-plugin',
       roots: [],
@@ -105,13 +108,13 @@ describe('integration · command chain', () => {
       await kernel.start()
       const bus = kernel.root.resolve<EventBus>(KernelTokens.EventBus)
 
-      await expect(
-        bus.request(
-          Topics.CommandExecute,
-          { command: 'hello' },
-          { timeoutMs: 3000 },
-        ),
-      ).rejects.toThrow(/no responder/)
+      const result = await bus.request<
+        { command: string },
+        { ok: boolean; error?: string }
+      >(Topics.CommandExecute, { command: 'hello' }, { timeoutMs: 3000 })
+
+      expect(result.ok).toBe(false)
+      expect(result.error).toMatch(/unknown command/)
     } finally {
       await kernel.shutdown()
     }
