@@ -41,10 +41,10 @@ plugins/my-plugin/
 
 A factory is the only accepted shape — class exports, pre-instantiated singletons and named exports are all rejected. The loader performs one assertion and does no shape guessing.
 
-| Parameter  | Type                          | Notes                                                                                                     |
-| ---------- | ----------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Parameter  | Type                          | Notes                                                                                                                                                        |
+| ---------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `manifest` | `PluginManifestInit`          | Inline manifest. **`plugin.json` is authoritative**; the inline value is only used for drift detection, and a mismatched `id` throws `ManifestMismatchError` |
-| `setup`    | `(ctx) => PluginFactoryHooks` | Hook factory, called once after `import()`                                                                 |
+| `setup`    | `(ctx) => PluginFactoryHooks` | Hook factory, called once after `import()`                                                                                                                   |
 
 Constraints:
 
@@ -56,20 +56,20 @@ Constraints:
 
 ## 3. Manifest (`plugin.json`)
 
-| Field                  | Type                       | Required | Notes                                                                 |
-| ---------------------- | -------------------------- | -------- | --------------------------------------------------------------------- |
-| `id`                   | `string`                   | ✅       | `^[a-z0-9]+([._-][a-z0-9]+)*$`, reverse-DNS recommended                |
-| `name`                 | `string`                   | ✅       | display name                                                          |
-| `version`              | `string`                   | ✅       | semver                                                                |
-| `entry`                | `string`                   | ✅       | **build artifact relative path, always `dist/index.js`**, only `.js` / `.mjs` |
-| `compatibility`        | `object`                   | ✅       | `{ minKernel, contractVersion }`; `maxKernel` optional                 |
-| `dependencies`         | `Record<string,string>`    |          | hard dependencies: missing or unsatisfied → this plugin `Failed`       |
-| `optionalDependencies` | `Record<string,string>`    |          | soft dependencies: missing → `Degraded`, remaining features keep working |
-| `contributes`          | `{point, id, capability?}[]` |        | **static declaration** of which extension points are contributed (aligned with runtime `contribute`) |
-| `requires`             | `string[]`                 |          | capability declarations, input to `PermissionManager.check`, e.g. `['command.provide']` |
-| `isolation`            | `'in-process' \| 'worker'` |          | defaults to `in-process`                                               |
-| `configSchema`         | `object`                   |          | not interpreted by the kernel; passed through to the plugin            |
-| `author` `description` `icon` `tags` `homepage` | —  |          | metadata, unused by the kernel                                         |
+| Field                                           | Type                         | Required | Notes                                                                                                |
+| ----------------------------------------------- | ---------------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| `id`                                            | `string`                     | ✅       | `^[a-z0-9]+([._-][a-z0-9]+)*$`, reverse-DNS recommended                                              |
+| `name`                                          | `string`                     | ✅       | display name                                                                                         |
+| `version`                                       | `string`                     | ✅       | semver                                                                                               |
+| `entry`                                         | `string`                     | ✅       | **build artifact relative path, always `dist/index.js`**, only `.js` / `.mjs`                        |
+| `compatibility`                                 | `object`                     | ✅       | `{ minKernel, contractVersion }`; `maxKernel` optional                                               |
+| `dependencies`                                  | `Record<string,string>`      |          | hard dependencies: missing or unsatisfied → this plugin `Failed`                                     |
+| `optionalDependencies`                          | `Record<string,string>`      |          | soft dependencies: missing → `Degraded`, remaining features keep working                             |
+| `contributes`                                   | `{point, id, capability?}[]` |          | **static declaration** of which extension points are contributed (aligned with runtime `contribute`) |
+| `requires`                                      | `string[]`                   |          | capability declarations, input to `PermissionManager.check`, e.g. `['command.provide']`              |
+| `isolation`                                     | `'in-process' \| 'worker'`   |          | defaults to `in-process`                                                                             |
+| `configSchema`                                  | `object`                     |          | not interpreted by the kernel; passed through to the plugin                                          |
+| `author` `description` `icon` `tags` `homepage` | —                            |          | metadata, unused by the kernel                                                                       |
 
 ```jsonc
 // plugins/my-plugin/plugin.json
@@ -99,16 +99,16 @@ Therefore `entry` is identical in dev and prod: no second shape, no environment 
 
 Every `PluginFactoryHooks` hook (all optional):
 
-| Hook                  | Phase      | Semantics                                                                       |
-| --------------------- | ---------- | ------------------------------------------------------------------------------- |
-| `onDiscover(ctx)`     | Discover   | read-only probing. **No side effects** (no write IO, no registration)            |
-| `onLoad(ctx)`         | Load       | module is instantiated; in-memory preparation only                               |
-| `onConfigure(ctx)`    | Initialize | read config, register services, subscribe events (rollbackable on failure)       |
+| Hook                  | Phase      | Semantics                                                                                                      |
+| --------------------- | ---------- | -------------------------------------------------------------------------------------------------------------- |
+| `onDiscover(ctx)`     | Discover   | read-only probing. **No side effects** (no write IO, no registration)                                          |
+| `onLoad(ctx)`         | Load       | module is instantiated; in-memory preparation only                                                             |
+| `onConfigure(ctx)`    | Initialize | read config, register services, subscribe events (rollbackable on failure)                                     |
 | `onStart(ctx)`        | Start      | start the runtime (open connections, timers, contribute extension points). Must finish within `startTimeoutMs` |
-| `onStop(ctx, reason)` | Stop       | idempotent shutdown, release runtime resources                                   |
-| `onUnload(ctx)`       | Unload     | unregister services and event subscriptions                                      |
-| `onDispose(ctx)`      | Dispose    | final release; the instance must not be used afterwards                          |
-| `onHealthCheck()`     | —          | returns `HealthStatus`; called periodically by the health service                |
+| `onStop(ctx, reason)` | Stop       | idempotent shutdown, release runtime resources                                                                 |
+| `onUnload(ctx)`       | Unload     | unregister services and event subscriptions                                                                    |
+| `onDispose(ctx)`      | Dispose    | final release; the instance must not be used afterwards                                                        |
+| `onHealthCheck()`     | —          | returns `HealthStatus`; called periodically by the health service                                              |
 
 `reason` values for `onStop`: `'user-disable' | 'reload' | 'dependency-failed' | 'health-degraded' | 'shutdown' | 'start-failed' | 'timeout'`.
 
@@ -136,7 +136,7 @@ Every `PluginFactoryHooks` hook (all optional):
 | `extensions`  | **contribute extension points (see §6)**                                |
 | `api`         | `export` / `unexport` / `useCapability`                                 |
 | `plugins`     | probe other plugins (runtime probing of soft dependencies)              |
-| `resolvePath` | resolve inside the plugin rootDir; escaping throws `EntryEscapeError`    |
+| `resolvePath` | resolve inside the plugin rootDir; escaping throws `EntryEscapeError`   |
 
 ---
 
@@ -156,22 +156,24 @@ ctx.extensions.contribute('command.provide', {
 
 ### 6.1 The 12 extension points
 
-| id                  | Contract                 | Slot   | Conflict                                 | capability         |
-| ------------------- | ------------------------ | ------ | ---------------------------------------- | ------------------ |
-| `log.sink`          | `LogSink`                | multi  | —                                        | —                  |
-| `metrics.sink`      | `MetricSink`             | multi  | —                                        | —                  |
-| `trace.exporter`    | `TraceExporter`          | multi  | —                                        | —                  |
-| `config.provider`   | `ConfigProvider`         | multi  | —                                        | `config.provide`   |
-| `command.provide`   | `CommandHandler`         | multi  | same id → `ExtensionConflictError`       | `command.provide`  |
-| `health.check`      | `HealthCheckFn`          | multi  | —                                        | —                  |
-| `ui.theme`          | `ThemeDefinition`        | multi  | same id → `reject-new`                   | `ui.theme`         |
-| `ui.panel`          | `PanelContribution`      | multi  | same id → `reject-new`                   | `ui.panel`         |
-| `ui.route`          | `RouteContribution`      | multi  | same path → `replace-old`                | `ui.route`         |
-| `scheduler.replace` | `Scheduler`              | single | `replace-old`                            | `kernel.internals` |
-| `resolver.replace`  | `DependencyResolverPort` | single | `replace-old`                            | `kernel.internals` |
-| `loader.replace`    | `PluginLoaderPort`       | single | `replace-old`                            | `kernel.internals` |
+| id                  | Contract                 | Slot   | Conflict                           | capability         |
+| ------------------- | ------------------------ | ------ | ---------------------------------- | ------------------ |
+| `log.sink`          | `LogSink`                | multi  | —                                  | —                  |
+| `metrics.sink`      | `MetricSink`             | multi  | —                                  | —                  |
+| `trace.exporter`    | `TraceExporter`          | multi  | —                                  | —                  |
+| `config.provider`   | `ConfigProvider`         | multi  | —                                  | `config.provide`   |
+| `command.provide`   | `CommandHandler`         | multi  | same id → `ExtensionConflictError` | `command.provide`  |
+| `health.check`      | `HealthCheckFn`          | multi  | —                                  | —                  |
+| `ui.theme`          | `ThemeDefinition`        | multi  | same id → `reject-new`             | `ui.theme`         |
+| `ui.panel`          | `PanelContribution`      | multi  | same id → `reject-new`             | `ui.panel`         |
+| `ui.route`          | `RouteContribution`      | multi  | same path → `replace-old`          | `ui.route`         |
+| `scheduler.replace` | `Scheduler`              | single | `replace-old`                      | `kernel.internals` |
+| `resolver.replace`  | `DependencyResolverPort` | single | `replace-old`                      | `kernel.internals` |
+| `loader.replace`    | `PluginLoaderPort`       | single | `replace-old`                      | `kernel.internals` |
 
 Contract types are defined authoritatively in `src/kernel/contracts/` (`ui.ts` / `logging.ts` / `metrics.ts` / `tracing.ts` / `config.ts` / `health.ts`).
+
+**Multi slots deduplicate by `contributionId`**: repeating a contributionId in the same multi slot throws `ExtensionConflictError` (the `conflict` policy is only meaningful for singleton slots — a singleton slot needs adjudication for "who stays", while a multi slot means "same id = same contribution, repeat = conflict").
 
 ### 6.2 Three hard rules
 
@@ -210,32 +212,34 @@ export const GreeterToken = defineToken<Greeter>({
 - Services **do not leak** to the parent container by default: to share, call `ctx.api.export(token)`.
 - A sibling plugin can only resolve a service after the owner `export`s it; the root container must be `shareable: true` for child containers to resolve its entries.
 
-Kernel-provided tokens live in `KernelTokens` (17 in total): `EventBus` / `Config` / `ConfigService` / `Log` / `Metrics` / `Tracer` / `Health` / `Permissions` / `Plugins` / `Scheduler` / `Resolver` / `Discovery` / `Loader` / `CapabilityGuard` / `Extensions` / `UiThemeRegistry` / `UiPanelHost`.
+Kernel-provided tokens live in `KernelTokens` (16 in total): `EventBus` / `Config` / `ConfigService` / `Log` / `Metrics` / `Tracer` / `Health` / `Permissions` / `Plugins` / `Scheduler` / `Resolver` / `Discovery` / `Loader` / `CapabilityGuard` / `Extensions` / `UiThemeRegistry`.
 
 ---
 
 ## 8. Command chain: how the frontend calls you
 
-Commands are provided by responding on the event bus; the frontend invokes `command.execute` through the IPC allowlist:
+Commands use the **contribute + dispatcher** pattern: the plugin contributes into the `command.provide` extension point, and the kernel `CommandDispatcher` is the only responder for `command.execute` (the host implementation is `null`). It looks up the slot by `contributionId === command` and returns the handler's value as-is.
 
 ```ts
 import { Topics } from 'rem2-kernel'
 
-ctx.events.respond<{ command: string }, { ok: boolean; output?: string; error?: string }>(
-  Topics.CommandExecute,
-  (p) => {
-    if (p.command !== 'hello') return { ok: false, error: `unknown command: ${p.command}` }
-    return { ok: true, output: 'Hello, rem2!' }
+// The only entry: contribute to the extension point. Do NOT
+// bus.respond(Topics.CommandExecute) — the kernel dispatcher registers
+// earlier in start(), so a plugin-side responder is shadowed by seq order.
+ctx.extensions.contribute('command.provide', {
+  contributionId: 'hello',
+  impl: async (args: unknown) => {
+    const name = (args as { name?: string })?.name ?? 'rem2'
+    return { ok: true, output: `Hello, ${name}!` }
   },
-)
+})
 ```
 
-The return shape is literally what the frontend sees: `{ok: true, output}` → show `output`; `{ok: false, error}` → show the error.
+The return shape is literally what the frontend sees: `{ok: true, output}` → show `output`; `{ok: false, error}` → show the error. An unknown command yields an explicit `{ok:false, error:'unknown command: …'}` from the dispatcher (never `NoResponderError`, never recursion).
 
-**Always use `Topics` constants, never hand-copied strings.** Two known failure modes:
+Why not "plugins respond the topic directly": when a host responder shares the topic name with the request (`Topics.CommandExecute` _is_ `'command.execute'`), one mistaken forwarder makes the request hit itself → infinite recursion `RangeError` (a real incident). The dispatcher reads the extension slot and never requests the same topic, so recursion is structurally impossible; the single dispatch path also makes "which plugin provides which command" enumerable from the extension registry.
 
-- A host responder registered under the same topic as the request (`Topics.CommandExecute` *is* `'command.execute'`), so the request hits itself → infinite recursion `RangeError`. That is why the host implementation for `command.execute` is `null` and forwards nothing.
-- A plugin writes a colon topic (`'command:execute'`) while the kernel uses a dot (`'command.execute'`). The matcher treats both as segment separators, so it "happens to work" — coincidence, not a contract.
+**Always use `Topics` constants, never hand-copied strings.** One more known failure mode: a plugin writes a colon topic (`'command:execute'`) while the kernel uses a dot (`'command.execute'`). The matcher treats both as segment separators, so it "happens to work" — coincidence, not a contract.
 
 ---
 
@@ -253,10 +257,10 @@ pnpm build:plugins          # esbuild-bundle all plugins → plugins-dist/<id>/d
 
 ## 10. Isolation modes
 
-| Mode                 | Notes                                                         |
-| -------------------- | ------------------------------------------------------------- |
-| `in-process` (default) | same process and realm as the kernel, highest performance   |
-| `worker`             | separate Node worker thread, lifecycle driven over RPC        |
+| Mode                   | Notes                                                     |
+| ---------------------- | --------------------------------------------------------- |
+| `in-process` (default) | same process and realm as the kernel, highest performance |
+| `worker`               | separate Node worker thread, lifecycle driven over RPC    |
 
 **Available inside a worker**: `log` / `config` (init snapshot + change pushes, read-only) / `events` (`emit` / `on` / `request`) / `metrics` / `permissions` (snapshot) / `resolvePath`.
 **Unavailable inside a worker** (calling throws): `services` / `api` / `plugins` / `container` / `events.respond`. Cross-plugin collaboration only via the event bus.
@@ -269,13 +273,13 @@ Worker isolation is **fault isolation** (contains crashes and infinite loops), *
 
 All kernel errors extend `KernelError` and carry a stable `code`:
 
-| Category            | Codes                                                                                                                          |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Manifest / loading  | `E_INVALID_MANIFEST` · `E_MANIFEST_MISMATCH` · `E_ENTRY_ESCAPE` · `E_LOAD_FAILED`                                              |
-| Dependency          | `E_DUPLICATE_ID` · `E_MISSING_DEPENDENCY` · `E_VERSION_MISMATCH` · `E_CYCLE` · `E_INCOMPATIBLE`                                 |
-| Service / DI        | `E_NO_PROVIDER` · `E_CIRCULAR_DEPENDENCY` · `E_SCOPED_ACCESS`                                                                   |
-| Security / extension| `E_CAPABILITY_DENIED` · `E_UNKNOWN_EXTENSION_POINT` · `E_EXTENSION_CONFLICT`                                                    |
-| Runtime             | `E_TIMEOUT` · `E_LIFECYCLE` · `E_ILLEGAL_TRANSITION` · `E_NO_RESPONDER` · `E_NOT_WRITABLE` · `E_ALREADY_STARTED` · `E_GENERIC` |
+| Category             | Codes                                                                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Manifest / loading   | `E_INVALID_MANIFEST` · `E_MANIFEST_MISMATCH` · `E_ENTRY_ESCAPE` · `E_LOAD_FAILED`                                              |
+| Dependency           | `E_DUPLICATE_ID` · `E_MISSING_DEPENDENCY` · `E_VERSION_MISMATCH` · `E_CYCLE` · `E_INCOMPATIBLE`                                |
+| Service / DI         | `E_NO_PROVIDER` · `E_CIRCULAR_DEPENDENCY` · `E_SCOPED_ACCESS`                                                                  |
+| Security / extension | `E_CAPABILITY_DENIED` · `E_UNKNOWN_EXTENSION_POINT` · `E_EXTENSION_CONFLICT`                                                   |
+| Runtime              | `E_TIMEOUT` · `E_LIFECYCLE` · `E_ILLEGAL_TRANSITION` · `E_NO_RESPONDER` · `E_NOT_WRITABLE` · `E_ALREADY_STARTED` · `E_GENERIC` |
 
 Source of truth: `src/kernel/errors.ts`.
 

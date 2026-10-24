@@ -74,7 +74,7 @@ sequenceDiagram
         PIPE->>PL: onStart()
         PL-->>PIPE: void
         PIPE-->>K: LifecycleOutcome{ok, degraded, rolledBack}
-        K->>K: setState(Active | Degraded | Failed) + setHealth
+        K->>K: applyPluginState(Active | Degraded | Failed) + setHealth + emit(plugin.state-changed)
     end
 
     K-->>EM: KernelStartResult{loadOrder, started, degraded, failed}
@@ -82,7 +82,10 @@ sequenceDiagram
     K-->>EM: HealthReport
 
 %% ═══════════════════════════════════════════════════════
-%% Chain ② Command: renderer → preload → ipcMain → whitelist → bus
+%% Chain ② Command: renderer → preload → ipcMain → whitelist → kernel CommandDispatcher → command.provide slot
+%%   Single dispatch path: plugins contribute command.provide; the dispatcher looks the slot up by
+%%   contributionId and returns the handler result as-is. Plugins must not respond command.execute
+%%   directly — the dispatcher registered in start() shadows them deterministically by seq order.
 %% ═════════════════════════════════════════════════════
 sequenceDiagram
     autonumber
@@ -93,26 +96,29 @@ sequenceDiagram
     participant BR as IpcBridge
     participant CH as IpcChannels
     participant EB as EventBusImpl
+    participant CD as CommandDispatcher (kernel)
     participant EP as ExtensionPointRegistry
     participant HP as hello-command
 
     S->>IC: execute('hello', {name:'rem2'})
-    IC->>PL: window.rem2.invoke('command:hello')
+    IC->>PL: window.rem2.invoke('command.execute', {command, args})
     PL->>IM: send('rem2:invoke', {id, method, args})
     IM->>BR: transport.on('rem2:invoke')
-    BR->>CH: isAllowed('command:hello')
-    alt not in whitelist (e.g. 'ui.panel.resolve' not yet open)
+    BR->>CH: isAllowed('command.execute')
+    alt not in whitelist
         CH-->>BR: false
         BR-->>PL: {id, ok:false, error:'method not within IPC contract surface'}
         PL-->>IC: reject
         IC-->>S: Error
     else in whitelist
         CH-->>BR: true
-        BR->>EB: request('command:hello', args, {timeoutMs:5000})
-        EB->>EB: pickResponder('command:hello') (by seq)
-        Note over EB: responder routed via EP when contributed by command extension point;<br/>here is the direct respond path
-        EB->>HP: handler(payload)
-        HP-->>EB: result
+        BR->>EB: request('command.execute', args, {timeoutMs:5000})
+        EB->>CD: dispatch(payload) (the only responder, registered by start())
+        CD->>EP: entries('command.provide'), match by contributionId === command
+        EP-->>CD: entry.impl (miss → {ok:false, error:'unknown command: …'})
+        CD->>HP: impl(args)
+        HP-->>CD: {ok, output} (returned as-is, never wrapped again)
+        CD-->>EB: result
         EB-->>BR: result
         BR-->>PL: {id, ok:true, result}
         PL-->>IC: resolve
@@ -205,6 +211,7 @@ sequenceDiagram
     K->>PM: unregister(pluginId) (incl. guard.unregisterPermissions)
     K->>RC: unmountChildContainer(container)
     K->>RC: container.dispose() (cascade dispose child containers and disposable services)
+    K->>K: applyPluginState('Stopped') → emit('kernel.plugin.state-changed') (contributions reclaimed first, no race)
     K->REG: remove(pluginId) + drop from four startResult arrays
     K->K: emit('kernel.plugin.unloaded', {pluginId, reason})
 

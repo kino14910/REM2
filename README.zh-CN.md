@@ -5,7 +5,7 @@
 > **Kernel + Everything-as-Plugin** 的独立从零实现。
 > 内核只做 7 件事，其余一切（日志、配置、业务、运维、UI）都是插件。
 
-[![tests](https://img.shields.io/badge/tests-270%20passing-brightgreen)](#测试)
+[![tests](https://img.shields.io/badge/tests-327%20passing-brightgreen)](#测试)
 [![kernel deps](https://img.shields.io/badge/kernel%20deps-0-blue)](#内核边界)
 [![typescript](https://img.shields.io/badge/TypeScript-strict-blue)](#)
 
@@ -52,8 +52,8 @@ pnpm dev --log-level debug
 
 ```
 ──── rem2 kernel started ────
-loadOrder : com.rem2.config-json -> com.rem2.hello-command -> com.rem2.logger-console -> com.rem2.health-http -> com.rem2.notify-worker -> com.rem2.theme-dark
-started   : com.rem2.config-json, com.rem2.hello-command, com.rem2.logger-console, com.rem2.health-http, com.rem2.notify-worker, com.rem2.theme-dark
+loadOrder : com.rem2.config-json -> com.rem2.hello-command -> com.rem2.logger-console -> com.rem2.health-http -> com.rem2.notify-worker -> com.rem2.plugin-inspector -> com.rem2.theme-dark
+started   : com.rem2.config-json, com.rem2.hello-command, com.rem2.logger-console, com.rem2.health-http, com.rem2.notify-worker, com.rem2.plugin-inspector, com.rem2.theme-dark
 degraded  : (none)
 failed    : (none)
 health    : healthy
@@ -62,6 +62,7 @@ health    : healthy
   - com.rem2.hello-command [Active] healthy
   - com.rem2.logger-console [Active] healthy
   - com.rem2.notify-worker [Active] healthy
+  - com.rem2.plugin-inspector [Active] healthy
   - com.rem2.theme-dark [Active] healthy
 ─────────────────────────────
 ```
@@ -93,6 +94,11 @@ pnpm start
 > ```
 >
 > 默认不开启，以免影响正常机器上的渲染性能。
+>
+> 该 opt-in 路径会一并禁用 Chromium **进程沙箱**（`--no-sandbox`）：此类主机上沙箱的虚拟化后端同样失败
+> （`Failed to create shared context for virtualization`），每个渲染进程都会以访问冲突崩溃——表现为空白窗口，
+> `loadFile` 随后报 ERR_FAILED。仅该 opt-in 路径被削弱；默认启动保留进程沙箱，renderer 仍运行在
+> `contextIsolation` + IPC 白名单 + 内核 CapabilityGuard 之下。
 
 > 打包安装包：`pnpm package`（产出可执行目录）/ `pnpm make`（产出安装器）。
 
@@ -152,16 +158,17 @@ export default definePlugin(
 
 ---
 
-## 示例插件（6 类扩展点）
+## 示例插件（7 类扩展点）
 
-| 插件                                       | 证明什么                                         | 依赖                  |
-| ------------------------------------------ | ------------------------------------------------ | --------------------- |
-| [`logger-console`](plugins/logger-console) | **可观测性是插件** — 提供 `log.sink`             | —                     |
-| [`config-json`](plugins/config-json)       | **配置来源是插件** — 提供 `config.provider`      | —                     |
-| [`hello-command`](plugins/hello-command)   | **业务功能是插件** — 提供 `command.provide`      | 软依赖 config-json    |
-| [`health-http`](plugins/health-http)       | **运维是插件** — 暴露 `/health` 端点             | 硬依赖 logger-console |
-| [`theme-dark`](plugins/theme-dark)         | **UI 是插件** — 无 UI 外壳时优雅降级             | —                     |
-| [`notify-worker`](plugins/notify-worker)   | **Worker 线程隔离** — 崩溃不影响内核（故障隔离） | —                     |
+| 插件                                           | 证明什么                                                                | 依赖                  |
+| ---------------------------------------------- | ----------------------------------------------------------------------- | --------------------- |
+| [`logger-console`](plugins/logger-console)     | **可观测性是插件** — 提供 `log.sink`                                    | —                     |
+| [`config-json`](plugins/config-json)           | **配置来源是插件** — 提供 `config.provider`                             | —                     |
+| [`hello-command`](plugins/hello-command)       | **业务功能是插件** — 提供 `command.provide`                             | 软依赖 config-json    |
+| [`health-http`](plugins/health-http)           | **运维是插件** — 暴露 `/health` 端点                                    | 硬依赖 logger-console |
+| [`theme-dark`](plugins/theme-dark)             | **UI 是插件** — 无 UI 外壳时优雅降级                                    | —                     |
+| [`plugin-inspector`](plugins/plugin-inspector) | **检查器自身也是插件** — 贡献 `ui.panel` + `ui.route`，提供实时插件表格 | —                     |
+| [`notify-worker`](plugins/notify-worker)       | **Worker 线程隔离** — 崩溃不影响内核（故障隔离）                        | —                     |
 
 ---
 
@@ -188,12 +195,12 @@ pnpm test:coverage   # 覆盖率
 pnpm typecheck:all   # 内核 + Electron + 前端三份类型检查
 ```
 
-| 层次     | 文件数                 | 覆盖内容                                                     |
-| -------- | ---------------------- | ------------------------------------------------------------ |
-| 单元     | 15                     | semver / 拓扑排序 / 环检测 / DI 容器 / 容器隔离 / 事件总线 / 生命周期 / manifest 校验 / 权限 / 配置服务 / 健康服务 |
-| 集成     | 15                     | 启动顺序 / 软依赖降级 / 硬依赖级联 / 故障隔离 / 配置插件 / 可观测性 / 热重载 / 卸载级联 / 安全边界 / Worker 隔离 / **命令链路** / **主题链路** |
-| 契约     | 5                      | 插件导入边界 / 内核依赖白名单 / 扩展点清单一致性 / **构建产物为浏览器版 svelte** / **IPC 白名单与内核 Topics 一致** |
-| **合计** | **35 文件 / 270 用例** |                                                              |
+| 层次     | 文件数                 | 覆盖内容                                                                                                                                       |
+| -------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 单元     | 19                     | semver / 拓扑排序 / 环检测 / DI 容器 / 容器隔离 / 事件总线 / 生命周期 / manifest 校验 / 权限 / 配置服务 / 健康服务 / **命令分发器** / **DTO 校验** / **路由→面板决议** / **插件根路径解析** |
+| 集成     | 17                     | 启动顺序 / 软依赖降级 / 硬依赖级联 / 故障隔离 / 配置插件 / 可观测性 / 热重载 / 卸载级联 / 安全边界 / Worker 隔离 / **命令链路** / **主题链路** / **UI 链路** / **inspector 数据链** |
+| 契约     | 5                      | 插件导入边界 / 内核依赖白名单 / 扩展点清单一致性 / **构建产物为浏览器版 svelte** / **IPC 白名单与内核 Topics 一致**                            |
+| **合计** | **41 文件 / 327 用例** |                                                                                                                                                |
 
 ---
 
@@ -201,17 +208,16 @@ pnpm typecheck:all   # 内核 + Electron + 前端三份类型检查
 
 文档按**阅读顺序**编号（`01` 最先读），完整索引见 **[docs/INDEX.md](docs/INDEX.md)**（英文索引：**[docs/en/INDEX.md](docs/en/INDEX.md)**）。
 
-| #    | 文档                                                         | 内容                                                         |
-| ---- | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| —    | **[docs/INDEX.md](docs/INDEX.md)**                           | **文档索引与阅读路径**（从这里开始）                         |
-| 01   | **[01-architecture-overview.md](docs/01-architecture-overview.md)** | **架构（权威）**：分层与依赖方向、全量文件职责、生命周期两层模型、12 个扩展点、隔离与权限、调用链路、数据通路、构建产物、9 条决策、扩展流程、已知限制 |
-| 02   | **[02-plugin-api.md](docs/02-plugin-api.md)**                | **插件开发指南**：`definePlugin`、`plugin.json` 字段、生命周期钩子、`PluginContext`、扩展点表、服务令牌、命令链路、隔离模式、错误码 |
-| 03   | **[03-frontend-ipc.md](docs/03-frontend-ipc.md)**            | **前端与 IPC 契约**：进程/构建边界、8 方法 + 5 事件白名单、DTO、store↔事件桥、主题通路、vite/CSP 约束 |
-| 04   | **[04-development-guide.md](docs/04-development-guide.md)**  | **开发指南**：环境、命令矩阵、构建与打包规格、tsconfig 边界、扩展流程、调试、已知坑、代码约定 |
+| #   | 文档                                                                | 内容                                                                                                                                                  |
+| --- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| —   | **[docs/INDEX.md](docs/INDEX.md)**                                  | **文档索引与阅读路径**（从这里开始）                                                                                                                  |
+| 01  | **[01-architecture-overview.md](docs/01-architecture-overview.md)** | **架构（权威）**：分层与依赖方向、全量文件职责、生命周期两层模型、12 个扩展点、隔离与权限、调用链路、数据通路、构建产物、9 条决策、扩展流程、已知限制 |
+| 02  | **[02-plugin-api.md](docs/02-plugin-api.md)**                       | **插件开发指南**：`definePlugin`、`plugin.json` 字段、生命周期钩子、`PluginContext`、扩展点表、服务令牌、命令链路、隔离模式、错误码                   |
+| 03  | **[03-frontend-ipc.md](docs/03-frontend-ipc.md)**                   | **前端与 IPC 契约**：进程/构建边界、8 方法 + 5 事件白名单、DTO、store↔事件桥、主题通路、vite/CSP 约束                                                 |
+| 04  | **[04-development-guide.md](docs/04-development-guide.md)**         | **开发指南**：环境、命令矩阵、构建与打包规格、tsconfig 边界、扩展流程、调试、已知坑、代码约定                                                         |
 
 架构图：[class-diagram-v2.mermaid](docs/class-diagram-v2.mermaid) · [sequence-diagram-v2.mermaid](docs/sequence-diagram-v2.mermaid)
 （英文架构图：[docs/en/class-diagram-v2.mermaid](docs/en/class-diagram-v2.mermaid) · [docs/en/sequence-diagram-v2.mermaid](docs/en/sequence-diagram-v2.mermaid)）。
-
 
 ---
 
@@ -248,10 +254,10 @@ src/
 │   └── cli/              # run / args / paths / cli / scaffold / validate
 ├── frontend/             # Svelte 5 渲染层（唯一跑 Svelte 的地方）
 │   ├── app/              # App / Shell / PanelHost / RouteHost + components
-│   └── lib/              # ipc-client / bridge-types / stores / theme
+│   └── lib/              # ipc-client / bridge-types / nav-link / dto-guards / stores / theme
 ├── main.ts               # Electron Forge 主进程入口（转发壳）
 └── preload.ts            # Forge preload 入口（转发壳）
-plugins/                  # 6 个示例插件（源码 + plugin.json + 独立 tsconfig）
+plugins/                  # 7 个示例插件（源码 + plugin.json + 独立 tsconfig）
 plugins-dist/             # 插件构建产物（esbuild ESM bundle，进 extraResource）
 dist/                     # 内核产物（tsc，含 .d.ts）
 tests/                    # 单元 / 集成 / 契约测试

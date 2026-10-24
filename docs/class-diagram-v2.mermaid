@@ -132,6 +132,16 @@ classDiagram
             +UI_ROUTE_POINT ExtensionPointDef~RouteContribution~
             +UI_THEME_POINT ExtensionPointDef~ThemeDefinition~
         }
+        class CommandDispatcher {
+            -ExtensionPointRegistry extensions
+            +dispatch(payload) CommandDispatchResult
+        }
+        class CommandDispatchResult {
+            <<interface>>
+            +boolean ok
+            +unknown output?
+            +string error?
+        }
     }
 
     %% ══════════ UI 契约（新：Svelte 前端消费）══════════
@@ -431,12 +441,16 @@ classDiagram
 
     Composition ..> KernelDeps : 工厂创建
     Composition ..> ExtensionPointRegistry : 注册宿主默认实现
+    Composition ..> CommandDispatcher : 创建（读 command.provide 槽）
 
     Kernel --> PluginDiscovery : start() 步骤1 扫描
     Kernel --> DependencyResolver : start() 步骤2 解析
     Kernel --> PluginLoader : 步骤3 逐个装载
     Kernel --> LifecyclePipeline : 驱动阶段
     Kernel --> PluginsRegistry : 状态与健康
+    Kernel --> CommandDispatcher : start() 注册 command.execute responder
+    CommandDispatcher --> ExtensionPointRegistry : 直读 command.provide 槽（不请求总线）
+    CommandDispatcher ..> CommandDispatchResult : 原样返回 handler 结果
 
     LifecyclePipeline *-- LifecycleManager
     LifecyclePipeline --> ExtensionPointRegistry : 卸载时 retractAll
@@ -511,7 +525,7 @@ classDiagram
     classDef fe fill:#d4edda,stroke:#28a745
 
     class PluginManifest,PluginFactory,PluginFactoryHooks,PluginContext,PluginApi,ServicesView,ServiceToken,LifecyclePhase,PluginStateT,StopReason,ExtensionPointDef,ExtensionContribution,ExtensionContributorView,PanelContribution,RouteContribution,ThemeDefinition contract
-    class ExtensionPointRegistry,ExtensionPointDef,ExtensionContribution,ExtensionContributorView,Definitions ext
+    class ExtensionPointRegistry,ExtensionPointDef,ExtensionContribution,ExtensionContributorView,Definitions,CommandDispatcher,CommandDispatchResult ext
     class Kernel,KernelDeps,Composition,LifecyclePipeline,LifecycleManager,PluginDiscovery,DependencyResolver,PluginLoader,ModuleResolver,PluginFactoryResolver,Container,WorkerPluginHost,WorkerPluginProxy,PermissionManager,CapabilityGuard,TrustPolicy,LogService,MetricsService,TracingService,HealthService,ConfigService,EventBusImpl,PluginsRegistry svc
     class ElectronMain,Preload,WindowRem2Api,IpcBridge,IpcChannels,ThemeRegistryImpl,CliRun,ScaffoldPlugin host
     class EntryClient,App,Shell,PanelHost,RouteHost,IpcClient,PanelStore,ThemeRegistry fe

@@ -18,29 +18,29 @@
 
 ```mermaid
 graph BT
-    subgraph L1["plugins/ — 6 builtin plugins (discovered and loaded at runtime)"]
-        PA["in-process: config-json / hello-command / logger-console /<br/>health-http / theme-dark"]
+    subgraph L1["plugins/ — 7 builtin plugins (discovered and loaded at runtime)"]
+        PA["in-process: config-json / hello-command / logger-console /<br/>health-http / theme-dark / plugin-inspector"]
         PB["worker: notify-worker"]
     end
 
-    subgraph L2["src/frontend/ — Svelte 5 renderer (18 files)"]
+    subgraph L2["src/frontend/ — Svelte 5 renderer (20 files)"]
         FA["app/: App / Shell / PanelHost / RouteHost + 4 components"]
-        FB["lib/: ipc-client / bridge-types / 5 stores / theme"]
+        FB["lib/: ipc-client / bridge-types / nav-link / dto-guards<br/>/ 5 stores / theme"]
     end
 
-    subgraph L3["src/host/ — host adapters (13 files)"]
+    subgraph L3["src/host/ — host adapters (14 files)"]
         HA["electron/: main / preload / window / theme-registry"]
-        HB["ipc/: bridge / method-handlers / forward-map"]
+        HB["ipc/: bridge / method-handlers / validate / forward-map"]
         HC["cli/: run / cli / args / paths / scaffold / validate"]
     end
 
-    subgraph L4["src/kernel/ — minimal kernel (82 files, zero third-party runtime deps)"]
+    subgraph L4["src/kernel/ — minimal kernel (83 files, zero third-party runtime deps)"]
         KA["contracts/ (19 files): pure types + defineToken / definePlugin"]
         KB["kernel.ts orchestration + composition.ts wiring"]
         KC["di / lifecycle / dependency / discovery / loader / isolation /<br/>security / observability / config / events / scheduler / semver /<br/>bootstrap / registry / extensions / context / util"]
     end
 
-    subgraph L5["tests/ — 35 files / 270 cases"]
+    subgraph L5["tests/ — 41 files / 327 cases"]
         TA["contract/ (5): kernel-deps · plugin-contract · ipc-contract ·<br/>extension-points · build-artifact"]
         TB["unit/ (15) + integration/ (15)"]
     end
@@ -64,15 +64,15 @@ plugins  → (rem2-kernel public entry) → kernel
 host     → (relative imports) → kernel
 ```
 
-| Layer                 | Hard constraint                                                                                  | Machine-checked by                                                                  |
-| --------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| kernel                | zero third-party runtime deps; must not import `host` / `frontend` / `plugins`                   | `tests/contract/kernel-deps.test.ts` R1 / R2 (scanned-file count has a floor)       |
-| host (except electron/)| also zero third-party deps (`host/electron/**` may import `electron`)                            | same R1, excluding `host/electron/**`                                               |
-| frontend              | must not import kernel / host sources; the only channel is `window.rem2`                          | `tests/contract/plugin-contract.test.ts` R6; allowlist from `src/shared/` (see §7.1) |
-| plugins               | import only `rem2-kernel` / `node:*` / relative paths; manifest `entry` must be `.js` or `.mjs`   | `tests/contract/plugin-contract.test.ts` R4 / R7                                    |
-| `src/shared/**`       | zero imports (pure literals + pure types)                                                        | `tests/contract/ipc-contract.test.ts`                                               |
+| Layer                   | Hard constraint                                                                                 | Machine-checked by                                                                   |
+| ----------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| kernel                  | zero third-party runtime deps; must not import `host` / `frontend` / `plugins`                  | `tests/contract/kernel-deps.test.ts` R1 / R2 (scanned-file count has a floor)        |
+| host (except electron/) | also zero third-party deps (`host/electron/**` may import `electron`)                           | same R1, excluding `host/electron/**`                                                |
+| frontend                | must not import kernel / host sources; the only channel is `window.rem2`                        | `tests/contract/plugin-contract.test.ts` R6; allowlist from `src/shared/` (see §7.1) |
+| plugins                 | import only `rem2-kernel` / `node:*` / relative paths; manifest `entry` must be `.js` or `.mjs` | `tests/contract/plugin-contract.test.ts` R4 / R7                                     |
+| `src/shared/**`         | zero imports (pure literals + pure types)                                                       | `tests/contract/ipc-contract.test.ts`                                                |
 
-**One sentence**: the kernel (82 files) only orchestrates and defines contracts; the host (13 files) adapts Electron / CLI / IPC onto those contracts; the frontend (18 files) consumes 8 allowlisted methods and 5 allowlisted events through `window.rem2`; every business and ops capability (command, config, logging, health, theme, notification) is one of the 6 plugins under `plugins/`.
+**One sentence**: the kernel (83 files) only orchestrates and defines contracts; the host (14 files) adapts Electron / CLI / IPC onto those contracts; the frontend (20 files) consumes 8 allowlisted methods and 5 allowlisted events through `window.rem2`; every business and ops capability (command, config, logging, health, theme, notification, inspector UI) is one of the 7 plugins under `plugins/`.
 
 ---
 
@@ -107,7 +107,7 @@ rem2/
 │   │   │   ├── context.ts             #   PluginContext / PluginApi / ServicesView
 │   │   │   ├── extension-point.ts     #   ExtensionPointId / Def / Contribution / ContributorView
 │   │   │   ├── service-token.ts       #   branded ServiceToken interface + defineToken()
-│   │   │   ├── kernel-tokens.ts       #   KernelTokens: 17 kernel service tokens
+│   │   │   ├── kernel-tokens.ts       #   KernelTokens: 16 kernel service tokens
 │   │   │   ├── plugins.ts             #   PluginStateT / PLUGIN_STATES / TERMINAL_STATES / PluginInfo
 │   │   │   ├── ui.ts                  #   ThemeDefinition / PanelContribution / RouteContribution / ThemeRegistry
 │   │   │   └── event-bus · config · logging · metrics · tracing · health · permission · container · service
@@ -115,6 +115,7 @@ rem2/
 │   │   ├── extensions/                # ═══ the single mount surface for capabilities ═══
 │   │   │   ├── definitions.ts         # ★ declarative table of the 12 extension points (order = list() order)
 │   │   │   ├── registry.ts            # ★ ExtensionPointRegistry: define / contribute / enumerate / reclaim by pluginId
+│   │   │   ├── command-dispatcher.ts  #   CommandDispatcher: the only dispatcher for command.execute (reads the command.provide slot directly)
 │   │   │   ├── contrib-slot.ts        #   slot semantics for single and multi contributions
 │   │   │   ├── ports.ts               #   port contracts for the three *.replace points and command.provide
 │   │   │   └── ports-types.ts         #   port-side types (LoadedPlugin / PluginLoaderOptions)
@@ -148,11 +149,12 @@ rem2/
 │   │   ├── electron/
 │   │   │   ├── main.ts                # ★ main process: createDeps() → Kernel → register allowlist tables → window
 │   │   │   ├── preload.ts             # ★ the only contract boundary: contextBridge exposes window.rem2
-│   │   │   ├── window.ts              #   createWindow(): contextIsolation + sandbox + CSP
+│   │   │   ├── window.ts              #   createWindow(): contextIsolation + sandbox + CSP (renderer-level sandbox; the REM2_DISABLE_GPU=1 opt-in path additionally disables the process sandbox, see 04 §6)
 │   │   │   └── theme-registry.ts      #   host-side theme table (depends only on kernel/contracts/ui, imports no plugin)
 │   │   ├── ipc/
 │   │   │   ├── bridge.ts              #   IpcBridge: narrows both directions + DTO reduction
 │   │   │   ├── method-handlers.ts     # ★ Record<AllowedMethod, …> host implementation table (no electron import)
+│   │   │   ├── validate.ts            #   runtime validation of IPC args (pure: panelIdOf / uiEventArgsOf / themeIdOf)
 │   │   │   └── forward-map.ts         # ★ Record<AllowedEvent, …> kernel topic → external event reduction
 │   │   └── cli/
 │   │       ├── run.ts                 #   `pnpm dev`: args → KernelOptions → start → health report
@@ -165,12 +167,12 @@ rem2/
 │   ├── frontend/                      # ═══ Svelte 5 frontend (see 03 for detail) ═══
 │   │   ├── entry-client.ts            #   renderer entry: import global.css + mount(App)
 │   │   ├── app/                       #   App / Shell / PanelHost / RouteHost / components / global.css
-│   │   └── lib/                       #   ipc-client / bridge-types / stores(.svelte.ts) / theme/vars.ts
+│   │   └── lib/                       #   ipc-client / bridge-types / nav-link / dto-guards / stores(.svelte.ts) / theme/vars.ts
 │   │
 │   └── shared/
 │       └── ipc-contract.ts            # ★ method/event names shared by host and frontend (one copy, zero imports)
 │
-├── plugins/                           # plugin source units (6, each with 4 files: package.json / tsconfig.json / plugin.json / src)
+├── plugins/                           # plugin source units (7, each with 4 files: package.json / tsconfig.json / plugin.json / src)
 ├── plugins-dist/                      # plugin build output (goes into extraResource, git-ignored)
 ├── scripts/build-plugins.mjs          # esbuild bundling per plugin (build-time code, deliberately outside src/)
 ├── tests/{unit,integration,contract}  # 3 test layers + fixtures/ + helpers/
@@ -193,41 +195,41 @@ rem2/
 
 > The "not responsible for" column matters more than the responsibility column — it is the negative space of the architecture.
 
-| Module                                           | Responsibility                                                                         | Key symbols                                                   | Not responsible for                                           |
-| ------------------------------------------------ | -------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------- |
-| `contracts/`                                     | the whole language plugins see: pure types + 2 pure factories + 17 `KernelTokens`       | `defineToken`, `KernelTokens`, `PluginManifest`               | any implementation, IO, or side effect                        |
-| `kernel.ts`                                      | orchestration: start / reload / unloadPlugin / shutdown / health                        | `Kernel`                                                      | never `new`s an implementation (constructor takes `KernelDeps`) |
-| `composition.ts`                                 | wiring: `createDeps()` builds services + registers host default extension impls          | `createDeps`, `KernelDeps`                                    | makes no orchestration decisions                              |
-| `extensions/`                                    | 12 extension point declarations + contribute / enumerate / force-reclaim + 3 `*.replace` ports | `EXTENSION_POINT_DEFS`, `ExtensionPointRegistry`         | provides no extension implementation                          |
-| `di/`                                            | `Container`: parent hidden in a module-private `WeakMap`, explicit `exported`, sibling access | `Container`                                             | does not judge capabilities (that is `security/`)             |
-| `dependency/`                                    | version compatibility + dedupe + cycle detection + deterministic topo sort               | `DependencyResolver`                                          | loads no plugin code                                          |
-| `discovery/`                                     | scan roots, read/validate `plugin.json`, mtime cache                                     | `PluginDiscovery`                                             | never `import()`s an entry                                    |
-| `lifecycle/`                                     | physical pipeline (data-driven step table) + phase driver + timeout + rollback           | `START_PIPELINE` / `STOP_PIPELINE`, `LifecycleManager`         | does not decide load order (the resolver does)                |
-| `loader/`                                        | dynamic `import()` + factory call + container/context assembly + worker proxy            | `PluginLoader`                                                | does not discover or resolve                                  |
-| `isolation/`                                     | worker host: RPC + lazy start + crash → Failed                                           | `WorkerPluginHost`                                            | **not a security sandbox** (see §9 D5)                        |
-| `security/`                                      | capability guard + permission manager + trust policy                                     | `CapabilityGuard`, `PermissionManager`, `trustLevelFor`        | does no signature verification                                |
-| `observability/`                                 | log / metrics / tracing / health services + sink extension bridges                       | `LogService`, `registerHostSinks`                             | does not implement concrete sinks (plugins contribute them)   |
-| `config/`                                        | provider layering + merge + change notification, **no concrete config source built in**  | `ConfigService`                                               | knows nothing about JSON / env / remote (those are plugins)   |
-| `events/`                                        | event bus: bucket index, priority desc → seq asc, serial await                            | `EventBusImpl`                                                | knows no topic semantics                                      |
-| `scheduler/` / `semver/`                         | scheduling port + serial impl; version parsing and range satisfaction                    | `SerialScheduler`, `satisfies`                                | —                                                             |
-| `bootstrap/`                                     | option normalization + register 15 tokens into root + set 8 capability gates              | `registerCoreServices`, `defaultKernelOptions`                 | **injects no extension default implementation**               |
-| `registry/`                                      | loaded plugin table + state + health (read-only view)                                     | `PluginsRegistry`                                             | —                                                             |
-| `context/`                                       | assemble `PluginContext`; plugin API export and capability consumption                    | `createPluginContext`, `PluginApiImpl`                        | the plugin API holds no parent container reference            |
-| `state-machine` / `topics` / `errors` / `version` | 12-state transition table / semantic topic constants / error classes / version constants  | `TRANSITIONS`, `Topics`, `KernelError`                         | `index.ts` exports no implementation class                    |
+| Module                                            | Responsibility                                                                                                                    | Key symbols                                                           | Not responsible for                                             |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `contracts/`                                      | the whole language plugins see: pure types + 2 pure factories + 16 `KernelTokens`                                                 | `defineToken`, `KernelTokens`, `PluginManifest`                       | any implementation, IO, or side effect                          |
+| `kernel.ts`                                       | orchestration: start / reload / unloadPlugin / shutdown / health                                                                  | `Kernel`, `applyPluginState`                                          | never `new`s an implementation (constructor takes `KernelDeps`) |
+| `composition.ts`                                  | wiring: `createDeps()` builds services + registers host default extension impls                                                   | `createDeps`, `KernelDeps`, `CommandDispatcher`                       | makes no orchestration decisions                                |
+| `extensions/`                                     | 12 extension point declarations + contribute / enumerate / force-reclaim + 3 `*.replace` ports + the single command dispatch path | `EXTENSION_POINT_DEFS`, `ExtensionPointRegistry`, `CommandDispatcher` | provides no extension implementation                            |
+| `di/`                                             | `Container`: parent hidden in a module-private `WeakMap`, explicit `exported`, sibling access                                     | `Container`                                                           | does not judge capabilities (that is `security/`)               |
+| `dependency/`                                     | version compatibility + dedupe + cycle detection + deterministic topo sort                                                        | `DependencyResolver`                                                  | loads no plugin code                                            |
+| `discovery/`                                      | scan roots, read/validate `plugin.json`, mtime cache                                                                              | `PluginDiscovery`                                                     | never `import()`s an entry                                      |
+| `lifecycle/`                                      | physical pipeline (data-driven step table) + phase driver + timeout + rollback                                                    | `START_PIPELINE` / `STOP_PIPELINE`, `LifecycleManager`                | does not decide load order (the resolver does)                  |
+| `loader/`                                         | dynamic `import()` + factory call + container/context assembly + worker proxy                                                     | `PluginLoader`                                                        | does not discover or resolve                                    |
+| `isolation/`                                      | worker host: RPC + lazy start + crash → Failed                                                                                    | `WorkerPluginHost`                                                    | **not a security sandbox** (see §9 D5)                          |
+| `security/`                                       | capability guard + permission manager + trust policy                                                                              | `CapabilityGuard`, `PermissionManager`, `trustLevelFor`               | does no signature verification                                  |
+| `observability/`                                  | log / metrics / tracing / health services + sink extension bridges                                                                | `LogService`, `registerHostSinks`                                     | does not implement concrete sinks (plugins contribute them)     |
+| `config/`                                         | provider layering + merge + change notification, **no concrete config source built in**                                           | `ConfigService`                                                       | knows nothing about JSON / env / remote (those are plugins)     |
+| `events/`                                         | event bus: bucket index, priority desc → seq asc, serial await                                                                    | `EventBusImpl`                                                        | knows no topic semantics                                        |
+| `scheduler/` / `semver/`                          | scheduling port + serial impl; version parsing and range satisfaction                                                             | `SerialScheduler`, `satisfies`                                        | —                                                               |
+| `bootstrap/`                                      | option normalization + register 15 tokens into root + set 8 capability gates                                                      | `registerCoreServices`, `defaultKernelOptions`                        | **injects no extension default implementation**                 |
+| `registry/`                                       | loaded plugin table + state + health (read-only view)                                                                             | `PluginsRegistry`                                                     | —                                                               |
+| `context/`                                        | assemble `PluginContext`; plugin API export and capability consumption                                                            | `createPluginContext`, `PluginApiImpl`                                | the plugin API holds no parent container reference              |
+| `state-machine` / `topics` / `errors` / `version` | 12-state transition table / semantic topic constants / error classes / version constants                                          | `TRANSITIONS`, `Topics`, `KernelError`                                | `index.ts` exports no implementation class                      |
 
 ### 2.3 Host and frontend responsibilities
 
-| Module                                            | Responsibility                                                                               | Key symbols                                          | Not responsible for                                                                        |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `host/electron/main.ts`                           | host entry: `createDeps` + `Kernel` + register implementation tables + window lifecycle       | `startKernel`, `registerWhitelistedMethods`          | knows no plugin id; **contains no method-name string** (tables live in `host/ipc/`)          |
-| `host/ipc/method-handlers.ts` + `forward-map.ts`  | method implementation table (keys enforced complete by `Record`) + topic → external event map | `METHOD_FACTORIES`, `EVENT_FORWARD_MAP`              | does not import electron (so vitest can drive it directly)                                  |
-| `host/ipc/bridge.ts` + `shared/ipc-contract.ts`   | the only renderer channel: exact allowlist match + DTO reduction                              | `IpcBridge`, `channels` / `events`                   | never exposes `bus.emit`, never forwards `bus.on('*')`                                       |
-| `host/electron/preload.ts`                        | the only contract boundary: `contextBridge` exposes `{invoke, onEvent}`                       | `Rem2Bridge`                                         | **does not judge the allowlist** (judgment must happen in main; renderer is untrusted)       |
-| `host/electron/window.ts` / `theme-registry.ts`   | window creation (CSP / sandbox / dev-vs-prod); in-memory theme table                          | `createWindow`, `ThemeRegistryImpl`                  | theme-registry imports no plugin source                                                     |
-| `host/cli/*`                                      | terminal kernel bootstrap (primary `pnpm dev` shape); three-form path resolution; scaffold/validate/list | `run`, `builtinPluginsRoot`                | does not depend on Electron (the kernel is a plain library; the shell is optional)           |
-| `frontend/app/**`                                 | shell layout + `PanelHost` / `RouteHost` slots + 4 chrome components                          | `App.svelte`, `PanelShell.svelte`                     | **contains no plugin id**; chrome is rendered by the host, plugins only supply descriptors    |
-| `frontend/lib/**`                                 | typed wrapper around `window.rem2` + DTO projection + 5 runes stores                          | `ipc`, `bridge-types.ts`                             | imports no kernel/host source; allowlist comes from `src/shared/`                           |
-| `plugins/**`                                      | every business and ops capability: command, config source, log sink, health endpoint, theme, notification | each module's `export default definePlugin(...)` | imports no third-party package; never deep-links into kernel internals                      |
+| Module                                           | Responsibility                                                                                                                            | Key symbols                                      | Not responsible for                                                                        |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `host/electron/main.ts`                          | host entry: `createDeps` + `Kernel` + register implementation tables + window lifecycle                                                   | `startKernel`, `registerWhitelistedMethods`      | knows no plugin id; **contains no method-name string** (tables live in `host/ipc/`)        |
+| `host/ipc/method-handlers.ts` + `forward-map.ts` | method implementation table (keys enforced complete by `Record`; args validated at runtime by `validate.ts`) + topic → external event map | `METHOD_FACTORIES`, `EVENT_FORWARD_MAP`          | does not import electron (so vitest can drive it directly)                                 |
+| `host/ipc/bridge.ts` + `shared/ipc-contract.ts`  | the only renderer channel: exact allowlist match + DTO reduction                                                                          | `IpcBridge`, `channels` / `events`               | never exposes `bus.emit`, never forwards `bus.on('*')`                                     |
+| `host/electron/preload.ts`                       | the only contract boundary: `contextBridge` exposes `{invoke, onEvent}`                                                                   | `Rem2Bridge`                                     | **does not judge the allowlist** (judgment must happen in main; renderer is untrusted)     |
+| `host/electron/window.ts` / `theme-registry.ts`  | window creation (CSP / sandbox / dev-vs-prod); in-memory theme table                                                                      | `createWindow`, `ThemeRegistryImpl`              | theme-registry imports no plugin source                                                    |
+| `host/cli/*`                                     | terminal kernel bootstrap (primary `pnpm dev` shape); three-form path resolution; scaffold/validate/list                                  | `run`, `builtinPluginsRoot`                      | does not depend on Electron (the kernel is a plain library; the shell is optional)         |
+| `frontend/app/**`                                | shell layout + `PanelHost` / `RouteHost` slots + 4 chrome components                                                                      | `App.svelte`, `PanelShell.svelte`                | **contains no plugin id**; chrome is rendered by the host, plugins only supply descriptors |
+| `frontend/lib/**`                                | typed wrapper around `window.rem2` + DTO projection and runtime validation (`dto-guards` / `nav-link`) + 5 runes stores                   | `ipc`, `bridge-types.ts`, `parsePanelData`       | imports no kernel/host source; allowlist comes from `src/shared/`                          |
+| `plugins/**`                                     | every business and ops capability: command, config source, log sink, health endpoint, theme, notification, inspector panel                | each module's `export default definePlugin(...)` | imports no third-party package; never deep-links into kernel internals                     |
 
 ---
 
@@ -251,17 +253,17 @@ Failed → Stopped → Unloaded → Disposed
 
 ### 3.2 Physical pipeline (`lifecycle/pipeline.ts` → `START_PIPELINE` / `STOP_PIPELINE`)
 
-| Step | Action                                                                     | Transition                        | Failure semantics                     |
-| ---- | -------------------------------------------------------------------------- | --------------------------------- | ------------------------------------- |
-| A    | `discover()` scans the roots                                               | —                                 | —                                     |
-| B    | read and validate `plugin.json`                                            | → `Registered`                    | non-fatal                             |
-| C    | `DependencyResolver.resolve(all)` (**whole-graph batch computation**)       | `Registered → Resolved`           | non-fatal → Dropped                   |
-| D    | permission check → entry resolution → `import()` → factory call → child container | `Resolved → Loaded`         | **fatal**                             |
-| E    | `onDiscover` → `onLoad`                                                    | `Loaded → Initialized`            | fatal / non-fatal per hook            |
-| F    | `onConfigure` (reads the config snapshot)                                  | `Initialized → Configured`        | **fatal**                             |
-| G    | `onStart`                                                                  | `Configured → Active / Degraded`  | **fatal**                             |
-| H    | health summary + `KernelReady`                                             | —                                 | —                                     |
-| I    | unload: dependents first → `onStop` → `onUnload` → `onDispose` → force reclaim | step down to `Disposed`        | a failing hook does not block the rest |
+| Step | Action                                                                            | Transition                       | Failure semantics                      |
+| ---- | --------------------------------------------------------------------------------- | -------------------------------- | -------------------------------------- |
+| A    | `discover()` scans the roots                                                      | —                                | —                                      |
+| B    | read and validate `plugin.json`                                                   | → `Registered`                   | non-fatal                              |
+| C    | `DependencyResolver.resolve(all)` (**whole-graph batch computation**)             | `Registered → Resolved`          | non-fatal → Dropped                    |
+| D    | permission check → entry resolution → `import()` → factory call → child container | `Resolved → Loaded`              | **fatal**                              |
+| E    | `onDiscover` → `onLoad`                                                           | `Loaded → Initialized`           | fatal / non-fatal per hook             |
+| F    | `onConfigure` (reads the config snapshot)                                         | `Initialized → Configured`       | **fatal**                              |
+| G    | `onStart`                                                                         | `Configured → Active / Degraded` | **fatal**                              |
+| H    | health summary + `KernelReady`                                                    | —                                | —                                      |
+| I    | unload: dependents first → `onStop` → `onUnload` → `onDispose` → force reclaim    | step down to `Disposed`          | a failing hook does not block the rest |
 
 **Key trade-off**: dependency resolution is step 5 in logical order (`Registered → Resolved` is one observable transition of a plugin) but step 2 physically (manifests must be read before a dependency graph exists). `pipeline.ts` expresses the order as **data**, and `tests/unit/lifecycle.test.ts` asserts "order == contract" directly, so the two layers can never silently drift apart.
 
@@ -275,20 +277,20 @@ Extension points are the only landing surface of "everything is a plugin": a plu
 
 ### 4.1 The 12 extension points (`extensions/definitions.ts` → `EXTENSION_POINT_DEFS`)
 
-| #   | id                  | Contract type            | Slot   | Conflict      | capability         | Host default                                                | Purpose                          |
-| --- | ------------------- | ------------------------ | ------ | ------------- | ------------------ | ----------------------------------------------------------- | -------------------------------- |
-| 1   | `log.sink`          | `LogSink`                | multi  | keep-first    | —                  | `NullLogSink` (`kernel.null`)                               | log output destination           |
-| 2   | `metrics.sink`      | `MetricSink`             | multi  | keep-first    | —                  | `NoopMetricSink` (`kernel.noop`)                             | metrics export                   |
-| 3   | `trace.exporter`    | `TraceExporter`          | multi  | keep-first    | —                  | in-memory buffered exporter (`kernel.buffered`)              | span export                      |
-| 4   | `config.provider`   | `ConfigProvider`         | multi  | keep-first    | `config.provide`   | `ReadOnlyMemoryConfigProvider` (`kernel.defaults`)           | config layers (json / env / remote) |
-| 5   | `command.provide`   | `CommandHandler`         | multi  | reject-new    | `command.provide`  | ❌                                                          | business commands                |
-| 6   | `health.check`      | `HealthCheckFn`          | multi  | keep-first    | —                  | ❌                                                          | plugin health self-check         |
-| 7   | `ui.theme`          | `ThemeDefinition`        | multi  | reject-new    | `ui.theme`         | `ThemeRegistryImpl` (registered by the host, see §4.3)       | theme catalog (light/dark coexist) |
-| 8   | `ui.panel`          | `PanelContribution`      | multi  | reject-new    | `ui.panel`         | declared true, but no host implementation (see §11)          | declarative panel descriptor     |
-| 9   | `ui.route`          | `RouteContribution`      | multi  | replace-old   | `ui.route`         | ❌                                                          | declarative routes               |
-| 10  | `scheduler.replace` | `Scheduler`              | single | replace-old   | `kernel.internals` | `SerialScheduler` (`kernel.serial`)                          | replace the scheduler            |
-| 11  | `resolver.replace`  | `DependencyResolverPort` | single | replace-old   | `kernel.internals` | built-in `DependencyResolver` (`kernel.builtin`)             | replace dependency resolution    |
-| 12  | `loader.replace`    | `PluginLoaderPort`       | single | replace-old   | `kernel.internals` | built-in `PluginLoader` (`kernel.builtin`)                   | replace the loading mechanism    |
+| #   | id                  | Contract type            | Slot   | Conflict    | capability         | Host default                                                                                        | Purpose                                                                                   |
+| --- | ------------------- | ------------------------ | ------ | ----------- | ------------------ | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| 1   | `log.sink`          | `LogSink`                | multi  | keep-first  | —                  | `NullLogSink` (`kernel.null`)                                                                       | log output destination                                                                    |
+| 2   | `metrics.sink`      | `MetricSink`             | multi  | keep-first  | —                  | `NoopMetricSink` (`kernel.noop`)                                                                    | metrics export                                                                            |
+| 3   | `trace.exporter`    | `TraceExporter`          | multi  | keep-first  | —                  | in-memory buffered exporter (`kernel.buffered`)                                                     | span export                                                                               |
+| 4   | `config.provider`   | `ConfigProvider`         | multi  | keep-first  | `config.provide`   | `ReadOnlyMemoryConfigProvider` (`kernel.defaults`)                                                  | config layers (json / env / remote)                                                       |
+| 5   | `command.provide`   | `CommandHandler`         | multi  | reject-new  | `command.provide`  | ❌                                                                                                  | business commands (consumed by the kernel `CommandDispatcher`, matched by contributionId) |
+| 6   | `health.check`      | `HealthCheckFn`          | multi  | keep-first  | —                  | ❌                                                                                                  | plugin health self-check                                                                  |
+| 7   | `ui.theme`          | `ThemeDefinition`        | multi  | reject-new  | `ui.theme`         | `ThemeRegistryImpl` (registered by the host, see §4.3)                                              | theme catalog (light/dark coexist)                                                        |
+| 8   | `ui.panel`          | `PanelContribution`      | multi  | reject-new  | `ui.panel`         | ❌ (the slot is legitimately empty without a panel plugin; the shell shows an explicit empty state) | declarative panel descriptor                                                              |
+| 9   | `ui.route`          | `RouteContribution`      | multi  | replace-old | `ui.route`         | ❌                                                                                                  | declarative routes                                                                        |
+| 10  | `scheduler.replace` | `Scheduler`              | single | replace-old | `kernel.internals` | `SerialScheduler` (`kernel.serial`)                                                                 | replace the scheduler                                                                     |
+| 11  | `resolver.replace`  | `DependencyResolverPort` | single | replace-old | `kernel.internals` | built-in `DependencyResolver` (`kernel.builtin`)                                                    | replace dependency resolution                                                             |
+| 12  | `loader.replace`    | `PluginLoaderPort`       | single | replace-old | `kernel.internals` | built-in `PluginLoader` (`kernel.builtin`)                                                          | replace the loading mechanism                                                             |
 
 `conflict` on single slots must be declared explicitly — the contract test checks it, and omitting it is a compile error (`ExtensionPointDef` fields are required).
 
@@ -314,13 +316,13 @@ Three invariants (`extensions/registry.ts`):
 
 ### 4.3 Where host default implementations are injected
 
-| Location                                    | Contents                                                                                                                                 |
-| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Location                                    | Contents                                                                                                                                                                                         |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `composition.ts` → `registerHostDefaults()` | `extension-sinks.ts` supplies `log.sink` / `metrics.sink` / `trace.exporter` / `config.provider`; three more (`scheduler.replace` / `resolver.replace` / `loader.replace`) are registered inline |
-| `host/electron/main.ts` → `startKernel()`   | `ui.theme`'s host implementation `ThemeRegistryImpl` (depends on Electron window lifecycle, so it cannot live in a zero-dependency kernel) |
-| `bootstrap/register-core-services.ts`       | **injects no extension point**; only registers the 15 `KernelTokens` and the 8 capability gates                                          |
+| `host/electron/main.ts` → `startKernel()`   | `ui.theme`'s host implementation `ThemeRegistryImpl` (depends on Electron window lifecycle, so it cannot live in a zero-dependency kernel)                                                       |
+| `bootstrap/register-core-services.ts`       | **injects no extension point**; only registers the 15 `KernelTokens` and the 8 capability gates                                                                                                  |
 
-`KernelTokens` has 17 entries: 15 registered by the kernel, `UiThemeRegistry` registered by the host, `UiPanelHost` defined but with neither a registrar nor a consumer.
+`KernelTokens` has 16 entries: 15 registered by the kernel (`bootstrap/register-core-services.ts`), `UiThemeRegistry` registered by the host in `host/electron/main.ts` → `startKernel()` via `registerInstance`.
 
 ### 4.4 What a worker plugin may contribute
 
@@ -330,25 +332,25 @@ Three invariants (`extensions/registry.ts`):
 
 ## 5. Isolation and permissions
 
-| Layer           | Mechanism                                                                                | Boundary                                                                                     |
-| --------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Process / worker| `worker_threads` separate thread + RPC proxy                                              | crash / infinite loop / `process.exit()` never takes down the kernel. **Fault isolation, not a sandbox** |
-| Container       | one child `Container` per plugin; parent hidden in a module-private `WeakMap`; no root handle | can resolve only: its own registrations + sibling exports + parent entries that are `shareable` and exported |
-| Capability      | `CapabilityGuard` + `PermissionManager` + `TrustPolicy`                                    | three stages: manifest `requires` → grant computed from `trustLevel` → checked on `resolve` / `contribute` |
+| Layer            | Mechanism                                                                                     | Boundary                                                                                                     |
+| ---------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Process / worker | `worker_threads` separate thread + RPC proxy                                                  | crash / infinite loop / `process.exit()` never takes down the kernel. **Fault isolation, not a sandbox**     |
+| Container        | one child `Container` per plugin; parent hidden in a module-private `WeakMap`; no root handle | can resolve only: its own registrations + sibling exports + parent entries that are `shareable` and exported |
+| Capability       | `CapabilityGuard` + `PermissionManager` + `TrustPolicy`                                       | three stages: manifest `requires` → grant computed from `trustLevel` → checked on `resolve` / `contribute`   |
 
 Trust levels: `builtin` = trusted, everything else = sandboxed (`security/trust-policy.ts` → `trustLevelFor`). Signature verification is explicitly out of scope.
 
 **Available / unavailable inside a worker**:
 
-| Facility                             | in-process | worker                                                     |
-| ------------------------------------ | ---------- | ---------------------------------------------------------- |
-| `ctx.log` / `ctx.metrics`            | ✅         | ✅ RPC                                                     |
-| `ctx.config`                         | ✅         | ✅ get / has over RPC; `onDidChange` replaced by full-snapshot pushes |
-| `ctx.events` (emit / on / request)   | ✅         | ✅ RPC (`respond` unavailable)                             |
-| `ctx.permissions`                    | ✅         | ✅ real snapshot taken at init                             |
-| `ctx.resolvePath`                    | ✅         | ✅                                                         |
-| `ctx.services` / `ctx.api` / `ctx.plugins` / `ctx.container` | ✅ | ❌ throws on call                                 |
-| `ctx.extensions`                     | ✅         | ⚠️ only the three from §4.4                                |
+| Facility                                                     | in-process | worker                                                                |
+| ------------------------------------------------------------ | ---------- | --------------------------------------------------------------------- |
+| `ctx.log` / `ctx.metrics`                                    | ✅         | ✅ RPC                                                                |
+| `ctx.config`                                                 | ✅         | ✅ get / has over RPC; `onDidChange` replaced by full-snapshot pushes |
+| `ctx.events` (emit / on / request)                           | ✅         | ✅ RPC (`respond` unavailable)                                        |
+| `ctx.permissions`                                            | ✅         | ✅ real snapshot taken at init                                        |
+| `ctx.resolvePath`                                            | ✅         | ✅                                                                    |
+| `ctx.services` / `ctx.api` / `ctx.plugins` / `ctx.container` | ✅         | ❌ throws on call                                                     |
+| `ctx.extensions`                                             | ✅         | ⚠️ only the three from §4.4                                           |
 
 ---
 
@@ -398,7 +400,9 @@ sequenceDiagram
     participant MAIN as "ipcMain"
     participant BR as "IpcBridge.handleInvoke"
     participant BUS as "EventBus"
-    participant P as "command plugin responder"
+    participant CD as "CommandDispatcher (kernel)"
+    participant EP as "command.provide slot"
+    participant HP as "command plugin contribution"
 
     UI->>Store: execute(text)
     Store->>IPC: request(channels.commandExecute, {command, args})
@@ -408,8 +412,12 @@ sequenceDiagram
     MAIN->>BR: handleInvoke(payload)
     Note over BR: exact allowlist; a miss replies with an error<br/>without ever entering the event bus
     BR->>BUS: request('command.execute', args, {timeoutMs})
-    BUS->>P: responder(payload)
-    P-->>BUS: {ok, output}
+    BUS->>CD: dispatch(payload) (the only responder, registered by start())
+    CD->>EP: entries('command.provide'), match by contributionId === command
+    EP-->>CD: entry.impl (CommandHandler)
+    CD->>HP: impl(args)
+    HP-->>CD: {ok, output} (returned as-is, never wrapped again)
+    CD-->>BUS: result
     BUS-->>BR: result
     BR->>MAIN: reply({id, ok, result})
     MAIN->>PRE: Ipc.Invoke response
@@ -418,7 +426,7 @@ sequenceDiagram
     Store-->>UI: last = {...res, command}
 ```
 
-The host **does not implement** `command.execute` (that key is `null` in `method-handlers.ts`): commands are responded by plugins directly. If the host forwarded a responder under the same topic name, the request would hit itself and recurse forever.
+The host **does not implement** `command.execute` (that key is `null` in `method-handlers.ts`): dispatch goes through exactly one place — the kernel `CommandDispatcher`, registered at the beginning of `start()` (before any plugin `onStart` responder, so `pickResponder` — earliest seq wins — deterministically shadows plugin-side responders). It reads the `command.provide` slot directly, so **recursion is structurally impossible**. **Plugins must not `respond` `Topics.CommandExecute` directly** (even if written, the dispatcher shadows them); contribute the command into the `command.provide` slot instead — see the example in [`02-plugin-api.md`](02-plugin-api.md) §8.
 
 ### 6.3 Events (plugin → bus → DTO reduction → renderer)
 
@@ -450,6 +458,9 @@ unloadPlugin(pluginId)
   ├─ extensions.retractAll(pluginId)
   ├─ health.unregisterCheck + permissions.unregister
   ├─ rootContainer.unmountChildContainer(child) → child.dispose()
+  ├─ applyPluginState('Stopped') → emit(Topics.PluginStateChanged, {pluginId, state})
+  │    (contributions are reclaimed first: when the frontend receives the event and
+  │     re-pulls, it necessarily sees the post-reclaim list — no race)
   ├─ registry.remove(pluginId)
   └─ emit(Topics.PluginUnloaded, {pluginId, reason})
 ```
@@ -460,12 +471,12 @@ unloadPlugin(pluginId)
 
 ### 7.1 Four kinds of data
 
-| Data       | Produced by                                                                                                          | Flows through                                                                                                        | Consumed by                                                                        |
-| ---------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| **Config** | `config-json` plugin (`JsonConfigProvider`, priority 10) + read-only kernel defaults `{app:{name:'rem2'}}` + writable `initialConfig` layer | `ConfigService.refresh()` deep-merges by ascending priority into a snapshot; `get()` refreshes lazily                  | plugins read `ctx.config.get(…)` in `onConfigure`; worker plugins get the init snapshot plus change pushes. **Config never leaks to the renderer** |
-| **Command**| input in `CommandPrompt.svelte`                                                                                       | store → `ipc.request` → preload → `IpcBridge` (allowlist) → `bus.request(Topics.CommandExecute)`                       | command plugin responder → `{ok, output}` back through the same path                |
-| **Event**  | plugin `bus.emit`                                                                                                     | `EventBusImpl` → `EVENT_FORWARD_MAP` (5 allowlisted topics) → `toDto` → `Ipc.Event`                                    | renderer `ipc.subscribe`                                                            |
-| **Theme**  | `theme-dark` plugin contributes `ui.theme` (light / dark token sets)                                                  | extension slot → (`method-handlers.ts` → `syncThemeFromExtension()` **pull sync**) → host `ThemeRegistryImpl` (catalog + active) → `ui.theme.list/set` | renderer `theme` store → `theme/vars.ts` → CSS variables + `color-scheme`            |
+| Data        | Produced by                                                                                                                                 | Flows through                                                                                                                                          | Consumed by                                                                                                                                        |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Config**  | `config-json` plugin (`JsonConfigProvider`, priority 10) + read-only kernel defaults `{app:{name:'rem2'}}` + writable `initialConfig` layer | `ConfigService.refresh()` deep-merges by ascending priority into a snapshot; `get()` refreshes lazily                                                  | plugins read `ctx.config.get(…)` in `onConfigure`; worker plugins get the init snapshot plus change pushes. **Config never leaks to the renderer** |
+| **Command** | input in `CommandPrompt.svelte`                                                                                                             | store → `ipc.request` → preload → `IpcBridge` (allowlist) → `bus.request(Topics.CommandExecute)`                                                       | kernel `CommandDispatcher` reads the `command.provide` slot → command plugin handler → `{ok, output}` back through the same path                   |
+| **Event**   | plugin `bus.emit`                                                                                                                           | `EventBusImpl` → `EVENT_FORWARD_MAP` (5 allowlisted topics) → `toDto` → `Ipc.Event`                                                                    | renderer `ipc.subscribe`                                                                                                                           |
+| **Theme**   | `theme-dark` plugin contributes `ui.theme` (light / dark token sets)                                                                        | extension slot → (`method-handlers.ts` → `syncThemeFromExtension()` **pull sync**) → host `ThemeRegistryImpl` (catalog + active) → `ui.theme.list/set` | renderer `theme` store → `theme/vars.ts` → CSS variables + `color-scheme`                                                                          |
 
 The `initialConfig` memory layer has priority 1000, higher than every plugin provider — a plugin's `set()` always writes the memory layer. That is the intended "host config wins" semantics.
 
@@ -500,11 +511,11 @@ src/shared/ipc-contract.ts        ← the only copy of the strings (channels / e
 
 ### 8.1 Three production lines
 
-| Line    | Input                                                                       | Command                                    | Output                                                                                   |
-| ------- | --------------------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| Kernel  | `src/kernel/**`                                                             | `tsc -p tsconfig.build.json`               | `dist/kernel/**` (`.js` + `.d.ts` + `.map`); `exports["."]` points here                    |
-| Plugins | `plugins/<id>/src/index.ts`                                                 | `node scripts/build-plugins.mjs` (esbuild)  | `plugins-dist/<id>/dist/index.js` (ESM bundle, node20) + `plugin.json` + `package.json`   |
-| Shell   | `src/main.ts` / `src/preload.ts` / `src/frontend/entry-client.ts`           | `electron-forge` (VitePlugin)              | `.vite/build/main.cjs`, `.vite/build/preload.cjs`, `.vite/renderer/main_window/index.html` |
+| Line    | Input                                                             | Command                                    | Output                                                                                     |
+| ------- | ----------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| Kernel  | `src/kernel/**`                                                   | `tsc -p tsconfig.build.json`               | `dist/kernel/**` (`.js` + `.d.ts` + `.map`); `exports["."]` points here                    |
+| Plugins | `plugins/<id>/src/index.ts`                                       | `node scripts/build-plugins.mjs` (esbuild) | `plugins-dist/<id>/dist/index.js` (ESM bundle, node20) + `plugin.json` + `package.json`    |
+| Shell   | `src/main.ts` / `src/preload.ts` / `src/frontend/entry-client.ts` | `electron-forge` (VitePlugin)              | `.vite/build/main.cjs`, `.vite/build/preload.cjs`, `.vite/renderer/main_window/index.html` |
 
 `pnpm build` = `build:kernel` + `build:plugins`; both `predev` and `premake` run it.
 
@@ -525,13 +536,13 @@ plugins-dist/ ──extraResource──▶ resources/plugins-dist/ (outside the 
 
 ### 8.3 dev vs prod
 
-| Dimension      | dev (`pnpm dev` / `electron-forge start`)                                    | prod (`pnpm make`)                                |
-| -------------- | ---------------------------------------------------------------------------- | ------------------------------------------------- |
-| Kernel runtime | `tsx` runs TS directly (`predev` still builds first)                          | fully precompiled (`premake` guarantees it)        |
-| Plugin root    | `plugins-dist/` (falls back to `plugins/`)                                    | `resources/plugins-dist/`                          |
-| renderer load  | Vite dev server (`MAIN_WINDOW_VITE_DEV_SERVER_URL`)                           | `loadFile(.vite/renderer/main_window/index.html)`  |
-| Resolve conds  | Node side `['node','import','module']`; renderer `['browser','import','module']` | same                                           |
-| Security       | relaxed in dev                                                               | Fuses disable RunAsNode / EnableNodeOptionsEnvironmentVariable / NodeCliInspect / OnlyLoadAppFromAsar |
+| Dimension      | dev (`pnpm dev` / `electron-forge start`)                                        | prod (`pnpm make`)                                                                                    |
+| -------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Kernel runtime | `tsx` runs TS directly (`predev` still builds first)                             | fully precompiled (`premake` guarantees it)                                                           |
+| Plugin root    | `plugins-dist/` (falls back to `plugins/`)                                       | `resources/plugins-dist/`                                                                             |
+| renderer load  | Vite dev server (`MAIN_WINDOW_VITE_DEV_SERVER_URL`)                              | `loadFile(.vite/renderer/main_window/index.html)`                                                     |
+| Resolve conds  | Node side `['node','import','module']`; renderer `['browser','import','module']` | same                                                                                                  |
+| Security       | relaxed in dev                                                                   | Fuses disable RunAsNode / EnableNodeOptionsEnvironmentVariable / NodeCliInspect / OnlyLoadAppFromAsar |
 
 `MAIN_WINDOW_VITE_DEV_SERVER_URL` / `MAIN_WINDOW_VITE_NAME` are **bare identifiers** injected by Forge through Vite `define`. Prefixing them with `process.env.` breaks the substitution, leaving them `undefined` at runtime so the window always takes the `file://` branch. The constant names are the renderer process name uppercased (`main_window` here); renaming the renderer process requires renaming both constants.
 
@@ -574,26 +585,26 @@ TS `private` is compile-time only; runtime fields are enumerable and writable, s
 
 ### 10.1 Adding a plugin
 
-| Step | Action                              | Location                                                              |
-| ---- | ----------------------------------- | --------------------------------------------------------------------- |
-| 1    | generate a skeleton                 | `pnpm cli scaffold <plugin-id>`                                       |
-| 2    | write `definePlugin(manifest, setup)` | `plugins/<id>/src/index.ts`                                         |
-| 3    | declare dependencies                | `plugin.json` → `dependencies` (hard) / `optionalDependencies` (soft) |
-| 4    | declare capabilities                | `plugin.json` → `requires`                                            |
-| 5    | declare contributions               | `plugin.json` → `contributes` (static, aligned with runtime `contribute`) |
-| 6    | build and validate                  | `pnpm build:plugins` → `pnpm cli validate plugins/<id>/plugin.json`   |
+| Step | Action                                | Location                                                                  |
+| ---- | ------------------------------------- | ------------------------------------------------------------------------- |
+| 1    | generate a skeleton                   | `pnpm cli scaffold <plugin-id>`                                           |
+| 2    | write `definePlugin(manifest, setup)` | `plugins/<id>/src/index.ts`                                               |
+| 3    | declare dependencies                  | `plugin.json` → `dependencies` (hard) / `optionalDependencies` (soft)     |
+| 4    | declare capabilities                  | `plugin.json` → `requires`                                                |
+| 5    | declare contributions                 | `plugin.json` → `contributes` (static, aligned with runtime `contribute`) |
+| 6    | build and validate                    | `pnpm build:plugins` → `pnpm cli validate plugins/<id>/plugin.json`       |
 
 **No kernel, host or frontend file changes.** If a change seems necessary, the capability was not modeled as an extension point.
 
 ### 10.2 Adding an extension point
 
-| Step | Action                                                                                                          |
-| ---- | --------------------------------------------------------------------------------------------------------------- |
-| 1    | `contracts/extension-point.ts` → add a literal to the `ExtensionPointId` union                                   |
-| 2    | add an `ExtensionPointDef` to `extensions/definitions.ts` (all of `multi` / `hasHostDefault` / `conflict` / `capability` are required) |
-| 3    | if a new port is needed: add the interface to `extensions/ports.ts`                                              |
-| 4    | if `hasHostDefault`: `composition.ts` → `registerHostDefault`                                                    |
-| 5    | if a capability is needed: constant in `contracts/permission.ts` + handling per trust level in `security/trust-policy.ts` |
+| Step | Action                                                                                                                                                    |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | `contracts/extension-point.ts` → add a literal to the `ExtensionPointId` union                                                                            |
+| 2    | add an `ExtensionPointDef` to `extensions/definitions.ts` (all of `multi` / `hasHostDefault` / `conflict` / `capability` are required)                    |
+| 3    | if a new port is needed: add the interface to `extensions/ports.ts`                                                                                       |
+| 4    | if `hasHostDefault`: `composition.ts` → `registerHostDefault`                                                                                             |
+| 5    | if a capability is needed: constant in `contracts/permission.ts` + handling per trust level in `security/trust-policy.ts`                                 |
 | 6    | **update `EXPECTED_IDS` in `tests/contract/extension-points.test.ts`** (the expectation is a hardcoded literal array; not updating it turns the test red) |
 
 ### 10.3 Adding an IPC method
@@ -609,28 +620,22 @@ Command-style methods must be implemented as `null` (plugins respond the topic d
 
 ## 11. Known limitations and unwired surface
 
-| #   | Symptom                                                                                          | Nature                                                              |
-| --- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
-| L1  | `ui.panel` declares `hasHostDefault: true` but nothing calls `registerHostDefault('ui.panel', …)`   | Empty declaration. Functionally equals the "no panels" placeholder; field and implementation disagree, which misleads readers |
-| L2  | No builtin plugin contributes `ui.panel` / `ui.route`                                            | renderer `PanelHost` / `RouteHost` are always empty                  |
-| L3  | `Topics.UiThemeRegistered` is defined but never emitted or consumed                               | Reserved topic                                                       |
-| L4  | `command.provide` has contributions but no consumer: dispatch actually goes through EventBus responders | Two command paths coexist; the slot is currently write-only     |
-| L5  | `KernelTokens.UiPanelHost` has no registrar and no consumer                                       | Reserved token                                                       |
-| L6  | The three `*.replace` points only support startup-time replacement                                | Runtime replacement would drop `SerialScheduler` in-flight tasks; undesigned |
-| L7  | Two event separator styles exist: `notify-worker` subscribes `'command:result'` (colon) while the kernel topic is `'command.result'` (dot) | `events/pattern.ts` treats both as segment separators, so it matches today but is accidentally correct. New code uses `.` and prefers `Topics` |
-| L8  | `pnpm make` has not been verified end-to-end                                                      | The on-disk name of `resources/plugins-dist/` is only reasoned about, not observed |
+| #   | Symptom                                                            | Nature                                                                             |
+| --- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| L1  | The three `*.replace` points only support startup-time replacement | Runtime replacement would drop `SerialScheduler` in-flight tasks; undesigned       |
+| L2  | On Windows only the squirrel maker is usable (verified: produces a `Setup.exe` carrying `resources/plugins-dist/`); the deb/rpm makers need Linux toolchains | Platform limit; if `out/` holds files locked by another process the packager's cleanup is aborted by this machine's safe-delete shim — clear `out/` and retry |
 
 ---
 
 ## 12. Contract tests: the machine-checkable boundary
 
-| File                                       | Assertions                                                                                                                            |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `tests/contract/kernel-deps.test.ts`       | R1 kernel and host (minus electron) have zero third-party imports; R2 the kernel imports nothing upward; R5 `dependencies` stays `{}`; includes extractor self-checks (so "no violations" cannot be vacuously true) |
-| `tests/contract/plugin-contract.test.ts`   | R4 plugins import only `rem2-kernel` / `node:*` / relative paths; R6 frontend touches neither kernel nor host source; R7 `entry` ends with `.js` / `.mjs`; IPC event names are real `Topics` values |
-| `tests/contract/ipc-contract.test.ts`      | `src/shared` has zero imports; method and event key sets equal the allowlists exactly; no duplicates                                    |
-| `tests/contract/extension-points.test.ts`  | the 12 ids match the hardcoded `EXPECTED_IDS` one by one; single slots must declare `conflict`                                          |
-| `tests/contract/build-artifact.test.ts`    | the renderer artifact is the browser build of svelte (sourcemap contains `index-client.js`, not `index-server.js`)                     |
+| File                                      | Assertions                                                                                                                                                                                                          |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests/contract/kernel-deps.test.ts`      | R1 kernel and host (minus electron) have zero third-party imports; R2 the kernel imports nothing upward; R5 `dependencies` stays `{}`; includes extractor self-checks (so "no violations" cannot be vacuously true) |
+| `tests/contract/plugin-contract.test.ts`  | R4 plugins import only `rem2-kernel` / `node:*` / relative paths; R6 frontend touches neither kernel nor host source; R7 `entry` ends with `.js` / `.mjs`; IPC event names are real `Topics` values                 |
+| `tests/contract/ipc-contract.test.ts`     | `src/shared` has zero imports; method and event key sets equal the allowlists exactly; no duplicates                                                                                                                |
+| `tests/contract/extension-points.test.ts` | the 12 ids match the hardcoded `EXPECTED_IDS` one by one; single slots must declare `conflict`                                                                                                                      |
+| `tests/contract/build-artifact.test.ts`   | the renderer artifact is the browser build of svelte (sourcemap contains `index-client.js`, not `index-server.js`)                                                                                                  |
 
 Two requirements when writing contract tests:
 

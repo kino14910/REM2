@@ -18,29 +18,29 @@
 
 ```mermaid
 graph BT
-    subgraph L1["plugins/ —— 6 个 builtin 插件（运行时发现并加载）"]
-        PA["in-process：config-json / hello-command / logger-console /<br/>health-http / theme-dark"]
+    subgraph L1["plugins/ —— 7 个 builtin 插件（运行时发现并加载）"]
+        PA["in-process：config-json / hello-command / logger-console /<br/>health-http / theme-dark / plugin-inspector"]
         PB["worker：notify-worker"]
     end
 
-    subgraph L2["src/frontend/ —— Svelte 5 renderer（18 文件）"]
+    subgraph L2["src/frontend/ —— Svelte 5 renderer（20 文件）"]
         FA["app/：App / Shell / PanelHost / RouteHost + 4 components"]
-        FB["lib/：ipc-client / bridge-types / 5 stores / theme"]
+        FB["lib/：ipc-client / bridge-types / nav-link / dto-guards<br/>/ 5 stores / theme"]
     end
 
-    subgraph L3["src/host/ —— 宿主适配层（13 文件）"]
+    subgraph L3["src/host/ —— 宿主适配层（14 文件）"]
         HA["electron/：main / preload / window / theme-registry"]
-        HB["ipc/：bridge / method-handlers / forward-map"]
+        HB["ipc/：bridge / method-handlers / validate / forward-map"]
         HC["cli/：run / cli / args / paths / scaffold / validate"]
     end
 
-    subgraph L4["src/kernel/ —— 极小内核（82 文件，零第三方运行时依赖）"]
+    subgraph L4["src/kernel/ —— 极小内核（83 文件，零第三方运行时依赖）"]
         KA["contracts/（19 文件）：纯类型 + defineToken / definePlugin"]
         KB["kernel.ts 编排 + composition.ts 装配"]
         KC["di / lifecycle / dependency / discovery / loader / isolation /<br/>security / observability / config / events / scheduler / semver /<br/>bootstrap / registry / extensions / context / util"]
     end
 
-    subgraph L5["tests/ —— 35 文件 / 270 用例"]
+    subgraph L5["tests/ —— 41 文件 / 327 用例"]
         TA["contract/（5）：kernel-deps · plugin-contract · ipc-contract ·<br/>extension-points · build-artifact"]
         TB["unit/（15）+ integration/（15）"]
     end
@@ -64,15 +64,15 @@ plugins  →（rem2-kernel 公共出口）→ kernel
 host     →（相对路径 import）→ kernel
 ```
 
-| 层                   | 硬约束                                                                       | 机器判据                                                                         |
-| -------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| kernel               | 零第三方运行时依赖；不得 import `host` / `frontend` / `plugins`              | `tests/contract/kernel-deps.test.ts` R1 / R2（扫描文件数有下限，防静默失效）     |
-| host（除 electron/） | 同样零第三方依赖（`host/electron/**` 允许 import `electron`）                | 同上 R1，扫描时排除 `host/electron/**`                                           |
-| frontend             | 不得 import 内核 / 宿主源码；唯一通道是 `window.rem2`                        | `tests/contract/plugin-contract.test.ts` R6；白名单取自 `src/shared/`（见 §7.1） |
+| 层                   | 硬约束                                                                                | 机器判据                                                                         |
+| -------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| kernel               | 零第三方运行时依赖；不得 import `host` / `frontend` / `plugins`                       | `tests/contract/kernel-deps.test.ts` R1 / R2（扫描文件数有下限，防静默失效）     |
+| host（除 electron/） | 同样零第三方依赖（`host/electron/**` 允许 import `electron`）                         | 同上 R1，扫描时排除 `host/electron/**`                                           |
+| frontend             | 不得 import 内核 / 宿主源码；唯一通道是 `window.rem2`                                 | `tests/contract/plugin-contract.test.ts` R6；白名单取自 `src/shared/`（见 §7.1） |
 | plugins              | 只从 `rem2-kernel` / `node:*` / 相对路径导入；manifest `entry` 必须是 `.js` 或 `.mjs` | `tests/contract/plugin-contract.test.ts` R4 / R7                                 |
-| `src/shared/**`      | 零 import（纯字面量 + 纯类型）                                               | `tests/contract/ipc-contract.test.ts`                                            |
+| `src/shared/**`      | 零 import（纯字面量 + 纯类型）                                                        | `tests/contract/ipc-contract.test.ts`                                            |
 
-**一句话**：内核（82 文件）只做编排与契约；宿主（13 文件）把 Electron / CLI / IPC 适配到内核契约；前端（18 文件）经 `window.rem2` 消费 8 个白名单方法与 5 个白名单事件；全部业务与运维能力（命令、配置、日志、健康、主题、通知）都是 `plugins/` 下的 6 个插件。
+**一句话**：内核（83 文件）只做编排与契约；宿主（14 文件）把 Electron / CLI / IPC 适配到内核契约；前端（20 文件）经 `window.rem2` 消费 8 个白名单方法与 5 个白名单事件；全部业务与运维能力（命令、配置、日志、健康、主题、通知、检查器 UI）都是 `plugins/` 下的 7 个插件。
 
 ---
 
@@ -107,7 +107,7 @@ rem2/
 │   │   │   ├── context.ts             #   PluginContext / PluginApi / ServicesView
 │   │   │   ├── extension-point.ts     #   ExtensionPointId / Def / Contribution / ContributorView
 │   │   │   ├── service-token.ts       #   ServiceToken 品牌化接口 + defineToken()
-│   │   │   ├── kernel-tokens.ts       #   KernelTokens：17 个内核服务令牌
+│   │   │   ├── kernel-tokens.ts       #   KernelTokens：16 个内核服务令牌
 │   │   │   ├── plugins.ts             #   PluginStateT / PLUGIN_STATES / TERMINAL_STATES / PluginInfo
 │   │   │   ├── ui.ts                  #   ThemeDefinition / PanelContribution / RouteContribution / ThemeRegistry
 │   │   │   └── event-bus · config · logging · metrics · tracing · health · permission · container · service
@@ -115,6 +115,7 @@ rem2/
 │   │   ├── extensions/                # ═══ 能力的唯一挂载面 ═══
 │   │   │   ├── definitions.ts         # ★ 12 个扩展点的声明式定义表（顺序即 list() 输出序）
 │   │   │   ├── registry.ts            # ★ ExtensionPointRegistry：define / contribute / 枚举 / 按 pluginId 回收
+│   │   │   ├── command-dispatcher.ts  #   CommandDispatcher：command.execute 的唯一分发者（直读 command.provide 槽）
 │   │   │   ├── contrib-slot.ts        #   单例槽与多贡献槽的容器语义
 │   │   │   ├── ports.ts               #   三个 *.replace 与 command.provide 的端口契约
 │   │   │   └── ports-types.ts         #   端口侧类型（LoadedPlugin / PluginLoaderOptions）
@@ -148,11 +149,12 @@ rem2/
 │   │   ├── electron/
 │   │   │   ├── main.ts                # ★ 主进程：createDeps() → Kernel → 注册白名单实现表 → 窗口
 │   │   │   ├── preload.ts             # ★ 唯一契约边界：contextBridge 暴露 window.rem2
-│   │   │   ├── window.ts              #   createWindow()：contextIsolation + sandbox + CSP
+│   │   │   ├── window.ts              #   createWindow()：contextIsolation + sandbox + CSP（renderer 级沙箱；REM2_DISABLE_GPU=1 的 opt-in 路径会额外禁用进程沙箱，见 04 §6）
 │   │   │   └── theme-registry.ts      #   宿主主题表（只依赖 kernel/contracts/ui，不 import 插件）
 │   │   ├── ipc/
 │   │   │   ├── bridge.ts              #   IpcBridge：双向收窄 + DTO 降维
 │   │   │   ├── method-handlers.ts     # ★ Record<AllowedMethod, …> 宿主实现表（不 import electron）
+│   │   │   ├── validate.ts            #   IPC 入参运行时校验（纯函数：panelIdOf / uiEventArgsOf / themeIdOf）
 │   │   │   └── forward-map.ts         # ★ Record<AllowedEvent, …> 内核 topic → 对外事件降维
 │   │   └── cli/
 │   │       ├── run.ts                 #   `pnpm dev`：参数 → KernelOptions → start → 健康报告
@@ -165,12 +167,12 @@ rem2/
 │   ├── frontend/                      # ═══ Svelte 5 前端（详见 03）═══
 │   │   ├── entry-client.ts            #   renderer 入口：引入 global.css + mount(App)
 │   │   ├── app/                       #   App / Shell / PanelHost / RouteHost / components / global.css
-│   │   └── lib/                       #   ipc-client / bridge-types / stores(.svelte.ts) / theme/vars.ts
+│   │   └── lib/                       #   ipc-client / bridge-types / nav-link / dto-guards / stores(.svelte.ts) / theme/vars.ts
 │   │
 │   └── shared/
 │       └── ipc-contract.ts            # ★ 宿主与前端共用的方法名 / 事件名（唯一一份字符串，零 import）
 │
-├── plugins/                           # 插件源码单元（6 个，每个 4 件：package.json / tsconfig.json / plugin.json / src）
+├── plugins/                           # 插件源码单元（7 个，每个 4 件：package.json / tsconfig.json / plugin.json / src）
 ├── plugins-dist/                      # 插件构建产物（进 extraResource，git 忽略）
 ├── scripts/build-plugins.mjs          # esbuild 逐插件打包（构建期代码，刻意不进 src/）
 ├── tests/{unit,integration,contract}  # 3 层测试 + fixtures/ + helpers/
@@ -193,41 +195,41 @@ rem2/
 
 > 「不负责什么」一栏比职责更重要 —— 它是架构的负空间。
 
-| 模块                                             | 职责                                                                        | 关键符号                                                             | 不负责什么                                        |
-| ------------------------------------------------ | --------------------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------- |
-| `contracts/`                                     | 插件看得见的全部语言：纯类型 + 2 个纯函数工厂 + 17 个 `KernelTokens`        | `defineToken`、`KernelTokens`、`PluginManifest`                      | 任何实现、任何 IO、任何副作用                     |
-| `kernel.ts`                                      | 编排：start / reload / unloadPlugin / shutdown / health                     | `Kernel`                                                             | 不 `new` 任何实现类（构造器只收 `KernelDeps`）    |
-| `composition.ts`                                 | 装配：`createDeps()` 造服务 + 注册宿主默认扩展点实现                        | `createDeps`、`KernelDeps`                                           | 不做编排决策                                      |
-| `extensions/`                                    | 12 个扩展点声明 + 贡献 / 枚举 / 按 pluginId 强制回收 + 3 个 `*.replace` 端口 | `EXTENSION_POINT_DEFS`、`ExtensionPointRegistry`                     | 不提供任何扩展点的具体实现                        |
-| `di/`                                            | `Container`：父引用藏模块私有 `WeakMap`、`exported` 显式导出、兄弟容器互访   | `Container`                                                          | 不做能力判定（那是 `security/`）                  |
-| `dependency/`                                    | 版本兼容 + 去重 + 环检测 + 确定性拓扑排序                                   | `DependencyResolver`                                                 | 不加载任何插件代码                                |
-| `discovery/`                                     | 扫根目录、读并校验 `plugin.json`、mtime 缓存                                | `PluginDiscovery`                                                    | 不 `import()` 入口                                |
-| `lifecycle/`                                     | 物理管线（数据化步骤表）+ 阶段驱动 + 超时 + 回滚                            | `START_PIPELINE` / `STOP_PIPELINE`、`LifecycleManager`               | 不决定加载顺序（那是 resolver）                   |
-| `loader/`                                        | 动态 `import()` + 工厂调用 + 容器 / 上下文组装 + Worker 代理                 | `PluginLoader`                                                       | 不发现、不解析                                    |
-| `isolation/`                                     | Worker 宿主：RPC + 懒启动 + 崩溃即 Failed                                   | `WorkerPluginHost`                                                   | **不是安全沙箱**（见 §9 D5）                      |
-| `security/`                                      | 能力守卫 + 权限管理 + 信任策略                                               | `CapabilityGuard`、`PermissionManager`、`trustLevelFor`              | 不做签名验证                                      |
-| `observability/`                                 | log / metrics / tracing / health 四服务 + sink 扩展点桥                     | `LogService`、`registerHostSinks`                                    | 不落地具体 sink（由插件贡献）                     |
-| `config/`                                        | provider 分层 + 合并 + 变更通知，**不内置任何具体配置源**                   | `ConfigService`                                                      | 不认识 JSON / env / remote（那些是插件）          |
-| `events/`                                        | 事件总线：桶索引、priority 降序 → seq 升序、串行 await                      | `EventBusImpl`                                                       | 不知道任何具体 topic 语义                         |
-| `scheduler/` / `semver/`                         | 调度端口 + 串行实现；版本解析与范围满足                                     | `SerialScheduler`、`satisfies`                                       | —                                                 |
-| `bootstrap/`                                     | 选项归一 + 把 15 个令牌注册进 root 容器 + 设 8 项能力门槛                    | `registerCoreServices`、`defaultKernelOptions`                       | **不注入任何扩展点默认实现**                      |
-| `registry/`                                      | 已加载插件表 + 状态 + 健康（只读视图）                                      | `PluginsRegistry`                                                    | —                                                 |
-| `context/`                                       | 组装 `PluginContext`；插件 API 的导出与能力消费                             | `createPluginContext`、`PluginApiImpl`                               | 插件 API 不持有父容器引用                         |
-| `state-machine` / `topics` / `errors` / `version` | 12 状态转移表 / 语义主题常量 / 错误类 / 版本常量                            | `TRANSITIONS`、`Topics`、`KernelError`                               | `index.ts` 不导出任何实现类                       |
+| 模块                                              | 职责                                                                                        | 关键符号                                                              | 不负责什么                                     |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------- |
+| `contracts/`                                      | 插件看得见的全部语言：纯类型 + 2 个纯函数工厂 + 16 个 `KernelTokens`                        | `defineToken`、`KernelTokens`、`PluginManifest`                       | 任何实现、任何 IO、任何副作用                  |
+| `kernel.ts`                                       | 编排：start / reload / unloadPlugin / shutdown / health                                     | `Kernel`、`applyPluginState`                                          | 不 `new` 任何实现类（构造器只收 `KernelDeps`） |
+| `composition.ts`                                  | 装配：`createDeps()` 造服务 + 注册宿主默认扩展点实现                                        | `createDeps`、`KernelDeps`、`CommandDispatcher`                       | 不做编排决策                                   |
+| `extensions/`                                     | 12 个扩展点声明 + 贡献 / 枚举 / 按 pluginId 强制回收 + 3 个 `*.replace` 端口 + 命令唯一分发 | `EXTENSION_POINT_DEFS`、`ExtensionPointRegistry`、`CommandDispatcher` | 不提供任何扩展点的具体实现                     |
+| `di/`                                             | `Container`：父引用藏模块私有 `WeakMap`、`exported` 显式导出、兄弟容器互访                  | `Container`                                                           | 不做能力判定（那是 `security/`）               |
+| `dependency/`                                     | 版本兼容 + 去重 + 环检测 + 确定性拓扑排序                                                   | `DependencyResolver`                                                  | 不加载任何插件代码                             |
+| `discovery/`                                      | 扫根目录、读并校验 `plugin.json`、mtime 缓存                                                | `PluginDiscovery`                                                     | 不 `import()` 入口                             |
+| `lifecycle/`                                      | 物理管线（数据化步骤表）+ 阶段驱动 + 超时 + 回滚                                            | `START_PIPELINE` / `STOP_PIPELINE`、`LifecycleManager`                | 不决定加载顺序（那是 resolver）                |
+| `loader/`                                         | 动态 `import()` + 工厂调用 + 容器 / 上下文组装 + Worker 代理                                | `PluginLoader`                                                        | 不发现、不解析                                 |
+| `isolation/`                                      | Worker 宿主：RPC + 懒启动 + 崩溃即 Failed                                                   | `WorkerPluginHost`                                                    | **不是安全沙箱**（见 §9 D5）                   |
+| `security/`                                       | 能力守卫 + 权限管理 + 信任策略                                                              | `CapabilityGuard`、`PermissionManager`、`trustLevelFor`               | 不做签名验证                                   |
+| `observability/`                                  | log / metrics / tracing / health 四服务 + sink 扩展点桥                                     | `LogService`、`registerHostSinks`                                     | 不落地具体 sink（由插件贡献）                  |
+| `config/`                                         | provider 分层 + 合并 + 变更通知，**不内置任何具体配置源**                                   | `ConfigService`                                                       | 不认识 JSON / env / remote（那些是插件）       |
+| `events/`                                         | 事件总线：桶索引、priority 降序 → seq 升序、串行 await                                      | `EventBusImpl`                                                        | 不知道任何具体 topic 语义                      |
+| `scheduler/` / `semver/`                          | 调度端口 + 串行实现；版本解析与范围满足                                                     | `SerialScheduler`、`satisfies`                                        | —                                              |
+| `bootstrap/`                                      | 选项归一 + 把 15 个令牌注册进 root 容器 + 设 8 项能力门槛                                   | `registerCoreServices`、`defaultKernelOptions`                        | **不注入任何扩展点默认实现**                   |
+| `registry/`                                       | 已加载插件表 + 状态 + 健康（只读视图）                                                      | `PluginsRegistry`                                                     | —                                              |
+| `context/`                                        | 组装 `PluginContext`；插件 API 的导出与能力消费                                             | `createPluginContext`、`PluginApiImpl`                                | 插件 API 不持有父容器引用                      |
+| `state-machine` / `topics` / `errors` / `version` | 12 状态转移表 / 语义主题常量 / 错误类 / 版本常量                                            | `TRANSITIONS`、`Topics`、`KernelError`                                | `index.ts` 不导出任何实现类                    |
 
 ### 2.3 宿主与前端职责
 
-| 模块                                             | 职责                                                                                       | 关键符号                                            | 不负责什么                                                             |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------ | --------------------------------------------------- | ---------------------------------------------------------------------- |
-| `host/electron/main.ts`                          | 宿主入口：`createDeps` + `Kernel` + 注册实现表 + 窗口生命周期                              | `startKernel`、`registerWhitelistedMethods`         | 不认识任何具体插件 id；**不含任何方法名字符串**（实现表在 `host/ipc/`） |
-| `host/ipc/method-handlers.ts` + `forward-map.ts` | 方法实现表（键由 `Record` 强制齐全）+ topic → 对外事件降维映射                             | `METHOD_FACTORIES`、`EVENT_FORWARD_MAP`             | 不 import electron（可被 vitest 直接驱动）                             |
-| `host/ipc/bridge.ts` + `shared/ipc-contract.ts`  | renderer 唯一通道：白名单精确匹配 + DTO 降维                                               | `IpcBridge`、`channels` / `events`                  | 不把 `bus.emit` 暴露给 renderer、不转发 `bus.on('*')`                 |
-| `host/electron/preload.ts`                       | 唯一契约边界：`contextBridge` 暴露 `{invoke, onEvent}`                                     | `Rem2Bridge`                                        | **不做白名单判定**（判定必须在主进程，renderer 不可信）                |
-| `host/electron/window.ts` / `theme-registry.ts`  | 窗口创建（CSP / sandbox / dev-vs-prod 加载）；内存主题表                                   | `createWindow`、`ThemeRegistryImpl`                 | theme-registry 不 import 任何插件源码                                  |
-| `host/cli/*`                                     | 终端内核引导（`pnpm dev` 主形态）；路径三形态解析；scaffold / validate / list              | `run`、`builtinPluginsRoot`                         | 不依赖 Electron（内核是纯库，外壳是可选载体）                          |
-| `frontend/app/**`                                | Shell 布局 + `PanelHost` / `RouteHost` 插槽 + 4 个 chrome 组件                             | `App.svelte`、`PanelShell.svelte`                   | **不出现任何插件 id**；chrome 由宿主渲染，插件只给描述数据             |
-| `frontend/lib/**`                                | `window.rem2` 的类型化唯一封装 + DTO 投影 + 5 个 runes store                                | `ipc`、`bridge-types.ts`                            | 不 import 内核 / 宿主源码；白名单经 `src/shared/`                    |
-| `plugins/**`                                     | 全部业务与运维能力：命令、配置源、日志 sink、健康端点、主题、通知                          | 各自 `export default definePlugin(...)`             | 不 import 第三方包；不深链内核实现                                     |
+| 模块                                             | 职责                                                                                                 | 关键符号                                    | 不负责什么                                                              |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------- |
+| `host/electron/main.ts`                          | 宿主入口：`createDeps` + `Kernel` + 注册实现表 + 窗口生命周期                                        | `startKernel`、`registerWhitelistedMethods` | 不认识任何具体插件 id；**不含任何方法名字符串**（实现表在 `host/ipc/`） |
+| `host/ipc/method-handlers.ts` + `forward-map.ts` | 方法实现表（键由 `Record` 强制齐全，入参经 `validate.ts` 运行时校验）+ topic → 对外事件降维映射      | `METHOD_FACTORIES`、`EVENT_FORWARD_MAP`     | 不 import electron（可被 vitest 直接驱动）                              |
+| `host/ipc/bridge.ts` + `shared/ipc-contract.ts`  | renderer 唯一通道：白名单精确匹配 + DTO 降维                                                         | `IpcBridge`、`channels` / `events`          | 不把 `bus.emit` 暴露给 renderer、不转发 `bus.on('*')`                   |
+| `host/electron/preload.ts`                       | 唯一契约边界：`contextBridge` 暴露 `{invoke, onEvent}`                                               | `Rem2Bridge`                                | **不做白名单判定**（判定必须在主进程，renderer 不可信）                 |
+| `host/electron/window.ts` / `theme-registry.ts`  | 窗口创建（CSP / sandbox / dev-vs-prod 加载）；内存主题表                                             | `createWindow`、`ThemeRegistryImpl`         | theme-registry 不 import 任何插件源码                                   |
+| `host/cli/*`                                     | 终端内核引导（`pnpm dev` 主形态）；路径三形态解析；scaffold / validate / list                        | `run`、`builtinPluginsRoot`                 | 不依赖 Electron（内核是纯库，外壳是可选载体）                           |
+| `frontend/app/**`                                | Shell 布局 + `PanelHost` / `RouteHost` 插槽 + 4 个 chrome 组件                                       | `App.svelte`、`PanelShell.svelte`           | **不出现任何插件 id**；chrome 由宿主渲染，插件只给描述数据              |
+| `frontend/lib/**`                                | `window.rem2` 的类型化唯一封装 + DTO 投影与运行时校验（`dto-guards` / `nav-link`）+ 5 个 runes store | `ipc`、`bridge-types.ts`、`parsePanelData`  | 不 import 内核 / 宿主源码；白名单经 `src/shared/`                       |
+| `plugins/**`                                     | 全部业务与运维能力：命令、配置源、日志 sink、健康端点、主题、通知、检查器面板                        | 各自 `export default definePlugin(...)`     | 不 import 第三方包；不深链内核实现                                      |
 
 ---
 
@@ -251,17 +253,17 @@ Failed → Stopped → Unloaded → Disposed
 
 ### 3.2 物理管线（`lifecycle/pipeline.ts` → `START_PIPELINE` / `STOP_PIPELINE`）
 
-| 步  | 动作                                                         | 状态跃迁                        | 失败语义     |
-| --- | ------------------------------------------------------------ | ------------------------------- | ------------ |
-| A   | `discover()` 扫描根目录                                      | —                               | —            |
-| B   | 读并校验 `plugin.json`                                       | → `Registered`                  | 非致命       |
-| C   | `DependencyResolver.resolve(all)`（**整图批量计算**）        | `Registered → Resolved`         | 非致命→Dropped |
-| D   | 权限检查 → 入口解析 → `import()` → 工厂调用 → 建子容器       | `Resolved → Loaded`             | **致命**     |
-| E   | `onDiscover` → `onLoad`                                      | `Loaded → Initialized`          | 致命 / 非致命按钩子 |
-| F   | `onConfigure`（读配置快照）                                  | `Initialized → Configured`      | **致命**     |
-| G   | `onStart`                                                    | `Configured → Active / Degraded`| **致命**     |
-| H   | 健康汇总 + `KernelReady`                                     | —                               | —            |
-| I   | 卸载：先依赖者 → `onStop` → `onUnload` → `onDispose` → 强制回收 | 逐级至 `Disposed`               | 单钩子失败不阻断其余 |
+| 步  | 动作                                                            | 状态跃迁                         | 失败语义             |
+| --- | --------------------------------------------------------------- | -------------------------------- | -------------------- |
+| A   | `discover()` 扫描根目录                                         | —                                | —                    |
+| B   | 读并校验 `plugin.json`                                          | → `Registered`                   | 非致命               |
+| C   | `DependencyResolver.resolve(all)`（**整图批量计算**）           | `Registered → Resolved`          | 非致命→Dropped       |
+| D   | 权限检查 → 入口解析 → `import()` → 工厂调用 → 建子容器          | `Resolved → Loaded`              | **致命**             |
+| E   | `onDiscover` → `onLoad`                                         | `Loaded → Initialized`           | 致命 / 非致命按钩子  |
+| F   | `onConfigure`（读配置快照）                                     | `Initialized → Configured`       | **致命**             |
+| G   | `onStart`                                                       | `Configured → Active / Degraded` | **致命**             |
+| H   | 健康汇总 + `KernelReady`                                        | —                                | —                    |
+| I   | 卸载：先依赖者 → `onStop` → `onUnload` → `onDispose` → 强制回收 | 逐级至 `Disposed`                | 单钩子失败不阻断其余 |
 
 **关键取舍**：依赖解析在逻辑序排第 5（`Registered → Resolved` 是插件的一次可观测跃迁），在物理序排第 2（必须先读 manifest 才有依赖图）。`pipeline.ts` 把顺序表达为**数据**，`tests/unit/lifecycle.test.ts` 直接断言「顺序 == 契约」，因此两层永远不会悄悄错位。
 
@@ -275,20 +277,20 @@ Failed → Stopped → Unloaded → Disposed
 
 ### 4.1 12 个扩展点（`extensions/definitions.ts` → `EXTENSION_POINT_DEFS`）
 
-| #   | id                  | 契约类型                 | 槽     | 冲突裁决      | capability         | 宿主默认实现                              | 用途                       |
-| --- | ------------------- | ------------------------ | ------ | ------------- | ------------------ | ----------------------------------------- | -------------------------- |
-| 1   | `log.sink`          | `LogSink`                | multi  | keep-first    | —                  | `NullLogSink`（`kernel.null`）            | 日志输出目的地             |
-| 2   | `metrics.sink`      | `MetricSink`             | multi  | keep-first    | —                  | `NoopMetricSink`（`kernel.noop`）         | 指标导出                   |
-| 3   | `trace.exporter`    | `TraceExporter`          | multi  | keep-first    | —                  | 内存缓冲 exporter（`kernel.buffered`）    | span 导出                  |
-| 4   | `config.provider`   | `ConfigProvider`         | multi  | keep-first    | `config.provide`   | `ReadOnlyMemoryConfigProvider`（`kernel.defaults`） | 配置层（json / env / remote） |
-| 5   | `command.provide`   | `CommandHandler`         | multi  | reject-new    | `command.provide`  | ❌                                        | 业务命令                   |
-| 6   | `health.check`      | `HealthCheckFn`          | multi  | keep-first    | —                  | ❌                                        | 插件健康自检               |
-| 7   | `ui.theme`          | `ThemeDefinition`        | multi  | reject-new    | `ui.theme`         | `ThemeRegistryImpl`（宿主注册，见 §4.3）  | 主题目录（light/dark 共存） |
-| 8   | `ui.panel`          | `PanelContribution`      | multi  | reject-new    | `ui.panel`         | 声明为 true，但无宿主实现（见 §11）       | 声明式面板描述             |
-| 9   | `ui.route`          | `RouteContribution`      | multi  | replace-old   | `ui.route`         | ❌                                        | 声明式路由                 |
-| 10  | `scheduler.replace` | `Scheduler`              | single | replace-old   | `kernel.internals` | `SerialScheduler`（`kernel.serial`）      | 替换调度器                 |
-| 11  | `resolver.replace`  | `DependencyResolverPort` | single | replace-old   | `kernel.internals` | 内置 `DependencyResolver`（`kernel.builtin`） | 替换依赖解析策略        |
-| 12  | `loader.replace`    | `PluginLoaderPort`       | single | replace-old   | `kernel.internals` | 内置 `PluginLoader`（`kernel.builtin`）    | 替换装载机制               |
+| #   | id                  | 契约类型                 | 槽     | 冲突裁决    | capability         | 宿主默认实现                                        | 用途                                                          |
+| --- | ------------------- | ------------------------ | ------ | ----------- | ------------------ | --------------------------------------------------- | ------------------------------------------------------------- |
+| 1   | `log.sink`          | `LogSink`                | multi  | keep-first  | —                  | `NullLogSink`（`kernel.null`）                      | 日志输出目的地                                                |
+| 2   | `metrics.sink`      | `MetricSink`             | multi  | keep-first  | —                  | `NoopMetricSink`（`kernel.noop`）                   | 指标导出                                                      |
+| 3   | `trace.exporter`    | `TraceExporter`          | multi  | keep-first  | —                  | 内存缓冲 exporter（`kernel.buffered`）              | span 导出                                                     |
+| 4   | `config.provider`   | `ConfigProvider`         | multi  | keep-first  | `config.provide`   | `ReadOnlyMemoryConfigProvider`（`kernel.defaults`） | 配置层（json / env / remote）                                 |
+| 5   | `command.provide`   | `CommandHandler`         | multi  | reject-new  | `command.provide`  | ❌                                                  | 业务命令（由内核 `CommandDispatcher` 按 contributionId 消费） |
+| 6   | `health.check`      | `HealthCheckFn`          | multi  | keep-first  | —                  | ❌                                                  | 插件健康自检                                                  |
+| 7   | `ui.theme`          | `ThemeDefinition`        | multi  | reject-new  | `ui.theme`         | `ThemeRegistryImpl`（宿主注册，见 §4.3）            | 主题目录（light/dark 共存）                                   |
+| 8   | `ui.panel`          | `PanelContribution`      | multi  | reject-new  | `ui.panel`         | ❌（无面板插件时槽为空，前端显式空态）              | 声明式面板描述                                                |
+| 9   | `ui.route`          | `RouteContribution`      | multi  | replace-old | `ui.route`         | ❌                                                  | 声明式路由                                                    |
+| 10  | `scheduler.replace` | `Scheduler`              | single | replace-old | `kernel.internals` | `SerialScheduler`（`kernel.serial`）                | 替换调度器                                                    |
+| 11  | `resolver.replace`  | `DependencyResolverPort` | single | replace-old | `kernel.internals` | 内置 `DependencyResolver`（`kernel.builtin`）       | 替换依赖解析策略                                              |
+| 12  | `loader.replace`    | `PluginLoaderPort`       | single | replace-old | `kernel.internals` | 内置 `PluginLoader`（`kernel.builtin`）             | 替换装载机制                                                  |
 
 单例槽的 `conflict` 必须显式声明，契约测试会查；缺省即编译期报错（`ExtensionPointDef` 的字段是必填）。
 
@@ -314,13 +316,13 @@ flowchart LR
 
 ### 4.3 宿主默认实现注入在哪
 
-| 位置                                             | 内容                                                                                                |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| `composition.ts` → `registerHostDefaults()`      | `extension-sinks.ts` 提供 `log.sink` / `metrics.sink` / `trace.exporter` / `config.provider` 四个；内联注册 `scheduler.replace` / `resolver.replace` / `loader.replace` 三个 |
-| `host/electron/main.ts` → `startKernel()`        | `ui.theme` 的宿主实现 `ThemeRegistryImpl`（依赖 Electron 窗口生命周期，内核零依赖前提下不能放内核）  |
-| `bootstrap/register-core-services.ts`            | **不注入任何扩展点**，只注册 15 个 `KernelTokens` 与 8 项能力门槛                                    |
+| 位置                                        | 内容                                                                                                                                                                         |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `composition.ts` → `registerHostDefaults()` | `extension-sinks.ts` 提供 `log.sink` / `metrics.sink` / `trace.exporter` / `config.provider` 四个；内联注册 `scheduler.replace` / `resolver.replace` / `loader.replace` 三个 |
+| `host/electron/main.ts` → `startKernel()`   | `ui.theme` 的宿主实现 `ThemeRegistryImpl`（依赖 Electron 窗口生命周期，内核零依赖前提下不能放内核）                                                                          |
+| `bootstrap/register-core-services.ts`       | **不注入任何扩展点**，只注册 15 个 `KernelTokens` 与 8 项能力门槛                                                                                                            |
 
-`KernelTokens` 共 17 个：15 个由内核注册，`UiThemeRegistry` 由宿主注册，`UiPanelHost` 已定义但当前无注册方也无消费方。
+`KernelTokens` 共 16 个：15 个由内核注册（`bootstrap/register-core-services.ts`），`UiThemeRegistry` 由宿主在 `host/electron/main.ts` → `startKernel()` 里经 `registerInstance` 注册。
 
 ### 4.4 Worker 插件能贡献什么
 
@@ -330,25 +332,25 @@ flowchart LR
 
 ## 5. 隔离与权限
 
-| 层             | 机制                                                                                   | 边界                                                                                       |
-| -------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| 进程 / Worker  | `worker_threads` 独立线程 + RPC 代理                                                    | 崩溃 / 死循环 / `process.exit()` 不拖垮内核。**故障隔离，不是安全沙箱**                     |
-| 容器           | 每插件一个 `Container` 子容器；父引用藏模块私有 `WeakMap`；插件拿不到 root 容器句柄      | 只能解析：自身注册项 + 兄弟插件显式导出的服务 + 父容器 `shareable` 且已导出的项             |
-| 能力           | `CapabilityGuard` + `PermissionManager` + `TrustPolicy`                                  | 三段式：manifest `requires` 声明 → 按 `trustLevel` 计算授权 → `resolve` / `contribute` 时校验 |
+| 层            | 机制                                                                                | 边界                                                                                          |
+| ------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| 进程 / Worker | `worker_threads` 独立线程 + RPC 代理                                                | 崩溃 / 死循环 / `process.exit()` 不拖垮内核。**故障隔离，不是安全沙箱**                       |
+| 容器          | 每插件一个 `Container` 子容器；父引用藏模块私有 `WeakMap`；插件拿不到 root 容器句柄 | 只能解析：自身注册项 + 兄弟插件显式导出的服务 + 父容器 `shareable` 且已导出的项               |
+| 能力          | `CapabilityGuard` + `PermissionManager` + `TrustPolicy`                             | 三段式：manifest `requires` 声明 → 按 `trustLevel` 计算授权 → `resolve` / `contribute` 时校验 |
 
 信任分级：`builtin` = trusted，其余 = sandboxed（`security/trust-policy.ts` → `trustLevelFor`）。签名验证明确不做。
 
 **Worker 内可用 / 不可用**：
 
-| 设施                                | in-process     | worker                                                |
-| ----------------------------------- | -------------- | ----------------------------------------------------- |
-| `ctx.log` / `ctx.metrics`           | ✅             | ✅ RPC                                                |
-| `ctx.config`                        | ✅             | ✅ get / has 走 RPC；`onDidChange` 由内核 push 全量快照 |
-| `ctx.events`（emit / on / request） | ✅             | ✅ RPC（`respond` 不可用）                            |
-| `ctx.permissions`                   | ✅             | ✅ init 时真实快照                                    |
-| `ctx.resolvePath`                   | ✅             | ✅                                                    |
-| `ctx.services` / `ctx.api` / `ctx.plugins` / `ctx.container` | ✅ | ❌ 调用即抛错                                 |
-| `ctx.extensions`                    | ✅             | ⚠️ 仅 §4.4 三类                                      |
+| 设施                                                         | in-process | worker                                                  |
+| ------------------------------------------------------------ | ---------- | ------------------------------------------------------- |
+| `ctx.log` / `ctx.metrics`                                    | ✅         | ✅ RPC                                                  |
+| `ctx.config`                                                 | ✅         | ✅ get / has 走 RPC；`onDidChange` 由内核 push 全量快照 |
+| `ctx.events`（emit / on / request）                          | ✅         | ✅ RPC（`respond` 不可用）                              |
+| `ctx.permissions`                                            | ✅         | ✅ init 时真实快照                                      |
+| `ctx.resolvePath`                                            | ✅         | ✅                                                      |
+| `ctx.services` / `ctx.api` / `ctx.plugins` / `ctx.container` | ✅         | ❌ 调用即抛错                                           |
+| `ctx.extensions`                                             | ✅         | ⚠️ 仅 §4.4 三类                                         |
 
 ---
 
@@ -398,7 +400,9 @@ sequenceDiagram
     participant MAIN as "ipcMain"
     participant BR as "IpcBridge.handleInvoke"
     participant BUS as "EventBus"
-    participant P as "命令插件 responder"
+    participant CD as "CommandDispatcher（内核）"
+    participant EP as "command.provide 扩展槽"
+    participant HP as "命令插件 contribution"
 
     UI->>Store: execute(text)
     Store->>IPC: request(channels.commandExecute, {command, args})
@@ -408,8 +412,12 @@ sequenceDiagram
     MAIN->>BR: handleInvoke(payload)
     Note over BR: 精确白名单；不在集合内直接 reply 错误，<br/>不进入事件总线
     BR->>BUS: request('command.execute', args, {timeoutMs})
-    BUS->>P: responder(payload)
-    P-->>BUS: {ok, output}
+    BUS->>CD: dispatch(payload)（内核 start() 注册的唯一 responder）
+    CD->>EP: entries('command.provide') 按 contributionId === command 查找
+    EP-->>CD: entry.impl（CommandHandler）
+    CD->>HP: impl(args)
+    HP-->>CD: {ok, output}（原样返回，不再包装一层）
+    CD-->>BUS: result
     BUS-->>BR: result
     BR->>MAIN: reply({id, ok, result})
     MAIN->>PRE: Ipc.Invoke 响应
@@ -418,7 +426,7 @@ sequenceDiagram
     Store-->>UI: last = {...res, command}
 ```
 
-宿主**不实现** `command.execute`（`method-handlers.ts` 里该键的值是 `null`）：命令由插件直接 `bus.respond`。宿主若转发同名的 topic 会命中自己造成无限递归。
+宿主**不实现** `command.execute`（`method-handlers.ts` 里该键的值是 `null`）：分发只走内核 `CommandDispatcher` —— 它在 `start()` 开头注册（早于任何插件 `onStart` 的 respond，`pickResponder` 按 seq 取最小者，插件侧 respond 被确定性遮蔽），直接读 `command.provide` 扩展槽，**结构上不可能递归**。**插件不要再直接 `respond` `Topics.CommandExecute`**（即使写了也被 dispatcher 遮蔽）；把命令贡献进 `command.provide` 槽即可，示例见 [`02-plugin-api.md`](02-plugin-api.md) §8。
 
 ### 6.3 事件（插件 → 总线 → DTO 降维 → renderer）
 
@@ -450,6 +458,8 @@ unloadPlugin(pluginId)
   ├─ extensions.retractAll(pluginId)
   ├─ health.unregisterCheck + permissions.unregister
   ├─ rootContainer.unmountChildContainer(child) → child.dispose()
+  ├─ applyPluginState('Stopped') → emit(Topics.PluginStateChanged, {pluginId, state})
+  │    （贡献已先回收：前端收到事件再重拉，必然看到回收后的新列表，无竞态）
   ├─ registry.remove(pluginId)
   └─ emit(Topics.PluginUnloaded, {pluginId, reason})
 ```
@@ -460,12 +470,12 @@ unloadPlugin(pluginId)
 
 ### 7.1 四类数据
 
-| 数据     | 产生                                                                                                            | 经过谁                                                                                                               | 消费                                                                                   |
-| -------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| **配置** | `config-json` 插件（`JsonConfigProvider`，priority 10）+ 内核只读默认层 `{app:{name:'rem2'}}` + `initialConfig` 可写层 | `ConfigService.refresh()` 按 priority 升序 deepMerge 成快照；`get()` 惰性刷新                                        | 插件 `onConfigure` 期 `ctx.config.get(…)`；Worker 插件拿 init 快照 + 变更推送。**配置不外泄 renderer** |
-| **命令** | `CommandPrompt.svelte` 输入                                                                                     | store → `ipc.request` → preload → `IpcBridge`（白名单）→ `bus.request(Topics.CommandExecute)`                        | 命令插件 responder → `{ok, output}` 原路回传                                            |
-| **事件** | 插件 `bus.emit`                                                                                                 | `EventBusImpl` → `EVENT_FORWARD_MAP`（5 个白名单 topic）→ `toDto` → `Ipc.Event`                                      | renderer `ipc.subscribe`                                                               |
-| **主题** | `theme-dark` 插件贡献 `ui.theme`（light / dark 两套 token）                                                     | 扩展点槽 →（`method-handlers.ts` → `syncThemeFromExtension()` **pull 同步**）→ 宿主 `ThemeRegistryImpl`（目录 + 激活态）→ `ui.theme.list/set` | renderer `theme` store → `theme/vars.ts` → CSS 变量 + `color-scheme`                    |
+| 数据     | 产生                                                                                                                   | 经过谁                                                                                                                                        | 消费                                                                                                   |
+| -------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **配置** | `config-json` 插件（`JsonConfigProvider`，priority 10）+ 内核只读默认层 `{app:{name:'rem2'}}` + `initialConfig` 可写层 | `ConfigService.refresh()` 按 priority 升序 deepMerge 成快照；`get()` 惰性刷新                                                                 | 插件 `onConfigure` 期 `ctx.config.get(…)`；Worker 插件拿 init 快照 + 变更推送。**配置不外泄 renderer** |
+| **命令** | `CommandPrompt.svelte` 输入                                                                                            | store → `ipc.request` → preload → `IpcBridge`（白名单）→ `bus.request(Topics.CommandExecute)`                                                 | 内核 `CommandDispatcher` 读 `command.provide` 槽 → 命令插件 handler → `{ok, output}` 原路回传          |
+| **事件** | 插件 `bus.emit`                                                                                                        | `EventBusImpl` → `EVENT_FORWARD_MAP`（5 个白名单 topic）→ `toDto` → `Ipc.Event`                                                               | renderer `ipc.subscribe`                                                                               |
+| **主题** | `theme-dark` 插件贡献 `ui.theme`（light / dark 两套 token）                                                            | 扩展点槽 →（`method-handlers.ts` → `syncThemeFromExtension()` **pull 同步**）→ 宿主 `ThemeRegistryImpl`（目录 + 激活态）→ `ui.theme.list/set` | renderer `theme` store → `theme/vars.ts` → CSS 变量 + `color-scheme`                                   |
 
 `initialConfig` 内存层 priority = 1000，高于所有插件 provider —— 插件 `set()` 永远写内存层。这是有意的「宿主配置优先」语义。
 
@@ -500,11 +510,11 @@ src/shared/ipc-contract.ts        ← 唯一一份字符串（channels / events�
 
 ### 8.1 三条产线
 
-| 产线     | 输入                                                    | 执行                                    | 输出                                                                     |
-| -------- | ------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------ |
-| 内核库   | `src/kernel/**`                                         | `tsc -p tsconfig.build.json`            | `dist/kernel/**`（`.js` + `.d.ts` + `.map`）；`exports["."]` 指向此处     |
-| 插件     | `plugins/<id>/src/index.ts`                             | `node scripts/build-plugins.mjs`（esbuild） | `plugins-dist/<id>/dist/index.js`（ESM bundle，node20）+ `plugin.json` + `package.json` |
-| 外壳     | `src/main.ts` / `src/preload.ts` / `src/frontend/entry-client.ts` | `electron-forge`（VitePlugin）  | `.vite/build/main.cjs`、`.vite/build/preload.cjs`、`.vite/renderer/main_window/index.html` |
+| 产线   | 输入                                                              | 执行                                        | 输出                                                                                       |
+| ------ | ----------------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| 内核库 | `src/kernel/**`                                                   | `tsc -p tsconfig.build.json`                | `dist/kernel/**`（`.js` + `.d.ts` + `.map`）；`exports["."]` 指向此处                      |
+| 插件   | `plugins/<id>/src/index.ts`                                       | `node scripts/build-plugins.mjs`（esbuild） | `plugins-dist/<id>/dist/index.js`（ESM bundle，node20）+ `plugin.json` + `package.json`    |
+| 外壳   | `src/main.ts` / `src/preload.ts` / `src/frontend/entry-client.ts` | `electron-forge`（VitePlugin）              | `.vite/build/main.cjs`、`.vite/build/preload.cjs`、`.vite/renderer/main_window/index.html` |
 
 `pnpm build` = `build:kernel` + `build:plugins`；`predev` / `premake` 都挂了 `build`。
 
@@ -525,13 +535,13 @@ plugins-dist/ ──extraResource──▶ resources/plugins-dist/（asar 之外
 
 ### 8.3 dev 与 prod 的差异
 
-| 维度          | dev（`pnpm dev` / `electron-forge start`）                             | prod（`pnpm make`）                          |
-| ------------- | ---------------------------------------------------------------------- | -------------------------------------------- |
-| 内核运行      | `tsx` 直跑 TS（`predev` 仍会先 build）                                 | 全部预编译（`premake` 保证）                 |
-| 插件根        | `plugins-dist/`（回退 `plugins/`）                                     | `resources/plugins-dist/`                    |
-| renderer 加载 | Vite dev server（`MAIN_WINDOW_VITE_DEV_SERVER_URL`）                   | `loadFile(.vite/renderer/main_window/index.html)` |
-| 解析条件      | Node 侧 `['node','import','module']`；renderer `['browser','import','module']` | 同左                                  |
-| 安全开关      | 开发态宽松                                                             | Fuses 关 RunAsNode / EnableNodeOptionsEnvironmentVariable / NodeCliInspect / OnlyLoadAppFromAsar |
+| 维度          | dev（`pnpm dev` / `electron-forge start`）                                     | prod（`pnpm make`）                                                                              |
+| ------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| 内核运行      | `tsx` 直跑 TS（`predev` 仍会先 build）                                         | 全部预编译（`premake` 保证）                                                                     |
+| 插件根        | `plugins-dist/`（回退 `plugins/`）                                             | `resources/plugins-dist/`                                                                        |
+| renderer 加载 | Vite dev server（`MAIN_WINDOW_VITE_DEV_SERVER_URL`）                           | `loadFile(.vite/renderer/main_window/index.html)`                                                |
+| 解析条件      | Node 侧 `['node','import','module']`；renderer `['browser','import','module']` | 同左                                                                                             |
+| 安全开关      | 开发态宽松                                                                     | Fuses 关 RunAsNode / EnableNodeOptionsEnvironmentVariable / NodeCliInspect / OnlyLoadAppFromAsar |
 
 `MAIN_WINDOW_VITE_DEV_SERVER_URL` / `MAIN_WINDOW_VITE_NAME` 是 Forge 经 Vite `define` 注入的**裸标识符**。带 `process.env.` 前缀不会被替换，运行期恒为 `undefined`，窗口永远走 `file://` 分支。常量名由渲染进程名大写化而来（本项目 `main_window`），改渲染进程名必须同步改这两个常量。
 
@@ -574,27 +584,27 @@ TS `private` 只是编译期约束，运行期字段可枚举可读写，插件�
 
 ### 10.1 新增插件
 
-| 步骤 | 动作                                | 位置                                                                     |
-| ---- | ----------------------------------- | ------------------------------------------------------------------------ |
-| 1    | 生成骨架                            | `pnpm cli scaffold <plugin-id>`                                          |
-| 2    | 写 `definePlugin(manifest, setup)`  | `plugins/<id>/src/index.ts`                                              |
-| 3    | 声明依赖                            | `plugin.json` → `dependencies`（硬）/ `optionalDependencies`（软）       |
-| 4    | 声明能力                            | `plugin.json` → `requires`                                               |
-| 5    | 声明贡献                            | `plugin.json` → `contributes`（静态声明，与运行期 `contribute` 对齐）    |
-| 6    | 构建 + 校验                         | `pnpm build:plugins` → `pnpm cli validate plugins/<id>/plugin.json`      |
+| 步骤 | 动作                               | 位置                                                                  |
+| ---- | ---------------------------------- | --------------------------------------------------------------------- |
+| 1    | 生成骨架                           | `pnpm cli scaffold <plugin-id>`                                       |
+| 2    | 写 `definePlugin(manifest, setup)` | `plugins/<id>/src/index.ts`                                           |
+| 3    | 声明依赖                           | `plugin.json` → `dependencies`（硬）/ `optionalDependencies`（软）    |
+| 4    | 声明能力                           | `plugin.json` → `requires`                                            |
+| 5    | 声明贡献                           | `plugin.json` → `contributes`（静态声明，与运行期 `contribute` 对齐） |
+| 6    | 构建 + 校验                        | `pnpm build:plugins` → `pnpm cli validate plugins/<id>/plugin.json`   |
 
 **不需要改内核、宿主、前端任何文件**。若发现必须改，说明该能力没被建模成扩展点。
 
 ### 10.2 新增扩展点
 
-| 步骤 | 动作                                                                                            |
-| ---- | ----------------------------------------------------------------------------------------------- |
-| 1    | `contracts/extension-point.ts` → `ExtensionPointId` 联合加字面量                                 |
+| 步骤 | 动作                                                                                                                    |
+| ---- | ----------------------------------------------------------------------------------------------------------------------- |
+| 1    | `contracts/extension-point.ts` → `ExtensionPointId` 联合加字面量                                                        |
 | 2    | `extensions/definitions.ts` 加一条 `ExtensionPointDef`（`multi` / `hasHostDefault` / `conflict` / `capability` 全必填） |
-| 3    | 若引入新端口：`extensions/ports.ts` 加接口                                                      |
-| 4    | 若 `hasHostDefault`：`composition.ts` → `registerHostDefault`                                   |
-| 5    | 若需能力：`contracts/permission.ts` 加常量 + `security/trust-policy.ts` 给出各信任级别处置       |
-| 6    | **同步 `tests/contract/extension-points.test.ts` 的 `EXPECTED_IDS`**（期望值是写死的字面量，不同步即红） |
+| 3    | 若引入新端口：`extensions/ports.ts` 加接口                                                                              |
+| 4    | 若 `hasHostDefault`：`composition.ts` → `registerHostDefault`                                                           |
+| 5    | 若需能力：`contracts/permission.ts` 加常量 + `security/trust-policy.ts` 给出各信任级别处置                              |
+| 6    | **同步 `tests/contract/extension-points.test.ts` 的 `EXPECTED_IDS`**（期望值是写死的字面量，不同步即红）                |
 
 ### 10.3 新增一个 IPC 方法
 
@@ -609,28 +619,22 @@ TS `private` 只是编译期约束，运行期字段可枚举可读写，插件�
 
 ## 11. 已知限制与未接线
 
-| #   | 现象                                                                                          | 性质                                                                 |
-| --- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| L1  | `ui.panel` 在定义表里声明 `hasHostDefault: true`，但没有任何 `registerHostDefault('ui.panel', …)` | 空声明。功能等价于「无面板」占位；字段与实现不符，易误导             |
-| L2  | `ui.panel` / `ui.route` 无任何 builtin 插件贡献                                                | renderer 的 `PanelHost` / `RouteHost` 恒为空态                        |
-| L3  | `Topics.UiThemeRegistered` 定义但从未 emit / consume                                           | 预留 topic                                                           |
-| L4  | `command.provide` 扩展点有贡献但无消费方：命令分发实际走 EventBus responder                     | 两条命令通路并存，`command.provide` 槽当前是「只写不读」              |
-| L5  | `KernelTokens.UiPanelHost` 无注册、无消费                                                      | 预留令牌                                                             |
-| L6  | `*.replace` 三个扩展点只支持启动期替换                                                        | 运行期替换会让 `SerialScheduler` 丢 in-flight 任务，未设计            |
-| L7  | 事件分隔符存在两种风格：`notify-worker` 订阅 `'command:result'`（冒号），内核 topic 是 `'command.result'`（点） | `events/pattern.ts` 把两者都视为段分隔符，当前能匹配但属于「靠巧合正确」。新代码统一用 `.`，并优先引用 `Topics` |
-| L8  | `pnpm make` 未端到端验证                                                                       | `resources/plugins-dist/` 的实际落盘名只经代码推演                    |
+| #   | 现象                                   | 性质                                                       |
+| --- | -------------------------------------- | ---------------------------------------------------------- |
+| L1  | `*.replace` 三个扩展点只支持启动期替换 | 运行期替换会让 `SerialScheduler` 丢 in-flight 任务，未设计 |
+| L2  | Windows 上仅 squirrel maker 可用（已验证：产出 `Setup.exe`，包内 `resources/plugins-dist/` 齐全）；deb/rpm maker 依赖 Linux 工具链 | 平台限制；`out/` 残留被占用文件时 packager 清理会被本机 safe-delete shim 阻断，清空 `out/` 后重跑即可 |
 
 ---
 
 ## 12. 契约测试：边界的机器判据
 
-| 文件                                        | 断言                                                                                                  |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `tests/contract/kernel-deps.test.ts`        | R1 内核与 host（除 electron）零第三方 import；R2 内核不得反向 import；R5 `dependencies` 恒为 `{}`；含提取器自检元测试（防止「违例为空」恒真） |
-| `tests/contract/plugin-contract.test.ts`    | R4 插件只从 `rem2-kernel` / `node:*` / 相对路径导入；R6 前端不碰内核与宿主源码；R7 `entry` 是 `.js` / `.mjs`；IPC 事件名与 `Topics` 真值一致 |
-| `tests/contract/ipc-contract.test.ts`       | `src/shared` 零 import；方法与事件键集合与白名单完全相等；无重复                                       |
-| `tests/contract/extension-points.test.ts`   | 12 个扩展点 id 逐条与写死的 `EXPECTED_IDS` 一致；单例槽必须有显式 `conflict`                           |
-| `tests/contract/build-artifact.test.ts`     | renderer 产物是浏览器版 svelte（sourcemap 含 `index-client.js`、不含 `index-server.js`）               |
+| 文件                                      | 断言                                                                                                                                          |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests/contract/kernel-deps.test.ts`      | R1 内核与 host（除 electron）零第三方 import；R2 内核不得反向 import；R5 `dependencies` 恒为 `{}`；含提取器自检元测试（防止「违例为空」恒真） |
+| `tests/contract/plugin-contract.test.ts`  | R4 插件只从 `rem2-kernel` / `node:*` / 相对路径导入；R6 前端不碰内核与宿主源码；R7 `entry` 是 `.js` / `.mjs`；IPC 事件名与 `Topics` 真值一致  |
+| `tests/contract/ipc-contract.test.ts`     | `src/shared` 零 import；方法与事件键集合与白名单完全相等；无重复                                                                              |
+| `tests/contract/extension-points.test.ts` | 12 个扩展点 id 逐条与写死的 `EXPECTED_IDS` 一致；单例槽必须有显式 `conflict`                                                                  |
+| `tests/contract/build-artifact.test.ts`   | renderer 产物是浏览器版 svelte（sourcemap 含 `index-client.js`、不含 `index-server.js`）                                                      |
 
 写契约测试的两条要求：
 

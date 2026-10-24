@@ -132,6 +132,16 @@ classDiagram
             +UI_ROUTE_POINT ExtensionPointDef~RouteContribution~
             +UI_THEME_POINT ExtensionPointDef~ThemeDefinition~
         }
+        class CommandDispatcher {
+            -ExtensionPointRegistry extensions
+            +dispatch(payload) CommandDispatchResult
+        }
+        class CommandDispatchResult {
+            <<interface>>
+            +boolean ok
+            +unknown output?
+            +string error?
+        }
     }
 
     %% ══════════ UI contracts (new: Svelte frontend consumes) ═════════
@@ -431,12 +441,16 @@ classDiagram
 
     Composition ..> KernelDeps : factory creates
     Composition ..> ExtensionPointRegistry : register host defaults
+    Composition ..> CommandDispatcher : creates (reads the command.provide slot)
 
     Kernel --> PluginDiscovery : start() step1 scan
     Kernel --> DependencyResolver : start() step2 resolve
     Kernel --> PluginLoader : step3 load one by one
     Kernel --> LifecyclePipeline : drive stages
     Kernel --> PluginsRegistry : state and health
+    Kernel --> CommandDispatcher : start() registers the command.execute responder
+    CommandDispatcher --> ExtensionPointRegistry : reads the command.provide slot directly (never requests the bus)
+    CommandDispatcher ..> CommandDispatchResult : returns the handler result as-is
 
     LifecyclePipeline *-- LifecycleManager
     LifecyclePipeline --> ExtensionPointRegistry : retractAll on unload
@@ -511,7 +525,7 @@ classDiagram
     classDef fe fill:#d4edda,stroke:#28a745
 
     class PluginManifest,PluginFactory,PluginFactoryHooks,PluginContext,PluginApi,ServicesView,ServiceToken,LifecyclePhase,PluginStateT,StopReason,ExtensionPointDef,ExtensionContribution,ExtensionContributorView,PanelContribution,RouteContribution,ThemeDefinition contract
-    class ExtensionPointRegistry,ExtensionPointDef,ExtensionContribution,ExtensionContributorView,Definitions ext
+    class ExtensionPointRegistry,ExtensionPointDef,ExtensionContribution,ExtensionContributorView,Definitions,CommandDispatcher,CommandDispatchResult ext
     class Kernel,KernelDeps,Composition,LifecyclePipeline,LifecycleManager,PluginDiscovery,DependencyResolver,PluginLoader,ModuleResolver,PluginFactoryResolver,Container,WorkerPluginHost,WorkerPluginProxy,PermissionManager,CapabilityGuard,TrustPolicy,LogService,MetricsService,TracingService,HealthService,ConfigService,EventBusImpl,PluginsRegistry svc
     class ElectronMain,Preload,WindowRem2Api,IpcBridge,IpcChannels,ThemeRegistryImpl,CliRun,ScaffoldPlugin host
     class EntryClient,App,Shell,PanelHost,RouteHost,IpcClient,PanelStore,ThemeRegistry fe

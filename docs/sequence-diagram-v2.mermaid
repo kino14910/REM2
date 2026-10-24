@@ -74,7 +74,7 @@ sequenceDiagram
         PIPE->>PL: onStart()
         PL-->>PIPE: void
         PIPE-->>K: LifecycleOutcome{ok, degraded, rolledBack}
-        K->>K: setState(Active | Degraded | Failed) + setHealth
+        K->>K: applyPluginState(Active | Degraded | Failed) + setHealth + emit(plugin.state-changed)
     end
 
     K-->>EM: KernelStartResult{loadOrder, started, degraded, failed}
@@ -82,7 +82,9 @@ sequenceDiagram
     K-->>EM: HealthReport
 
 %% ═══════════════════════════════════════════════════════
-%% 链路 ② 命令：renderer → preload → ipcMain → 白名单 → bus
+%% 链路 ② 命令：renderer → preload → ipcMain → 白名单 → 内核 CommandDispatcher → command.provide 槽
+%%   单一分发路径：插件贡献 command.provide，dispatcher 按 contributionId 查槽并原样返回；
+%%   插件不要再直接 respond command.execute（start() 注册的 dispatcher 按 seq 确定性遮蔽）
 %% ═══════════════════════════════════════════════════════
 sequenceDiagram
     autonumber
@@ -93,26 +95,29 @@ sequenceDiagram
     participant BR as IpcBridge
     participant CH as IpcChannels
     participant EB as EventBusImpl
+    participant CD as CommandDispatcher（内核）
     participant EP as ExtensionPointRegistry
     participant HP as hello-command
 
     S->>IC: execute('hello', {name:'rem2'})
-    IC->>PL: window.rem2.invoke('command:hello')
+    IC->>PL: window.rem2.invoke('command.execute', {command, args})
     PL->>IM: send('rem2:invoke', {id, method, args})
     IM->>BR: transport.on('rem2:invoke')
-    BR->>CH: isAllowed('command:hello')
-    alt 不在白名单（如 'ui.panel.resolve' 未开放时）
+    BR->>CH: isAllowed('command.execute')
+    alt 不在白名单
         CH-->>BR: false
         BR-->>PL: {id, ok:false, error:'方法不在 IPC 契约面内'}
         PL-->>IC: reject
         IC-->>S: Error
     else 在白名单内
         CH-->>BR: true
-        BR->>EB: request('command:hello', args, {timeoutMs:5000})
-        EB->>EB: pickResponder('command:hello')（按 seq 确定）
-        Note over EB: responder 由命令扩展点贡献时<br/>经 EP 路由；此处为直接 respond 路径
-        EB->>HP: handler(payload)
-        HP-->>EB: result
+        BR->>EB: request('command.execute', args, {timeoutMs:5000})
+        EB->>CD: dispatch(payload)（start() 注册的唯一 responder）
+        CD->>EP: entries('command.provide') 按 contributionId === command 查找
+        EP-->>CD: entry.impl（未命中 → {ok:false, error:'unknown command: …'}）
+        CD->>HP: impl(args)
+        HP-->>CD: {ok, output}（原样返回，不再包装）
+        CD-->>EB: result
         EB-->>BR: result
         BR-->>PL: {id, ok:true, result}
         PL-->>IC: resolve
@@ -205,6 +210,7 @@ sequenceDiagram
     K->>PM: unregister(pluginId)（含 guard.unregisterPermissions）
     K->>RC: unmountChildContainer(container)
     K->>RC: container.dispose()（级联 dispose 子容器与 disposable 服务）
+    K->>K: applyPluginState('Stopped') → emit('kernel.plugin.state-changed')（贡献已回收，无竞态）
     K->>REG: remove(pluginId) + 从 startResult 四个数组剔除
     K->>K: emit('kernel.plugin.unloaded', {pluginId, reason})
 

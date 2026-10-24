@@ -3,10 +3,10 @@
 # rem2 — Minimal Kernel + Everything-as-Plugin
 
 > An independent, from-scratch implementation of **Kernel + Everything-as-Plugin**.
->   
+>
 > The kernel does only 7 things; everything else (logging, config, business logic, ops, UI) is a plugin.
 
-![tests](https://img.shields.io/badge/tests-270%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-327%20passing-brightgreen)
 
 ![kernel deps](https://img.shields.io/badge/kernel%20deps-0-blue)
 
@@ -61,8 +61,8 @@ Expected output:
 
 ```
 ──── rem2 kernel started ────
-loadOrder : com.rem2.config-json -> com.rem2.hello-command -> com.rem2.logger-console -> com.rem2.health-http -> com.rem2.notify-worker -> com.rem2.theme-dark
-started   : com.rem2.config-json, com.rem2.hello-command, com.rem2.logger-console, com.rem2.health-http, com.rem2.notify-worker, com.rem2.theme-dark
+loadOrder : com.rem2.config-json -> com.rem2.hello-command -> com.rem2.logger-console -> com.rem2.health-http -> com.rem2.notify-worker -> com.rem2.plugin-inspector -> com.rem2.theme-dark
+started   : com.rem2.config-json, com.rem2.hello-command, com.rem2.logger-console, com.rem2.health-http, com.rem2.notify-worker, com.rem2.plugin-inspector, com.rem2.theme-dark
 degraded  : (none)
 failed    : (none)
 health    : healthy
@@ -71,6 +71,7 @@ health    : healthy
   - com.rem2.hello-command [Active] healthy
   - com.rem2.logger-console [Active] healthy
   - com.rem2.notify-worker [Active] healthy
+  - com.rem2.plugin-inspector [Active] healthy
   - com.rem2.theme-dark [Active] healthy
 ─────────────────────────────
 ```
@@ -91,23 +92,23 @@ Type a command in the window (default `hello`) and click "Execute"; the command 
 to the kernel event bus through the IPC bridge.
 
 > **Why the host runs TypeScript via tsx**: the host's own entry (`src/host/cli/run.ts` for the
->   
+>
 > terminal form, `src/host/electron/main.ts` for the desktop shell) is written in TypeScript and
->   
+>
 > executed directly with tsx during development. Plugins, however, are **not** loaded as raw
->   
+>
 > `.ts` at runtime — each plugin is pre-compiled by esbuild into a self-contained ESM bundle at
->   
+>
 > `dist/index.js` (and `plugins-dist/<id>/dist/index.js`), which the kernel loads via dynamic
->   
+>
 > `import()`. `tsx` stays a `devDependency`; the kernel's own `dependencies` remain zero
->   
+>
 > third-party. A packaged build that needs to load `.ts` plugins would have to promote tsx to a
->   
+>
 > runtime dependency.
 
 > **GPU-less / virtualized / remote-desktop environments**: the Chromium GPU process may crash
->   
+>
 > (`GPU process isn't usable. Goodbye.`). Disable hardware acceleration before launch:
 >
 > ```bash
@@ -122,6 +123,13 @@ to the kernel event bus through the IPC bridge.
 >
 > Off by default so it does not hurt rendering performance on normal machines.
 
+> This opt-in path also disables the Chromium **process sandbox** (`--no-sandbox`): on such hosts the
+> sandbox's virtualization backend fails the same way (`Failed to create shared context for
+virtualization`), which crashes every renderer process with an access violation — a blank window
+> with `loadFile` then failing with ERR_FAILED. Only this opt-in path is weakened; the default
+> startup keeps the process sandbox, and the renderer still runs under `contextIsolation` + the IPC
+> allowlist + the kernel CapabilityGuard.
+>
 > Build installers: `pnpm package` (produces a runnable directory) / `pnpm make` (produces an installer).
 
 ---
@@ -183,16 +191,17 @@ Full API reference: **[docs/02-plugin-api.md](docs/02-plugin-api.md)** (English:
 
 ---
 
-## Example plugins (6 extension points)
+## Example plugins (7 extension points)
 
-| Plugin                                     | Proves what                                                                   | Depends on              |
-| ------------------------------------------ | ----------------------------------------------------------------------------- | ----------------------- |
-| [`logger-console`](plugins/logger-console) | **observability is a plugin** — provides `log.sink`                           | —                       |
-| [`config-json`](plugins/config-json)       | **config source is a plugin** — provides `config.provider`                    | —                       |
-| [`hello-command`](plugins/hello-command)   | **business logic is a plugin** — provides `command.provide`                   | soft-dep config-json    |
-| [`health-http`](plugins/health-http)       | **ops is a plugin** — exposes a `/health` endpoint                            | hard-dep logger-console |
-| [`theme-dark`](plugins/theme-dark)         | **UI is a plugin** — degrades gracefully with no UI shell                     | —                       |
-| [`notify-worker`](plugins/notify-worker)   | **worker-thread isolation** — a crash never hits the kernel (fault isolation) | —                       |
+| Plugin                                         | Proves what                                                                                     | Depends on              |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------- |
+| [`logger-console`](plugins/logger-console)     | **observability is a plugin** — provides `log.sink`                                             | —                       |
+| [`config-json`](plugins/config-json)           | **config source is a plugin** — provides `config.provider`                                      | —                       |
+| [`hello-command`](plugins/hello-command)       | **business logic is a plugin** — provides `command.provide`                                     | soft-dep config-json    |
+| [`health-http`](plugins/health-http)           | **ops is a plugin** — exposes a `/health` endpoint                                              | hard-dep logger-console |
+| [`theme-dark`](plugins/theme-dark)             | **UI is a plugin** — degrades gracefully with no UI shell                                       | —                       |
+| [`plugin-inspector`](plugins/plugin-inspector) | **the inspector is a plugin** — contributes `ui.panel` + `ui.route`, serves a live plugin table | —                       |
+| [`notify-worker`](plugins/notify-worker)       | **worker-thread isolation** — a crash never hits the kernel (fault isolation)                   | —                       |
 
 ---
 
@@ -223,10 +232,10 @@ pnpm typecheck:all   # kernel + electron + frontend type checks
 
 | Layer       | Files                    | Coverage                                                                                                                                                                                                  |
 | ----------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unit        | 15                       | semver / topological sort / cycle detection / DI container / container isolation / event bus / lifecycle / manifest validation / permissions / config service / health service                            |
-| Integration | 15                       | startup order / soft-dep fallback / hard-dep cascade / fault isolation / config plugin / observability / hot reload / unload cascade / security boundary / worker isolation / command chain / theme chain |
+| Unit        | 19                       | semver / topological sort / cycle detection / DI container / container isolation / event bus / lifecycle / manifest validation / permissions / config service / health service / command dispatcher / DTO guards / route→panel resolution / builtin plugins root |
+| Integration | 17                       | startup order / soft-dep fallback / hard-dep cascade / fault isolation / config plugin / observability / hot reload / unload cascade / security boundary / worker isolation / command chain / theme chain / UI chain / inspector data chain |
 | Contract    | 5                        | plugin import boundary / kernel dependency whitelist / extension-point catalog consistency / svelte built as browser bundle / IPC whitelist vs kernel Topics                                              |
-| **Total**   | **35 files / 270 cases** |                                                                                                                                                                                                           |
+| **Total**   | **41 files / 327 cases** |                                                                                                                                                                                                           |
 
 ---
 
@@ -236,20 +245,18 @@ Documents are numbered in **reading order** (`01` first). Full index:
 
 **[docs/INDEX.md](docs/INDEX.md)** (English: **[docs/en/INDEX.md](docs/en/INDEX.md)**).
 
-| #  | Document                                                            | Content                                                                                                                                                                                                                                              |
-| -- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| —  | **[docs/INDEX.md](docs/INDEX.md)**                                  | **Doc index & reading path** (start here)                                                                                                                                                                                                            |
-| 01 | **[01-architecture-overview.md](docs/01-architecture-overview.md)** | **Architecture (authoritative)**: layering & dependency direction, per-file responsibilities, two-layer lifecycle, 12 extension points, isolation & permissions, call chains, data flows, build artifacts, 9 decisions, extension flow, known limits |
-| 02 | **[02-plugin-api.md](docs/02-plugin-api.md)**                       | **Plugin development guide**: `definePlugin`, `plugin.json` fields, lifecycle hooks, `PluginContext`, extension points, service tokens, command chain, isolation modes, error codes                                                                  |
-| 03 | **[03-frontend-ipc.md](docs/03-frontend-ipc.md)**                   | **Frontend & IPC contract**: process/build boundaries, 8 methods + 5 events allowlist, DTOs, store↔event bridge, theme path, vite/CSP constraints                                                                                                    |
-| 04 | **[04-development-guide.md](docs/04-development-guide.md)**         | **Development guide**: environment, command matrix, build & packaging spec, tsconfig boundaries, extension flow, debugging, pitfalls, code conventions                                                                                               |
-
+| #   | Document                                                            | Content                                                                                                                                                                                                                                              |
+| --- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| —   | **[docs/INDEX.md](docs/INDEX.md)**                                  | **Doc index & reading path** (start here)                                                                                                                                                                                                            |
+| 01  | **[01-architecture-overview.md](docs/01-architecture-overview.md)** | **Architecture (authoritative)**: layering & dependency direction, per-file responsibilities, two-layer lifecycle, 12 extension points, isolation & permissions, call chains, data flows, build artifacts, 9 decisions, extension flow, known limits |
+| 02  | **[02-plugin-api.md](docs/02-plugin-api.md)**                       | **Plugin development guide**: `definePlugin`, `plugin.json` fields, lifecycle hooks, `PluginContext`, extension points, service tokens, command chain, isolation modes, error codes                                                                  |
+| 03  | **[03-frontend-ipc.md](docs/03-frontend-ipc.md)**                   | **Frontend & IPC contract**: process/build boundaries, 8 methods + 5 events allowlist, DTOs, store↔event bridge, theme path, vite/CSP constraints                                                                                                    |
+| 04  | **[04-development-guide.md](docs/04-development-guide.md)**         | **Development guide**: environment, command matrix, build & packaging spec, tsconfig boundaries, extension flow, debugging, pitfalls, code conventions                                                                                               |
 
 Architecture diagrams: [class-diagram-v2.mermaid](docs/class-diagram-v2.mermaid) ·
 [sequence-diagram-v2.mermaid](docs/sequence-diagram-v2.mermaid)
 (English diagrams: [docs/en/class-diagram-v2.mermaid](docs/en/class-diagram-v2.mermaid) ·
 [docs/en/sequence-diagram-v2.mermaid](docs/en/sequence-diagram-v2.mermaid)).
-
 
 ---
 
@@ -286,10 +293,10 @@ src/
 │   └── cli/              # run / args / paths / cli / scaffold / validate
 ├── frontend/             # Svelte 5 render layer (the only place Svelte runs)
 │   ├── app/              # App / Shell / PanelHost / RouteHost + components
-│   └── lib/              # ipc-client / bridge-types / stores / theme
+│   └── lib/              # ipc-client / bridge-types / nav-link / dto-guards / stores / theme
 ├── main.ts               # Electron Forge main-process entry (forwarding shell)
 └── preload.ts            # Forge preload entry (forwarding shell)
-plugins/                  # 6 example plugins (source + plugin.json + standalone tsconfig)
+plugins/                  # 7 example plugins (source + plugin.json + standalone tsconfig)
 plugins-dist/             # plugin build artifacts (esbuild ESM bundle, into extraResource)
 dist/                     # kernel artifacts (tsc, includes .d.ts)
 tests/                    # unit / integration / contract tests

@@ -34,12 +34,12 @@ graph LR
   AP -.->|"❌ 禁止"| K
 ```
 
-| 规则 | 内容                              | 强制方式                                                                                   |
-| ---- | --------------------------------- | ------------------------------------------------------------------------------------------ |
-| B1   | renderer 是**唯一**跑 Svelte 的地方 | 只有 `vite.renderer.config.mts` 挂 `@sveltejs/vite-plugin-svelte`                        |
-| B2   | preload 是**唯一**契约边界        | `contextIsolation: true` + `sandbox: true`；`window.rem2` 是 renderer 能看到的唯一全局     |
-| B3   | renderer **不得**直接 import 内核 | `tests/contract/plugin-contract.test.ts` R6 扫描 `src/frontend/**`，命中 `rem2-kernel` 或 `src/kernel` 即红 |
-| B4   | 主进程是内核的**宿主**，不是权威  | 宿主默认实现只经扩展点注册；`main.ts` 不 import 任何插件源码、不含任何插件 id              |
+| 规则 | 内容                                | 强制方式                                                                                                    |
+| ---- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| B1   | renderer 是**唯一**跑 Svelte 的地方 | 只有 `vite.renderer.config.mts` 挂 `@sveltejs/vite-plugin-svelte`                                           |
+| B2   | preload 是**唯一**契约边界          | `contextIsolation: true` + `sandbox: true`；`window.rem2` 是 renderer 能看到的唯一全局                      |
+| B3   | renderer **不得**直接 import 内核   | `tests/contract/plugin-contract.test.ts` R6 扫描 `src/frontend/**`，命中 `rem2-kernel` 或 `src/kernel` 即红 |
+| B4   | 主进程是内核的**宿主**，不是权威    | 宿主默认实现只经扩展点注册；`main.ts` 不 import 任何插件源码、不含任何插件 id                               |
 
 `window.rem2` 的形状（`preload.ts` → `Rem2Bridge`）只有两个方法：
 
@@ -58,19 +58,21 @@ interface Rem2Bridge {
 src/frontend/
 ├── entry-client.ts              # 渲染进程入口：import './app/global.css' + mount(App)；只做挂载
 ├── app/
-│   ├── App.svelte               # 首屏编排：四个 store 并行 load，订阅主题事件，返回退订函数
+│   ├── App.svelte               # 首屏编排：四个 store 并行 load，订阅主题 / 插件状态事件；$effect 决议激活面板
 │   ├── Shell.svelte             # 布局：左导航（RouteHost）+ 主区（PanelHost）+ 底栏（HealthBadge）
-│   ├── PanelHost.svelte         # ★ ui.panel 插槽：渲染面板列表、维护激活态
-│   ├── RouteHost.svelte         # ★ ui.route 插槽：由路由声明派生导航项
+│   ├── PanelHost.svelte         # ★ ui.panel 插槽：渲染面板列表、维护激活态（error / notice / loading 显式优先级）
+│   ├── RouteHost.svelte         # ★ ui.route 插槽：由路由声明派生导航项（顶部显式 error 行）
 │   ├── components/
-│   │   ├── PanelShell.svelte    # 单面板 chrome（边框 / 标题 / 空态），不关心内容语义
+│   │   ├── PanelShell.svelte    # 单面板 chrome：表格 / JSON 渲染 + 刷新（通知插件 + 本地回取 + 消费推送）
 │   │   ├── ThemeToggle.svelte   # light/dark 切换：目录含双模式时才渲染，发 ui.theme.set
 │   │   ├── HealthBadge.svelte   # 健康徽标：读 health 报告
 │   │   └── CommandPrompt.svelte # 命令输入与结果展示
 │   └── global.css               # 全局样式 + 主题变量的 fallback 默认值
 └── lib/
     ├── ipc-client.ts            # window.rem2 的类型化唯一封装（方法 / 事件参数是白名单联合类型）
-    ├── bridge-types.ts          # DTO：Panel / Route / Theme / ThemeCatalog / Health / CommandResult / PluginStateChanged
+    ├── bridge-types.ts          # DTO：Panel / Route / PanelTable / Theme / ThemeCatalog / Health / CommandResult / PluginStateChanged
+    ├── nav-link.ts              # 纯函数：route + panels + panelsReady → 激活面板决议（含 notice）
+    ├── dto-guards.ts            # 纯函数：面板 / 路由列表运行时校验 + 面板数据分类（table / json / empty / invalid）
     ├── stores/                  # Svelte 5 runes；文件名必须以 .svelte.ts 结尾
     │   └── panels · routes · theme · health · command（各一个 .svelte.ts）
     └── theme/vars.ts            # ThemeDto → CSS 变量映射（--rem2-*）
@@ -92,7 +94,7 @@ src/frontend/
 // src/shared/ipc-contract.ts
 export const Ipc = {
   Invoke: 'rem2:invoke', // renderer → main：请求（带 id，主进程按 id 回包）
-  Event: 'rem2:event',   // main → renderer：事件推送（无 id）
+  Event: 'rem2:event', // main → renderer：事件推送（无 id）
 } as const
 ```
 
@@ -100,16 +102,16 @@ export const Ipc = {
 
 ### 3.2 方法白名单（8 个，穷举）
 
-| #   | method（`channels.*`） | payload                       | 响应                                       | 宿主落点                                                  |
-| --- | ---------------------- | ----------------------------- | ------------------------------------------ | --------------------------------------------------------- |
-| 1   | `ui.panel.list`        | —                             | `PanelDto[]`                               | `kernel.extensions.listAll('ui.panel')`                   |
-| 2   | `ui.panel.data`        | `{ panelId }`                 | `unknown`（由插件定义）                    | 按面板声明的 `command` 走 `bus.request`                   |
-| 3   | `ui.route.list`        | —                             | `RouteDto[]`                               | `kernel.extensions.listAll('ui.route')`                   |
-| 4   | `ui.theme.list`        | —                             | `ThemeCatalogDto`（`{themes, activeId?}`） | `ThemeRegistry.list()` + `.active()`（读前 pull 同步扩展点） |
-| 5   | `ui.theme.set`         | `{ themeId }`                 | `{ ok }`                                   | `ThemeRegistry.activate()`；**仅激活项真变化时** emit     |
-| 6   | `ui.event`             | `{ panelId, kind, payload? }` | `{ ok }`                                   | 路由到面板声明的 `command`                                |
-| 7   | `command.execute`      | `{ command, args? }`          | `CommandResultDto`                         | **`null`** —— 由命令插件直接 `respond`，宿主不实现        |
-| 8   | `health.report`        | —                             | `HealthDto`                                | `kernel.health()` + 裁剪                                   |
+| #   | method（`channels.*`） | payload                       | 响应                                       | 宿主落点                                                                            |
+| --- | ---------------------- | ----------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------- |
+| 1   | `ui.panel.list`        | —                             | `PanelDto[]`                               | `kernel.extensions.listAll('ui.panel')`                                             |
+| 2   | `ui.panel.data`        | `{ panelId }`                 | `unknown`（由插件定义）                    | 按面板声明的 `command` 走 `bus.request`                                             |
+| 3   | `ui.route.list`        | —                             | `RouteDto[]`                               | `kernel.extensions.listAll('ui.route')`                                             |
+| 4   | `ui.theme.list`        | —                             | `ThemeCatalogDto`（`{themes, activeId?}`） | `ThemeRegistry.list()` + `.active()`（读前 pull 同步扩展点）                        |
+| 5   | `ui.theme.set`         | `{ themeId }`                 | `{ ok }`                                   | `ThemeRegistry.activate()`；**仅激活项真变化时** emit                               |
+| 6   | `ui.event`             | `{ panelId, kind, payload? }` | `{ ok }`                                   | 路由到面板声明的 `command`                                                          |
+| 7   | `command.execute`      | `{ command, args? }`          | `CommandResultDto`                         | **`null`** —— 分发在内核 `CommandDispatcher`（读 `command.provide` 槽），宿主不实现 |
+| 8   | `health.report`        | —                             | `HealthDto`                                | `kernel.health()` + 裁剪                                                            |
 
 ### 3.3 事件白名单（5 个）
 
@@ -125,12 +127,12 @@ export const Ipc = {
 
 | 禁止                                                   | 理由                                                                           |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| 任意 `bus.request(method)` 直通                        | 前缀匹配等于交出整个命名空间；判定必须是 8 个方法名的精确集合                   |
-| 读配置（任何 `config.*`）                              | 配置可能含敏感值。面板需要配置时，由插件在 `ui.panel.data` 的响应里决定给什么   |
-| 读内核服务（`services.*` / `kernel.*`）                | renderer 只与 DTO 打交道，不与内核对象图打交道                                  |
-| 触发插件生命周期（`plugin.start` / `stop` / `unload`） | 生命周期是内核 / 宿主特权                                                       |
-| 订阅任意内核事件                                       | 只允许 §3.3 的 5 个；内核其余 topic（如 `config.changed`）含内部状态，不得外泄   |
-| 收到插件侧原始事件（如 `ui.theme.registered`）         | 只认 DTO 化后的语义事件                                                         |
+| 任意 `bus.request(method)` 直通                        | 前缀匹配等于交出整个命名空间；判定必须是 8 个方法名的精确集合                  |
+| 读配置（任何 `config.*`）                              | 配置可能含敏感值。面板需要配置时，由插件在 `ui.panel.data` 的响应里决定给什么  |
+| 读内核服务（`services.*` / `kernel.*`）                | renderer 只与 DTO 打交道，不与内核对象图打交道                                 |
+| 触发插件生命周期（`plugin.start` / `stop` / `unload`） | 生命周期是内核 / 宿主特权                                                      |
+| 订阅任意内核事件                                       | 只允许 §3.3 的 5 个；内核其余 topic（如 `config.changed`）含内部状态，不得外泄 |
+| 收到插件侧原始事件（如 `ui.theme.registered`）         | 只认 DTO 化后的语义事件                                                        |
 
 **强制点**：`IpcBridge.handleInvoke` 在 `bus.request` **之前**做 `allowedMethods.has(method)`（`Set` 精确匹配）。不在集合内 → 直接 reply `{ok:false,error}`，**不进入事件总线**。
 
@@ -138,26 +140,63 @@ export const Ipc = {
 
 ```ts
 // src/frontend/lib/bridge-types.ts —— 每个类型注释标注它投影自哪个内核契约
-interface PanelDto { panelId; title; icon; region: 'main' | 'side'; order: number; command: string }
-interface RouteDto { path; title; panelId; commandPrefix: string; order: number }
-interface ThemeDto { id; mode: 'light' | 'dark'; colors; fonts; spacing }
-interface ThemeCatalogDto { themes: ThemeDto[]; activeId?: string }
-interface HealthDto { status: 'healthy' | 'degraded' | 'unhealthy'; plugins: Array<{ id; state; status; message? }> }
-interface CommandResultDto { command: string; ok: boolean; output?: string; error?: string }
+interface PanelDto {
+  panelId
+  title
+  icon
+  region: 'main' | 'side'
+  order: number
+  command: string
+}
+interface RouteDto {
+  path
+  title
+  panelId
+  commandPrefix: string
+  order: number
+}
+interface PanelTableDto {
+  kind: 'table'
+  columns: string[]
+  rows: Array<Array<string | number>>
+}
+interface ThemeDto {
+  id
+  mode: 'light' | 'dark'
+  colors
+  fonts
+  spacing
+}
+interface ThemeCatalogDto {
+  themes: ThemeDto[]
+  activeId?: string
+}
+interface HealthDto {
+  status: 'healthy' | 'degraded' | 'unhealthy'
+  plugins: Array<{ id; state; status; message? }>
+}
+interface CommandResultDto {
+  command: string
+  ok: boolean
+  output?: string
+  error?: string
+}
 ```
 
 DTO 是**显式投影白名单**，不是「内核类型改个名字」。`CommandResultDto` 的字段名必须与命令插件真实返回一致：`IpcBridge` 把插件返回值原样放进 `reply.result`，preload 解包 `payload.result`，所以前端 `invoke` 拿到的就是插件原始返回对象（`{ok, output}`）。字段名写错时类型不报错、UI 空白、console 干净 —— 这是本项目最典型的静默缺陷形态。
 
 `command` 字段由前端 store 补上（`command.svelte.ts` → `{...res, command}`），不要求插件返回。
 
+**面板数据契约**：`PanelTableDto` 是唯一被渲染成表格的结构化形状（`dto-guards.ts` → `parsePanelData` 在 renderer 侧做运行时分类与校验）：不变量为 table → 表格；`undefined` / `null` → 空态；其余 → 美化 JSON；序列化超过 **32KB** → `invalid` 显式报错（防失控插件拖垮 renderer）；声明了 `kind:'table'` 但形状不符 → `invalid` 并说明原因。列表类数据（`ui.panel.list` / `ui.route.list`）同样逐条目校验：坏条目丢弃并计入 `panels.issues`，整个载荷非数组则抛错走 store 的 error 态。
+
 ---
 
 ## 4. store ↔ 事件桥
 
-| 方向                | 允许                                 | 实现                                                              |
-| ------------------- | ------------------------------------ | ----------------------------------------------------------------- |
-| 内核 → renderer     | ✅ 单向推送，且只推 §3.3 的 5 个事件 | `IpcBridge` 订阅 topic → `toDto` → `Ipc.Event`                    |
-| renderer → 内核     | ✅ 单向请求，且只走 §3.2 的 8 个方法 | `ipc.request`                                                     |
+| 方向                | 允许                                 | 实现                                                                 |
+| ------------------- | ------------------------------------ | -------------------------------------------------------------------- |
+| 内核 → renderer     | ✅ 单向推送，且只推 §3.3 的 5 个事件 | `IpcBridge` 订阅 topic → `toDto` → `Ipc.Event`                       |
+| renderer → 内核     | ✅ 单向请求，且只走 §3.2 的 8 个方法 | `ipc.request`                                                        |
 | renderer ↔ 内核总线 | ❌ **不代理**                        | 代理总线等于让 renderer 能 `emit` / 订阅任意 topic，能力守卫全部失效 |
 
 两条红线：
@@ -179,11 +218,26 @@ onMount(() => {
   void health.load()
 
   const offTheme = ipc.subscribe(events.themeChanged, (p) => theme.applyRemote(p as ThemeDto))
-  return () => offTheme()
+  // 任何插件状态变化都可能新增（Active）或回收（Stopped / Failed）贡献：
+  // 无条件重拉三份列表，按状态集过滤会漏掉晚到的 Active。
+  const offPluginState = ipc.subscribe(events.pluginStateChanged, () => {
+    void panels.load()
+    void routes.load()
+    void health.load()
+  })
+  return () => { offTheme(); offPluginState() }
+})
+
+// 路由是激活面板的唯一真相源；四路 load 并行到达，任一路后到都重触发决议。
+$effect(() => {
+  const res = resolveActivePanel(routes.active, panels.items, !panels.loading)
+  panels.applyResolution(res)
 })
 ```
 
-四类数据**并行拉取、各自降级为空**：任一路失败不阻塞渲染，错误记录在各自 store 里。
+四类数据**并行拉取、各自降级为空**：任一路失败不阻塞渲染，错误记录在各自 store 里。`resolveActivePanel`（`lib/nav-link.ts`，纯函数）把「路由 → 面板」的决议显式化：路由无面板关联 → notice；面板不在列表且列表仍在飞 → 静默等待（防闪烁）；面板不在列表且列表就绪 → notice。
+
+**面板数据刷新三路径**（`PanelShell.svelte`）：① 刷新按钮先 `ui.event` 通知插件（失败静默）并立即本地回取；② 插件 emit `panel.data-changed` 推送，`PanelShell` 按 panelId 匹配后原地更新；③ 切换面板时 `$effect` 重取。
 
 ---
 
@@ -221,7 +275,14 @@ sequenceDiagram
 
 ```ts
 // lib/theme/vars.ts
-const COLOR_KEYS = ['background', 'surface', 'text', 'textMuted', 'accent', 'border'] as const
+const COLOR_KEYS = [
+  'background',
+  'surface',
+  'text',
+  'textMuted',
+  'accent',
+  'border',
+] as const
 const FONT_KEYS = ['ui', 'mono'] as const
 const SPACING_KEYS = ['xs', 'sm', 'md', 'lg'] as const
 // → [['--rem2-color-background', '#0f1115'], ['--rem2-font-ui', '…'], ['--rem2-space-md', '16px'], …]
@@ -235,11 +296,11 @@ const SPACING_KEYS = ['xs', 'sm', 'md', 'lg'] as const
 
 ### 6.1 `vite.shared.mts`：共享什么、不共享什么
 
-| 项                | 值                                                  | 理由                                                                                                    |
-| ----------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `resolve.alias`   | `{ 'rem2-kernel': <abs>/src/kernel/index.ts }`      | 让 Vite 把内核当源码处理，`.js` → `.ts` 由 Vite 内建回退                                                 |
+| 项                | 值                                                  | 理由                                                                                                      |
+| ----------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `resolve.alias`   | `{ 'rem2-kernel': <abs>/src/kernel/index.ts }`      | 让 Vite 把内核当源码处理，`.js` → `.ts` 由 Vite 内建回退                                                  |
 | `ssr.noExternal`  | `['rem2-kernel']`                                   | **关键**。默认会 externalize 裸包名，主进程产物留下 `require('rem2-kernel')`，打包态解析到 `.ts` 入口即炸 |
-| `build.target`    | `node20`（main / preload）· `chrome120`（renderer） | 与 `engines.node`、Electron 44 的 Chromium 对齐                                                          |
+| `build.target`    | `node20`（main / preload）· `chrome120`（renderer） | 与 `engines.node`、Electron 44 的 Chromium 对齐                                                           |
 | `build.sourcemap` | `true`                                              | 与 `tsconfig.json` 的 `sourceMap` 一致；契约测试靠 sourcemap 判定产物是浏览器版 svelte                    |
 
 **`resolve.conditions` 不共享，必须按目标环境分化**：
@@ -255,9 +316,9 @@ const SPACING_KEYS = ['xs', 'sm', 'md', 'lg'] as const
 
 ### 6.2 三个 config 的必备项
 
-| 配置                       | 必备                                                                                              |
-| -------------------------- | ------------------------------------------------------------------------------------------------- |
-| `vite.main.config.mts`     | `external: ['electron']`；共享 alias / `ssr.noExternal`；`define` 不用自加（forge 注入）           |
+| 配置                       | 必备                                                                                                 |
+| -------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `vite.main.config.mts`     | `external: ['electron']`；共享 alias / `ssr.noExternal`；`define` 不用自加（forge 注入）             |
 | `vite.preload.config.mts`  | `external: ['electron']`；`target: node20`；输出 **CJS**，文件名必须是 `preload.cjs`（主进程硬编码） |
 | `vite.renderer.config.mts` | `plugins: [svelte()]`（唯一挂 svelte 的 config）；`conditions` 显式含 `browser`；`input: index.html` |
 
@@ -266,7 +327,7 @@ const SPACING_KEYS = ['xs', 'sm', 'md', 'lg'] as const
 | 常量                              | 用法                                                              |
 | --------------------------------- | ----------------------------------------------------------------- |
 | `MAIN_WINDOW_VITE_DEV_SERVER_URL` | dev 分支加载 Vite dev server                                      |
-| `MAIN_WINDOW_VITE_NAME`           | prod 分支 `path.join(__dirname, '../renderer/<name>/index.html')`  |
+| `MAIN_WINDOW_VITE_NAME`           | prod 分支 `path.join(__dirname, '../renderer/<name>/index.html')` |
 
 两者都是**裸标识符替换**：写成 `process.env.MAIN_WINDOW_…` 不会被替换，运行期恒 `undefined`，窗口永远走 `file://`。常量名由渲染进程名大写化而来（本项目 `main_window`），改渲染进程名必须同步改这两处。
 
@@ -283,12 +344,12 @@ connect-src 'self' ws://localhost:* ws://127.0.0.1:* http://localhost:* http://1
 object-src 'none'; base-uri 'none';
 ```
 
-| 操作                                   | 是否被拦  | 说明                                                                       |
-| -------------------------------------- | --------- | -------------------------------------------------------------------------- |
-| `style.setProperty('--x', v)`（CSSOM） | ✅ 不拦   | CSP 管 `<style>` 块与 `style` 属性解析，不管 CSSOM 写入                    |
-| Svelte 编译产物                        | ✅ 允许   | 组件 scoped `<style>` 编译进 CSS 文件由 `<link>` 加载（`'self'`）          |
-| `$state` / `$derived`                  | ✅ 允许   | 编译为普通 JS，**不需要 `eval`**                                           |
-| HMR WebSocket                          | ✅ 已放行 | `connect-src` 显式列了 `ws://localhost:*`（CSP 的 `'self'` 不覆盖 ws://）  |
+| 操作                                   | 是否被拦  | 说明                                                                      |
+| -------------------------------------- | --------- | ------------------------------------------------------------------------- |
+| `style.setProperty('--x', v)`（CSSOM） | ✅ 不拦   | CSP 管 `<style>` 块与 `style` 属性解析，不管 CSSOM 写入                   |
+| Svelte 编译产物                        | ✅ 允许   | 组件 scoped `<style>` 编译进 CSS 文件由 `<link>` 加载（`'self'`）         |
+| `$state` / `$derived`                  | ✅ 允许   | 编译为普通 JS，**不需要 `eval`**                                          |
+| HMR WebSocket                          | ✅ 已放行 | `connect-src` 显式列了 `ws://localhost:*`（CSP 的 `'self'` 不覆盖 ws://） |
 
 `style-src` 需要 `'unsafe-inline'`；`script-src` 不要加 `'unsafe-eval'` —— 加了 Electron 会打印 "Insecure Content-Security-Policy" 告警，且那不只是噪音。meta 形式下 `frame-ancestors` / `form-action` 会被忽略，别写。
 
@@ -296,10 +357,10 @@ object-src 'none'; base-uri 'none';
 
 ## 8. 已知限制
 
-| #   | 限制                                                                             | 影响                                                             |
-| --- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| F1  | `ui.panel.data` 的数据形状由插件自定，内核不校验                                   | 错误插件可返回超大对象拖垮 renderer；后续可加 DTO 大小上限        |
-| F2  | `bridge-types.ts` 手写 DTO，内核契约改了前端不会自动报错                           | 靠注释标注来源 + 赋值处类型对齐；`ui.*` 的 `impl` 类型来自内核契约 |
-| F3  | `preload.cjs` 文件名是隐式契约（主进程硬编码）                                     | 改名 → 窗口以「preload 加载失败」报错，不提示是文件名问题         |
-| F4  | runes 写在 `.ts` 里不生效且不报错                                                 | 只能靠 `.svelte.ts` 目录约定                                      |
-| F5  | `ui.panel` / `ui.route` 无 builtin 贡献                                           | `PanelHost` / `RouteHost` 恒为空态                                |
+| #   | 限制                                                              | 影响                                                                                  |
+| --- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| F1  | ~~`ui.panel.data` 的数据形状由插件自定，内核不校验~~ **已正式化** | `dto-guards.ts` → `parsePanelData`：table / json / empty / invalid 四分类 + 32KB 上限 |
+| F2  | `bridge-types.ts` 手写 DTO，内核契约改了前端不会自动报错          | 靠注释标注来源 + 赋值处类型对齐；`ui.*` 的 `impl` 类型来自内核契约                    |
+| F3  | `preload.cjs` 文件名是隐式契约（主进程硬编码）                    | 改名 → 窗口以「preload 加载失败」报错，不提示是文件名问题                             |
+| F4  | runes 写在 `.ts` 里不生效且不报错                                 | 只能靠 `.svelte.ts` 目录约定                                                          |
+| F5  | ~~`ui.panel` / `ui.route` 无 builtin 贡献~~ **已解决**            | `plugin-inspector` 贡献 `/plugins` 路由 + 检查器面板                                  |
