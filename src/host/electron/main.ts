@@ -19,6 +19,14 @@ let bridge: IpcBridge | null = null
  * sandboxes) the Chromium GPU process may crash repeatedly. Opt out explicitly
  * via `REM2_DISABLE_GPU=1`; disabled by default. Must be called before
  * `app.whenReady()`.
+ *
+ * The switches below are a matched set, not just GPU flags: on such hosts the
+ * Chromium *process sandbox* fails the same way as the GPU stack - its
+ * virtualization backend cannot create a shared context, so every renderer
+ * process dies with an access violation (blank window, `loadFile` then fails
+ * with ERR_FAILED). `no-sandbox` is therefore part of this opt-in path; the
+ * default startup keeps the process sandbox, and the renderer still runs under
+ * `contextIsolation` + the IPC whitelist + the kernel CapabilityGuard.
  */
 if (process.env.REM2_DISABLE_GPU === '1') {
   app.disableHardwareAcceleration()
@@ -26,6 +34,13 @@ if (process.env.REM2_DISABLE_GPU === '1') {
   app.commandLine.appendSwitch('disable-gpu-compositing')
   app.commandLine.appendSwitch('disable-software-rasterizer')
   app.commandLine.appendSwitch('in-process-gpu')
+  // Required on GPU-less / virtualized hosts: the Chromium process sandbox's
+  // virtualization backend fails there ("Failed to create shared context for
+  // virtualization"), which crashes every renderer process with an access
+  // violation (blank window, ERR_FAILED on load). Only this opt-in path is
+  // weakened; the default startup keeps the process sandbox. The renderer
+  // still runs under contextIsolation + the IPC whitelist + CapabilityGuard.
+  app.commandLine.appendSwitch('no-sandbox')
 }
 
 /** Host-side theme registry (theme catalog + selection, the service behind the `ui.theme` slot; imports no plugin). */

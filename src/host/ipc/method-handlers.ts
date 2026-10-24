@@ -22,10 +22,13 @@
  * A responder like `respond('command.execute', () => request(Topics.CommandExecute))`
  * once existed, and `Topics.CommandExecute` is `'command.execute'` itself, so the
  * request hit the same responder and recursed until RangeError: Maximum call
- * stack size exceeded. A command plugin now responds the topic directly; with no
- * command plugin installed, request throws NoResponderError and the frontend
- * reports the error explicitly - better than silence or recursion.
- * A regression guard lives in `tests/integration/command-chain.test.ts`.
+ * stack size exceeded. Dispatch now lives in exactly one place: the kernel
+ * `CommandDispatcher`, registered by the kernel at start() and reading the
+ * `command.provide` extension slot directly (it never requests the topic
+ * itself, so recursion is structurally impossible). With no command plugin
+ * installed the dispatcher returns an explicit `{ok:false, error:'unknown
+ * command: ...'}` - never silence, never recursion. A regression guard lives
+ * in `tests/integration/command-chain.test.ts`.
  */
 
 import { Topics } from '../../kernel/topics.js'
@@ -40,6 +43,7 @@ import type {
   ThemeDefinition,
   ThemeRegistry,
 } from '../../kernel/contracts/ui.js'
+import { panelIdOf, themeIdOf, uiEventArgsOf } from './validate.js'
 
 /** Handler for a single method (args come from the renderer and are untrusted at runtime). */
 export type MethodHandler = (args: unknown) => unknown | Promise<unknown>
@@ -101,10 +105,10 @@ export const METHOD_FACTORIES = {
   // ui.panel.data: routes via the event bus using the panel's declared command; the data shape is plugin-defined
   [channels.panelData]: ({ kernel, bus }): MethodHandler => {
     return async args => {
-      const { panelId } = (args ?? {}) as { panelId?: string }
+      const panelId = panelIdOf(args)
       const panels = kernel.extensions.listAll<PanelContribution>('ui.panel')
       const panel = panels.find(p => p.panelId === panelId)
-      if (!panel) throw new Error(`panel not found: ${panelId ?? '(none)'}`)
+      if (!panel) throw new Error(`panel not found: ${panelId}`)
       return await bus.request(panel.command, { panelId: panel.panelId })
     }
   },
@@ -128,9 +132,8 @@ export const METHOD_FACTORIES = {
 
   [channels.themeSet]: (ctx): MethodHandler => {
     return args => {
-      const { themeId } = (args ?? {}) as { themeId?: string }
+      const id = themeIdOf(args)
       syncThemeFromExtension(ctx)
-      const id = String(themeId ?? '')
       // Emit only on a real change: emitting on a no-op switch made the renderer
       // re-apply and re-set the same theme, i.e. an endless set -> emit -> set loop.
       const changed = ctx.themeRegistry.active() !== id
@@ -147,11 +150,7 @@ export const METHOD_FACTORIES = {
 
   [channels.uiEvent]: ({ kernel, bus }): MethodHandler => {
     return async args => {
-      const { panelId, kind, payload } = (args ?? {}) as {
-        panelId?: string
-        kind?: string
-        payload?: unknown
-      }
+      const { panelId, kind, payload } = uiEventArgsOf(args)
       const panels = kernel.extensions.listAll<PanelContribution>('ui.panel')
       const panel = panels.find(p => p.panelId === panelId)
       if (!panel) return { ok: false }

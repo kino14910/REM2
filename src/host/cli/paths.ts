@@ -97,9 +97,21 @@ export function projectRoot(fromFile?: string): string {
  *
  * Priority: `plugins-dist/` (already built) > `plugins/` (unbuilt, handy for
  * manually debugging source directories).
+ *
+ * Packaged layout: forge's `extraResource` lands `plugins-dist` as a SIBLING
+ * of the app directory (`resources/plugins-dist` next to
+ * `resources/app.asar`), never inside it, so the packaged root cannot resolve
+ * `<root>/plugins-dist`. Without the sibling candidate the packaged app would
+ * discover an empty plugin set (no theme, no commands, no inspector panel)
+ * and degrade silently - the exact blank spot docs 01 §11 recorded.
  */
 export function builtinPluginsRoot(root = projectRoot()): string {
   const dist = path.join(root, 'plugins-dist')
   if (existsSync(dist)) return dist
+  // Packaged layout: extraResource lands plugins-dist as a SIBLING of the app
+  // directory (resources/plugins-dist next to resources/app.asar), never inside
+  // it - the app root's own plugins-dist only exists in the repository.
+  const packaged = path.resolve(root, '..', 'plugins-dist')
+  if (existsSync(packaged)) return packaged
   return path.join(root, 'plugins')
 }
