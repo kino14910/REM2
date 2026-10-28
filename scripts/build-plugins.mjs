@@ -121,7 +121,7 @@ async function main() {
       // A minimal package.json so Node resolves the artifact as ESM (type: module).
       await writeFile(
         path.join(outPluginDir, 'package.json'),
-        `${JSON.stringify({ name: `rem2-plugin-${name}`, private: true, type: 'module', main: './dist/index.js' }, null, 2)}\n`,
+        `${JSON.stringify({ name: `rem2-kernel-plugin-${name}`, private: true, type: 'module', main: './dist/index.js' }, null, 2)}\n`,
         'utf8',
       )
 

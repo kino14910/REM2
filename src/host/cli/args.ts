@@ -114,7 +114,7 @@ function isLogLevel(v: string | undefined): v is LogLevel {
 function printHelp(): void {
   process.stdout.write(
     [
-      'rem2 kernel bootstrap',
+      'rem2-kernel bootstrap',
       '',
       'Usage: tsx src/host/cli/run.ts [options]',
       '',

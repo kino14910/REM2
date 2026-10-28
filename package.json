@@ -1,10 +1,10 @@
 {
   "name": "rem2-kernel",
-  "productName": "rem2",
+  "productName": "rem2-kernel",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "rem2 — an independent implementation of a minimal kernel + everything-as-plugin (Kernel + Everything-as-Plugin)",
+  "description": "rem2-kernel — an independent implementation of a minimal kernel + everything-as-plugin (Kernel + Everything-as-Plugin)",
   "keywords": [
     "plugin",
     "kernel",

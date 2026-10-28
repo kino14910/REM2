@@ -1,5 +1,5 @@
 %% docs/sequence-diagram-v2.mermaid
-%% rem2 时序图（配合 docs/01-architecture-overview.md §3 / §6，前端链路见 docs/03-frontend-ipc.md）
+%% rem2-kernel 时序图（配合 docs/01-architecture-overview.md §3 / §6，前端链路见 docs/03-frontend-ipc.md）
 %% 5 条主链路：启动 / 命令 / 事件 / 配置 / 卸载 + Svelte 面板订阅
 
 %% ═══════════════════════════════════════════════════════
@@ -99,7 +99,7 @@ sequenceDiagram
     participant EP as ExtensionPointRegistry
     participant HP as hello-command
 
-    S->>IC: execute('hello', {name:'rem2'})
+    S->>IC: execute('hello', {name:'rem2-kernel'})
     IC->>PL: window.rem2.invoke('command.execute', {command, args})
     PL->>IM: send('rem2:invoke', {id, method, args})
     IM->>BR: transport.on('rem2:invoke')

@@ -1,6 +1,6 @@
 # Built-in Plugins (`plugins/`)
 
-This directory holds rem2's **built-in sample plugins**. During discovery they are marked `source: 'builtin'`, which grants them the `trusted` trust level.
+This directory holds rem2-kernel's **built-in sample plugins**. During discovery they are marked `source: 'builtin'`, which grants them the `trusted` trust level.
 
 | Plugin             | Provides                                                         | Depends on                       | Architecture point demonstrated                                                       |
 | ------------------ | ---------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------- |
@@ -38,7 +38,7 @@ pnpm cli scaffold com.example.my-plugin --name "My Plugin"
 
 # 内建插件目录（`plugins/`）
 
-本目录包含 rem2 的**内建示例插件**，在发现阶段被标记为 `source: 'builtin'`，据此获得 `trusted` 信任级别。
+本目录包含 rem2-kernel 的**内建示例插件**，在发现阶段被标记为 `source: 'builtin'`，据此获得 `trusted` 信任级别。
 
 | 插件               | 提供能力                                               | 依赖                    | 演示的架构点                                           |
 | ------------------ | ------------------------------------------------------ | ----------------------- | ------------------------------------------------------ |

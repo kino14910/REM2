@@ -35,7 +35,7 @@ export async function run(
       legacyFallback: args.legacyFallback,
       logLevel: args.logLevel,
       onResolveError: 'graceful',
-      initialConfig: { app: { greeting: 'Hello from rem2' } },
+      initialConfig: { app: { greeting: 'Hello from rem2-kernel' } },
     }),
   )
 
@@ -46,7 +46,7 @@ export async function run(
     process.stdout.write(`${s}\n`)
   }
 
-  write('──── rem2 kernel started ────')
+  write('──── rem2-kernel started ────')
   write(`loadOrder : ${result.loadOrder.join(' -> ')}`)
   write(`started   : ${result.started.join(', ') || '(none)'}`)
   write(`degraded  : ${result.degraded.join(', ') || '(none)'}`)

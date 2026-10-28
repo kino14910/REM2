@@ -1,5 +1,5 @@
 %% docs/en/sequence-diagram-v2.mermaid
-%% rem2 sequence diagram (companion to docs/01-architecture-overview.md §3 / §6; frontend chain in docs/03-frontend-ipc.md)
+%% rem2-kernel sequence diagram (companion to docs/01-architecture-overview.md §3 / §6; frontend chain in docs/03-frontend-ipc.md)
 %% 5 main chains: startup / command / event / config / unload + Svelte panel subscription
 
 %% ═══════════════════════════════════════════════════════
@@ -100,7 +100,7 @@ sequenceDiagram
     participant EP as ExtensionPointRegistry
     participant HP as hello-command
 
-    S->>IC: execute('hello', {name:'rem2'})
+    S->>IC: execute('hello', {name:'rem2-kernel'})
     IC->>PL: window.rem2.invoke('command.execute', {command, args})
     PL->>IM: send('rem2:invoke', {id, method, args})
     IM->>BR: transport.on('rem2:invoke')

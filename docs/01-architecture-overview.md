@@ -83,7 +83,7 @@ host     →（相对路径 import）→ kernel
 行尾注释为该文件的**唯一职责**；★ 表示改动时必须同步的契约锚点。
 
 ```
-rem2/
+rem2-kernel/
 ├── src/
 │   ├── main.ts                        # ★ Forge 主进程入口转发壳：import './host/electron/main.js'
 │   ├── preload.ts                     # ★ Forge preload 入口转发壳：import './host/electron/preload.js'
@@ -472,7 +472,7 @@ unloadPlugin(pluginId)
 
 | 数据     | 产生                                                                                                                   | 经过谁                                                                                                                                        | 消费                                                                                                   |
 | -------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| **配置** | `config-json` 插件（`JsonConfigProvider`，priority 10）+ 内核只读默认层 `{app:{name:'rem2'}}` + `initialConfig` 可写层 | `ConfigService.refresh()` 按 priority 升序 deepMerge 成快照；`get()` 惰性刷新                                                                 | 插件 `onConfigure` 期 `ctx.config.get(…)`；Worker 插件拿 init 快照 + 变更推送。**配置不外泄 renderer** |
+| **配置** | `config-json` 插件（`JsonConfigProvider`，priority 10）+ 内核只读默认层 `{app:{name:'rem2-kernel'}}` + `initialConfig` 可写层 | `ConfigService.refresh()` 按 priority 升序 deepMerge 成快照；`get()` 惰性刷新                                                                 | 插件 `onConfigure` 期 `ctx.config.get(…)`；Worker 插件拿 init 快照 + 变更推送。**配置不外泄 renderer** |
 | **命令** | `CommandPrompt.svelte` 输入                                                                                            | store → `ipc.request` → preload → `IpcBridge`（白名单）→ `bus.request(Topics.CommandExecute)`                                                 | 内核 `CommandDispatcher` 读 `command.provide` 槽 → 命令插件 handler → `{ok, output}` 原路回传          |
 | **事件** | 插件 `bus.emit`                                                                                                        | `EventBusImpl` → `EVENT_FORWARD_MAP`（5 个白名单 topic）→ `toDto` → `Ipc.Event`                                                               | renderer `ipc.subscribe`                                                                               |
 | **主题** | `theme-dark` 插件贡献 `ui.theme`（light / dark 两套 token）                                                            | 扩展点槽 →（`method-handlers.ts` → `syncThemeFromExtension()` **pull 同步**）→ 宿主 `ThemeRegistryImpl`（目录 + 激活态）→ `ui.theme.list/set` | renderer `theme` store → `theme/vars.ts` → CSS 变量 + `color-scheme`                                   |

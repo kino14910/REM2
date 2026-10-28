@@ -81,7 +81,7 @@ function registerWhitelistedMethods(kernelRef: Kernel): void {
 async function startKernel(): Promise<void> {
   kernel = new Kernel(
     createDeps({
-      id: 'rem2-electron',
+      id: 'rem2-kernel-electron',
       roots: [],
       builtinRoot: builtinPluginsRoot(),
       startTimeoutMs: 5000,
@@ -122,8 +122,8 @@ app.whenReady().then(async () => {
     // surfaced explicitly: otherwise it degrades into a silent unhandled
     // rejection — the user just sees "no window" with nothing to debug.
     const message = error instanceof Error ? error.message : String(error)
-    console.error('[rem2] Kernel startup failed:', error)
-    dialog.showErrorBox('rem2 kernel startup failed', message)
+    console.error('[rem2-kernel] Kernel startup failed:', error)
+    dialog.showErrorBox('rem2-kernel startup failed', message)
     app.quit()
     return
   }
@@ -137,7 +137,7 @@ app.whenReady().then(async () => {
 
 // Fallback: log any uncaught async error to avoid silent failures.
 process.on('unhandledRejection', reason => {
-  console.error('[rem2] Unhandled promise rejection:', reason)
+  console.error('[rem2-kernel] Unhandled promise rejection:', reason)
 })
 
 app.on('window-all-closed', () => {

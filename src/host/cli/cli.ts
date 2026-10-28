@@ -98,7 +98,7 @@ async function listPlugins(): Promise<number> {
 function printHelp(): void {
   process.stdout.write(
     [
-      'rem2 developer CLI',
+      'rem2-kernel developer CLI',
       '',
       'Usage: pnpm cli <command> [args]',
       '',

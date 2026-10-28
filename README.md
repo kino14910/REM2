@@ -1,6 +1,6 @@
 <a href="./README.zh-CN.md">简体中文</a>
 
-# rem2 — Minimal Kernel + Everything-as-Plugin
+# rem2-kernel — Minimal Kernel + Everything-as-Plugin
 
 > An independent, from-scratch implementation of **Kernel + Everything-as-Plugin**.
 >
@@ -60,7 +60,7 @@ pnpm dev --log-level debug
 Expected output:
 
 ```
-──── rem2 kernel started ────
+──── rem2-kernel started ────
 loadOrder : com.rem2.config-json -> com.rem2.hello-command -> com.rem2.logger-console -> com.rem2.health-http -> com.rem2.notify-worker -> com.rem2.plugin-inspector -> com.rem2.theme-dark
 started   : com.rem2.config-json, com.rem2.hello-command, com.rem2.logger-console, com.rem2.health-http, com.rem2.notify-worker, com.rem2.plugin-inspector, com.rem2.theme-dark
 degraded  : (none)

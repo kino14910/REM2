@@ -73,7 +73,7 @@ export default definePlugin(
               const g = ctx.services.resolve(GreeterToken)
               await bus.emit(Topics.CommandResult, {
                 ok: true,
-                output: g.greet('rem2'),
+                output: g.greet('rem2-kernel'),
               })
             },
           ),
@@ -91,7 +91,7 @@ export default definePlugin(
             return {
               ok: true,
               output: g.greet(
-                String((args as { name?: string })?.name ?? 'rem2'),
+                String((args as { name?: string })?.name ?? 'rem2-kernel'),
               ),
             }
           },

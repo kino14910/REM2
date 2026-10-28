@@ -148,7 +148,7 @@ plugins/my-plugin/
 ctx.extensions.contribute('command.provide', {
   contributionId: 'hello',
   impl: async (args: unknown) => {
-    const name = (args as { name?: string })?.name ?? 'rem2'
+    const name = (args as { name?: string })?.name ?? 'rem2-kernel'
     return { ok: true, output: `Hello, ${name}!` }
   },
 })
@@ -228,7 +228,7 @@ import { Topics } from 'rem2-kernel'
 ctx.extensions.contribute('command.provide', {
   contributionId: 'hello',
   impl: async (args: unknown) => {
-    const name = (args as { name?: string })?.name ?? 'rem2'
+    const name = (args as { name?: string })?.name ?? 'rem2-kernel'
     return { ok: true, output: `Hello, ${name}!` }
   },
 })

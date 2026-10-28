@@ -1,6 +1,6 @@
-# rem2 Documentation Index (English)
+# rem2-kernel Documentation Index (English)
 
-> Project: `rem2` (package `rem2-kernel`) — minimal kernel + everything-as-plugin.
+> Project: `rem2-kernel` (package `rem2-kernel`) — minimal kernel + everything-as-plugin.
 >
 > Documents are numbered in **reading order** (`01` first). Each of the four documents owns one area and never restates another.
 >

@@ -163,7 +163,7 @@ export function createDeps(partial: CreateDepsOptions = {}): KernelDeps {
 
   // Kernel default layer for config providers: the host default implementation of the `config.provider` extension point.
   config.registerProvider(
-    new ReadOnlyMemoryConfigProvider({ app: { name: 'rem2' } }),
+    new ReadOnlyMemoryConfigProvider({ app: { name: 'rem2-kernel' } }),
   )
   registerHostConfigLayer(extensions)
 

@@ -66,14 +66,14 @@ export function registerHostSinks(
   return { traceExporter }
 }
 
-/** Register the host default in-memory config layer (`{app:{name:'rem2'}}`). */
+/** Register the host default in-memory config layer (`{app:{name:'rem2-kernel'}}`). */
 export function registerHostConfigLayer(
   extensions: ExtensionPointRegistry,
 ): void {
   extensions.registerHostDefault('config.provider', {
     contributionId: 'kernel.defaults',
     impl: new ReadOnlyMemoryConfigProvider({
-      app: { name: 'rem2' },
+      app: { name: 'rem2-kernel' },
     }) as ConfigProvider,
   })
 }

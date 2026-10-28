@@ -1,6 +1,6 @@
 <a href="./README.md">English</a>
 
-# rem2 — 极小内核 + 一切皆插件
+# rem2-kernel — 极小内核 + 一切皆插件
 
 > **Kernel + Everything-as-Plugin** 的独立从零实现。
 > 内核只做 7 件事，其余一切（日志、配置、业务、运维、UI）都是插件。
@@ -51,7 +51,7 @@ pnpm dev --log-level debug
 预期输出：
 
 ```
-──── rem2 kernel started ────
+──── rem2-kernel started ────
 loadOrder : com.rem2.config-json -> com.rem2.hello-command -> com.rem2.logger-console -> com.rem2.health-http -> com.rem2.notify-worker -> com.rem2.plugin-inspector -> com.rem2.theme-dark
 started   : com.rem2.config-json, com.rem2.hello-command, com.rem2.logger-console, com.rem2.health-http, com.rem2.notify-worker, com.rem2.plugin-inspector, com.rem2.theme-dark
 degraded  : (none)

@@ -1,6 +1,6 @@
-# rem2 文档索引
+# rem2-kernel 文档索引
 
-> 项目：`rem2`（package `rem2-kernel`）—— 极小内核 + 一切皆插件。
+> 项目：`rem2-kernel`（package `rem2-kernel`）—— 极小内核 + 一切皆插件。
 >
 > 文档按**阅读顺序**编号（`01` 最先读）。四份文档各管一段，不重复描述同一件事。
 >

@@ -1,4 +1,4 @@
-# rem2 Examples
+# rem2-kernel Examples
 
 This directory shows how to extend the system through plugins **without modifying the kernel**.
 
@@ -39,7 +39,7 @@ The generated plugin contains a `plugin.json` + `package.json` + `tsconfig.json`
 
 ---
 
-# rem2 示例
+# rem2-kernel 示例
 
 本目录演示如何在**不修改内核**的前提下，通过插件扩展系统能力。
 

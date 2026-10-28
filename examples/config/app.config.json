@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "rem2",
+    "name": "rem2-kernel",
     "greeting": "Hello from JSON config",
     "environment": "development"
   },
