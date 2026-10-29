@@ -40,9 +40,9 @@ graph BT
         KC["di / lifecycle / dependency / discovery / loader / isolation /<br/>security / observability / config / events / scheduler / semver /<br/>bootstrap / registry / extensions / context / util"]
     end
 
-    subgraph L5["tests/ —— 41 文件 / 327 用例"]
+    subgraph L5["tests/ —— 43 文件 / 355 用例"]
         TA["contract/（5）：kernel-deps · plugin-contract · ipc-contract ·<br/>extension-points · build-artifact"]
-        TB["unit/（15）+ integration/（15）"]
+        TB["unit/（20）+ integration/（18）"]
     end
 
     FB -->|"window.rem2（唯一通道）"| HB
@@ -72,7 +72,7 @@ host     →（相对路径 import）→ kernel
 | plugins              | 只从 `rem2-kernel` / `node:*` / 相对路径导入；manifest `entry` 必须是 `.js` 或 `.mjs` | `tests/contract/plugin-contract.test.ts` R4 / R7                                 |
 | `src/shared/**`      | 零 import（纯字面量 + 纯类型）                                                        | `tests/contract/ipc-contract.test.ts`                                            |
 
-**一句话**：内核（83 文件）只做编排与契约；宿主（14 文件）把 Electron / CLI / IPC 适配到内核契约；前端（20 文件）经 `window.rem2` 消费 8 个白名单方法与 5 个白名单事件；全部业务与运维能力（命令、配置、日志、健康、主题、通知、检查器 UI）都是 `plugins/` 下的 7 个插件。
+**一句话**：内核（83 文件）只做编排与契约；宿主（14 文件）把 Electron / CLI / IPC 适配到内核契约；前端（20 文件）经 `window.rem2` 消费 15 个白名单方法与 5 个白名单事件；全部业务与运维能力（命令、配置、日志、健康、主题、通知、检查器 UI）都是 `plugins/` 下的 7 个插件。
 
 ---
 
@@ -470,12 +470,12 @@ unloadPlugin(pluginId)
 
 ### 7.1 四类数据
 
-| 数据     | 产生                                                                                                                   | 经过谁                                                                                                                                        | 消费                                                                                                   |
-| -------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 数据     | 产生                                                                                                                          | 经过谁                                                                                                                                        | 消费                                                                                                   |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | **配置** | `config-json` 插件（`JsonConfigProvider`，priority 10）+ 内核只读默认层 `{app:{name:'rem2-kernel'}}` + `initialConfig` 可写层 | `ConfigService.refresh()` 按 priority 升序 deepMerge 成快照；`get()` 惰性刷新                                                                 | 插件 `onConfigure` 期 `ctx.config.get(…)`；Worker 插件拿 init 快照 + 变更推送。**配置不外泄 renderer** |
-| **命令** | `CommandPrompt.svelte` 输入                                                                                            | store → `ipc.request` → preload → `IpcBridge`（白名单）→ `bus.request(Topics.CommandExecute)`                                                 | 内核 `CommandDispatcher` 读 `command.provide` 槽 → 命令插件 handler → `{ok, output}` 原路回传          |
-| **事件** | 插件 `bus.emit`                                                                                                        | `EventBusImpl` → `EVENT_FORWARD_MAP`（5 个白名单 topic）→ `toDto` → `Ipc.Event`                                                               | renderer `ipc.subscribe`                                                                               |
-| **主题** | `theme-dark` 插件贡献 `ui.theme`（light / dark 两套 token）                                                            | 扩展点槽 →（`method-handlers.ts` → `syncThemeFromExtension()` **pull 同步**）→ 宿主 `ThemeRegistryImpl`（目录 + 激活态）→ `ui.theme.list/set` | renderer `theme` store → `theme/vars.ts` → CSS 变量 + `color-scheme`                                   |
+| **命令** | `CommandPrompt.svelte` 输入                                                                                                   | store → `ipc.request` → preload → `IpcBridge`（白名单）→ `bus.request(Topics.CommandExecute)`                                                 | 内核 `CommandDispatcher` 读 `command.provide` 槽 → 命令插件 handler → `{ok, output}` 原路回传          |
+| **事件** | 插件 `bus.emit`                                                                                                               | `EventBusImpl` → `EVENT_FORWARD_MAP`（5 个白名单 topic）→ `toDto` → `Ipc.Event`                                                               | renderer `ipc.subscribe`                                                                               |
+| **主题** | `theme-dark` 插件贡献 `ui.theme`（light / dark 两套 token）                                                                   | 扩展点槽 →（`method-handlers.ts` → `syncThemeFromExtension()` **pull 同步**）→ 宿主 `ThemeRegistryImpl`（目录 + 激活态）→ `ui.theme.list/set` | renderer `theme` store → `theme/vars.ts` → CSS 变量 + `color-scheme`                                   |
 
 `initialConfig` 内存层 priority = 1000，高于所有插件 provider —— 插件 `set()` 永远写内存层。这是有意的「宿主配置优先」语义。
 
@@ -487,7 +487,7 @@ unloadPlugin(pluginId)
 - `health.report` 在 `method-handlers.ts` 里手工裁剪为 `{status, plugins:[{id,state,status,message?}]}`。
 - 前端 `bridge-types.ts` 是 DTO 的显式白名单。
 
-代价：每个方法 / 事件都要手写投影，内核加字段不会自动传导到前端。收益：泄漏面收敛为 **8 方法 + 5 事件**两个穷举集合，且两者与内核 `Topics` 真值由契约测试锚定。方法与事件清单见 [`03-frontend-ipc.md`](03-frontend-ipc.md) §3。
+代价：每个方法 / 事件都要手写投影，内核加字段不会自动传导到前端。收益：泄漏面收敛为 **14 方法 + 5 事件**两个穷举集合，且两者与内核 `Topics` 真值由契约测试锚定。方法与事件清单见 [`03-frontend-ipc.md`](03-frontend-ipc.md) §3。
 
 ### 7.3 IPC 契约的单一来源
 
@@ -567,7 +567,7 @@ class 会在 bundle 里引入原型链，且 `static create` 依赖模块级状�
 `worker_threads` 不提供 V8 沙箱，Worker 内代码仍有完整 Node 能力。把目标收窄为「单插件故障不拖垮内核」才诚实。真正的安全边界是内核侧 `CapabilityGuard` + RPC 白名单。
 
 **D6 · IPC 白名单精确匹配**
-8 方法 + 5 事件穷举为 `Set<string>`（前缀匹配等于把整个命名空间交出去）。判定在主进程，preload 只透传。代价：新增一个 IPC 方法要动两个文件（契约 + 实现表），漏了就是编译错误。
+14 方法 + 5 事件穷举为 `Set<string>`（前缀匹配等于把整个命名空间交出去）。判定在主进程，preload 只透传。代价：新增一个 IPC 方法要动两个文件（契约 + 实现表），漏了就是编译错误。
 
 **D7 · DTO 降维，不透传内核对象**
 泄漏面收敛为两个穷举集合；代价是手写投影、内核加字段不自动到前端。
@@ -619,9 +619,9 @@ TS `private` 只是编译期约束，运行期字段可枚举可读写，插件�
 
 ## 11. 已知限制与未接线
 
-| #   | 现象                                   | 性质                                                       |
-| --- | -------------------------------------- | ---------------------------------------------------------- |
-| L1  | `*.replace` 三个扩展点只支持启动期替换 | 运行期替换会让 `SerialScheduler` 丢 in-flight 任务，未设计 |
+| #   | 现象                                                                                                                               | 性质                                                                                                  |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| L1  | `*.replace` 三个扩展点只支持启动期替换                                                                                             | 运行期替换会让 `SerialScheduler` 丢 in-flight 任务，未设计                                            |
 | L2  | Windows 上仅 squirrel maker 可用（已验证：产出 `Setup.exe`，包内 `resources/plugins-dist/` 齐全）；deb/rpm maker 依赖 Linux 工具链 | 平台限制；`out/` 残留被占用文件时 packager 清理会被本机 safe-delete shim 阻断，清空 `out/` 后重跑即可 |
 
 ---

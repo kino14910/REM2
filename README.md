@@ -6,7 +6,7 @@
 >
 > The kernel does only 7 things; everything else (logging, config, business logic, ops, UI) is a plugin.
 
-![tests](https://img.shields.io/badge/tests-327%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-355%20passing-brightgreen)
 
 ![kernel deps](https://img.shields.io/badge/kernel%20deps-0-blue)
 
@@ -89,7 +89,11 @@ pnpm start
 
 Type a command in the window (default `hello`) and click "Execute"; the command is forwarded
 
-to the kernel event bus through the IPC bridge.
+to the kernel event bus through the IPC bridge. The top-bar **Plugins** view lists, installs,
+
+enables, disables and uninstalls local plugins; new installs are disabled by default and user
+
+data is preserved.
 
 > **Why the host runs TypeScript via tsx**: the host's own entry (`src/host/cli/run.ts` for the
 >
@@ -230,12 +234,12 @@ pnpm test:coverage   # coverage
 pnpm typecheck:all   # kernel + electron + frontend type checks
 ```
 
-| Layer       | Files                    | Coverage                                                                                                                                                                                                  |
-| ----------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unit        | 19                       | semver / topological sort / cycle detection / DI container / container isolation / event bus / lifecycle / manifest validation / permissions / config service / health service / command dispatcher / DTO guards / route→panel resolution / builtin plugins root |
-| Integration | 17                       | startup order / soft-dep fallback / hard-dep cascade / fault isolation / config plugin / observability / hot reload / unload cascade / security boundary / worker isolation / command chain / theme chain / UI chain / inspector data chain |
-| Contract    | 5                        | plugin import boundary / kernel dependency whitelist / extension-point catalog consistency / svelte built as browser bundle / IPC whitelist vs kernel Topics                                              |
-| **Total**   | **41 files / 327 cases** |                                                                                                                                                                                                           |
+| Layer       | Files                    | Coverage                                                                                                                                                                                                                                                                              |
+| ----------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit        | 20                       | semver / topological sort / cycle detection / DI container / container isolation / event bus / lifecycle / manifest validation / permissions / config service / health service / command dispatcher / DTO guards / route→panel resolution / builtin plugins root / plugin state store |
+| Integration | 18                       | startup order / soft-dep fallback / hard-dep cascade / fault isolation / config plugin / observability / hot reload / unload cascade / security boundary / worker isolation / command chain / theme chain / UI chain / inspector data chain / local plugin manager                    |
+| Contract    | 5                        | plugin import boundary / kernel dependency whitelist / extension-point catalog consistency / svelte built as browser bundle / IPC whitelist vs kernel Topics                                                                                                                          |
+| **Total**   | **43 files / 355 cases** |                                                                                                                                                                                                                                                                                       |
 
 ---
 
@@ -250,8 +254,9 @@ Documents are numbered in **reading order** (`01` first). Full index:
 | —   | **[docs/INDEX.md](docs/INDEX.md)**                                  | **Doc index & reading path** (start here)                                                                                                                                                                                                            |
 | 01  | **[01-architecture-overview.md](docs/01-architecture-overview.md)** | **Architecture (authoritative)**: layering & dependency direction, per-file responsibilities, two-layer lifecycle, 12 extension points, isolation & permissions, call chains, data flows, build artifacts, 9 decisions, extension flow, known limits |
 | 02  | **[02-plugin-api.md](docs/02-plugin-api.md)**                       | **Plugin development guide**: `definePlugin`, `plugin.json` fields, lifecycle hooks, `PluginContext`, extension points, service tokens, command chain, isolation modes, error codes                                                                  |
-| 03  | **[03-frontend-ipc.md](docs/03-frontend-ipc.md)**                   | **Frontend & IPC contract**: process/build boundaries, 8 methods + 5 events allowlist, DTOs, store↔event bridge, theme path, vite/CSP constraints                                                                                                    |
+| 03  | **[03-frontend-ipc.md](docs/03-frontend-ipc.md)**                   | **Frontend & IPC contract**: process/build boundaries, 15 methods + 5 events allowlist, DTOs, store↔event bridge, theme path, vite/CSP constraints                                                                                                   |
 | 04  | **[04-development-guide.md](docs/04-development-guide.md)**         | **Development guide**: environment, command matrix, build & packaging spec, tsconfig boundaries, extension flow, debugging, pitfalls, code conventions                                                                                               |
+| 05  | **[05-plugin-management.md](docs/05-plugin-management.md)**         | **Local plugin management**: manifest checks, install/enable/disable/uninstall, directories and states, path safety, data preservation, IPC/UI, known limits                                                                                         |
 
 Architecture diagrams: [class-diagram-v2.mermaid](docs/class-diagram-v2.mermaid) ·
 [sequence-diagram-v2.mermaid](docs/sequence-diagram-v2.mermaid)

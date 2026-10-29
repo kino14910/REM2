@@ -66,6 +66,7 @@ src/frontend/
 │   │   ├── PanelShell.svelte    # single-panel chrome: table / JSON rendering + refresh (notify plugin + local re-fetch + consume push)
 │   │   ├── ThemeToggle.svelte   # light/dark switch: renders only when the catalog holds both modes, sends ui.theme.set
 │   │   ├── HealthBadge.svelte   # health badge reading the health report
+│   │   ├── PluginManager.svelte # host-owned plugin management: list / detail / install / enable / disable / uninstall
 │   │   └── CommandPrompt.svelte # command input and result display
 │   └── global.css               # global styles + fallback values for theme variables
 └── lib/
@@ -74,7 +75,7 @@ src/frontend/
     ├── nav-link.ts              # pure function: route + panels + panelsReady → active-panel resolution (with notice)
     ├── dto-guards.ts            # pure functions: runtime validation of panel/route lists + panel data classification (table / json / empty / invalid)
     ├── stores/                  # Svelte 5 runes; file names must end with .svelte.ts
-    │   └── panels · routes · theme · health · command (one .svelte.ts each)
+    │   └── panels · routes · theme · health · command · plugins (one .svelte.ts each)
     └── theme/vars.ts            # ThemeDto → CSS variables (--rem2-*)
 ```
 
@@ -100,18 +101,25 @@ export const Ipc = {
 
 Responses and events live on separate channels so the frontend `subscribe` only listens to one. Request/response pairing still uses ids (done inside preload) rather than relying on `ipcRenderer.invoke` pairing.
 
-### 3.2 Method allowlist (8, exhaustive)
+### 3.2 Method allowlist (15, exhaustive)
 
-| #   | method (`channels.*`) | payload                       | Response                                  | Host implementation                                                                                                              |
-| --- | --------------------- | ----------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `ui.panel.list`       | —                             | `PanelDto[]`                              | `kernel.extensions.listAll('ui.panel')`                                                                                          |
-| 2   | `ui.panel.data`       | `{ panelId }`                 | `unknown` (plugin-defined)                | `bus.request` using the panel's declared `command`                                                                               |
-| 3   | `ui.route.list`       | —                             | `RouteDto[]`                              | `kernel.extensions.listAll('ui.route')`                                                                                          |
-| 4   | `ui.theme.list`       | —                             | `ThemeCatalogDto` (`{themes, activeId?}`) | `ThemeRegistry.list()` + `.active()` (pull-syncs the slot before reading)                                                        |
-| 5   | `ui.theme.set`        | `{ themeId }`                 | `{ ok }`                                  | `ThemeRegistry.activate()`; emits **only when the active theme really changes**                                                  |
-| 6   | `ui.event`            | `{ panelId, kind, payload? }` | `{ ok }`                                  | routes to the panel's declared `command`                                                                                         |
-| 7   | `command.execute`     | `{ command, args? }`          | `CommandResultDto`                        | **`null`** — dispatch lives in the kernel `CommandDispatcher` (reads the `command.provide` slot); the host does not implement it |
-| 8   | `health.report`       | —                             | `HealthDto`                               | `kernel.health()` + trimming                                                                                                     |
+| #   | method (`channels.*`)      | payload                       | Response                                  | Host implementation                                                                                                                      |
+| --- | -------------------------- | ----------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `ui.panel.list`            | —                             | `PanelDto[]`                              | `kernel.extensions.listAll('ui.panel')`                                                                                                  |
+| 2   | `ui.panel.data`            | `{ panelId }`                 | `unknown` (plugin-defined)                | `bus.request` using the panel's declared `command`                                                                                       |
+| 3   | `ui.route.list`            | —                             | `RouteDto[]`                              | `kernel.extensions.listAll('ui.route')`                                                                                                  |
+| 4   | `ui.theme.list`            | —                             | `ThemeCatalogDto` (`{themes, activeId?}`) | `ThemeRegistry.list()` + `.active()` (pull-syncs the slot before reading)                                                                |
+| 5   | `ui.theme.set`             | `{ themeId }`                 | `{ ok }`                                  | `ThemeRegistry.activate()`; emits **only when the active theme really changes**                                                          |
+| 6   | `ui.event`                 | `{ panelId, kind, payload? }` | `{ ok }`                                  | routes to the panel's declared `command`                                                                                                 |
+| 7   | `command.execute`          | `{ command, args? }`          | `CommandResultDto`                        | **`null`** — dispatch lives in the kernel `CommandDispatcher` (reads the `command.provide` slot); the host does not implement it         |
+| 8   | `health.report`            | —                             | `HealthDto`                               | `kernel.health()` + trimming                                                                                                             |
+| 9   | `plugin.list`              | —                             | `PluginListDto`                           | scans installed dirs + runtime state + disabled intent                                                                                   |
+| 10  | `plugin.detail`            | `{ pluginId }`                | `PluginDetailDto`                         | `LocalPluginManager.detail()`                                                                                                            |
+| 11  | `plugin.install.directory` | —                             | `PluginOperationResultDto`                | native directory chooser → validate → staging copy → atomic commit; disabled by default (remote install will be `plugin.install.remote`) |
+| 12  | `plugin.enable`            | `{ pluginId }`                | `PluginOperationResultDto`                | persist intent, including the installed hard-dependency closure → `Kernel.enablePlugin()` with dependency ordering                       |
+| 13  | `plugin.disable`           | `{ pluginId }`                | `PluginOperationResultDto`                | cascade-disable loaded dependents → persist disabled intent; a live plugin stops on the next plugin-service restart                      |
+| 14  | `plugin.uninstall`         | `{ pluginId }`                | `PluginOperationResultDto`                | user source only; stop, preserve config/data, exact-directory delete                                                                     |
+| 15  | `plugin.restart`           | —                             | `PluginOperationResultDto`                | `Kernel.restartPlugins()`: stop all plugins, rediscover/resolve/start with the disabled set; kernel and host stay alive                  |
 
 ### 3.3 Event allowlist (5)
 
@@ -125,14 +133,14 @@ Responses and events live on separate channels so the frontend `subscribe` only 
 
 ### 3.4 Explicitly forbidden
 
-| Forbidden                                                        | Reason                                                                                                                         |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| any `bus.request(method)` passthrough                            | prefix matching would hand over a whole namespace; judgment must be an exact set of 8 names                                    |
-| reading config (any `config.*`)                                  | config may hold sensitive values; when a panel needs config, the plugin decides what to expose in its `ui.panel.data` response |
-| reading kernel services (`services.*` / `kernel.*`)              | the renderer deals in DTOs, not in the kernel object graph                                                                     |
-| triggering plugin lifecycle (`plugin.start` / `stop` / `unload`) | lifecycle is a kernel/host privilege                                                                                           |
-| subscribing to arbitrary kernel events                           | only the 5 in §3.3; other topics (e.g. `config.changed`) carry internal state                                                  |
-| receiving raw plugin events (e.g. `ui.theme.registered`)         | only DTO-ized semantic events are exposed                                                                                      |
+| Forbidden                                                      | Reason                                                                                                                         |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| any `bus.request(method)` passthrough                          | prefix matching would hand over a whole namespace; judgment must be an exact set of 14 names                                   |
+| reading config (any `config.*`)                                | config may hold sensitive values; when a panel needs config, the plugin decides what to expose in its `ui.panel.data` response |
+| reading kernel services (`services.*` / `kernel.*`)            | the renderer deals in DTOs, not in the kernel object graph                                                                     |
+| arbitrary lifecycle calls (`plugin.start` / `stop` / `unload`) | lifecycle is a kernel/host privilege; only the four guarded management methods in §3.2 are allowed                             |
+| subscribing to arbitrary kernel events                         | only the 5 in §3.3; other topics (e.g. `config.changed`) carry internal state                                                  |
+| receiving raw plugin events (e.g. `ui.theme.registered`)       | only DTO-ized semantic events are exposed                                                                                      |
 
 **Enforcement point**: `IpcBridge.handleInvoke` checks `allowedMethods.has(method)` (exact `Set` match) **before** `bus.request`. Not in the set → replies `{ok:false,error}` immediately, **never entering the event bus**.
 
@@ -193,11 +201,11 @@ The `command` field is filled in by the frontend store (`command.svelte.ts` → 
 
 ## 4. store ↔ event bridge
 
-| Direction             | Allowed                                         | Implementation                                                                                         |
-| --------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| kernel → renderer     | ✅ one-way push, only the 5 events in §3.3      | `IpcBridge` subscribes the topic → `toDto` → `Ipc.Event`                                               |
-| renderer → kernel     | ✅ one-way requests, only the 8 methods in §3.2 | `ipc.request`                                                                                          |
-| renderer ↔ kernel bus | ❌ **never proxied**                            | proxying the bus would let the renderer `emit` / subscribe any topic, defeating every capability guard |
+| Direction             | Allowed                                          | Implementation                                                                                         |
+| --------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| kernel → renderer     | ✅ one-way push, only the 5 events in §3.3       | `IpcBridge` subscribes the topic → `toDto` → `Ipc.Event`                                               |
+| renderer → kernel     | ✅ one-way requests, only the 15 methods in §3.2 | `ipc.request`                                                                                          |
+| renderer ↔ kernel bus | ❌ **never proxied**                             | proxying the bus would let the renderer `emit` / subscribe any topic, defeating every capability guard |
 
 Two red lines:
 

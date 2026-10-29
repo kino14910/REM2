@@ -85,7 +85,9 @@ Constraints:
 }
 ```
 
-`manifest-validator` validates the manifest during **discovery**, and `manifest.schema.json` is the JSON Schema form of the same rules. Changing validation rules requires changing both.
+`manifest-validator` validates the manifest during **discovery**; local installation reuses the same validator, and `manifest.schema.json` is the JSON Schema form of the same rules. Changing validation rules requires changing both.
+
+Install / enable / disable / uninstall, user plugin roots, state and path safety are documented in [`05-plugin-management.md`](05-plugin-management.md). Installation accepts only pre-built directories, defaults to disabled, and never executes plugin code.
 
 ### 3.1 Why `entry` must be `dist/index.js`
 
@@ -115,7 +117,9 @@ Every `PluginFactoryHooks` hook (all optional):
 **Failure semantics**:
 
 - `Load` / `Initialize` / `Start` failures are **fatal** → reverse-rollback executed phases → plugin `Failed`.
-- `Discover` failure or a missing soft dependency is **non-fatal** → `Degraded`, other plugins keep running.
+- `Discover` failure or a missing soft dependency is **non-fatal** → `Degraded`, other plugins keep running. The health message names the missing entry: `missing optional dependency: <id>`.
+- Once that soft dependency is enabled again, the kernel re-evaluates the plugin and returns it to `Active` without a plugin-service restart; `enablePlugin` is idempotent and may be called on a `Degraded` plugin to force the re-check.
+- Only soft-dependency degradation is recorded for recovery; `Active`, `Failed` and unload clear it, so unrelated degraded plugins are never restarted by mistake.
 
 ---
 

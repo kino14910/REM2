@@ -40,9 +40,9 @@ graph BT
         KC["di / lifecycle / dependency / discovery / loader / isolation /<br/>security / observability / config / events / scheduler / semver /<br/>bootstrap / registry / extensions / context / util"]
     end
 
-    subgraph L5["tests/ — 41 files / 327 cases"]
+    subgraph L5["tests/ — 43 files / 355 cases"]
         TA["contract/ (5): kernel-deps · plugin-contract · ipc-contract ·<br/>extension-points · build-artifact"]
-        TB["unit/ (15) + integration/ (15)"]
+        TB["unit/ (20) + integration/ (18)"]
     end
 
     FB -->|"window.rem2 (only channel)"| HB
@@ -72,7 +72,7 @@ host     → (relative imports) → kernel
 | plugins                 | import only `rem2-kernel` / `node:*` / relative paths; manifest `entry` must be `.js` or `.mjs` | `tests/contract/plugin-contract.test.ts` R4 / R7                                     |
 | `src/shared/**`         | zero imports (pure literals + pure types)                                                       | `tests/contract/ipc-contract.test.ts`                                                |
 
-**One sentence**: the kernel (83 files) only orchestrates and defines contracts; the host (14 files) adapts Electron / CLI / IPC onto those contracts; the frontend (20 files) consumes 8 allowlisted methods and 5 allowlisted events through `window.rem2`; every business and ops capability (command, config, logging, health, theme, notification, inspector UI) is one of the 7 plugins under `plugins/`.
+**One sentence**: the kernel (83 files) only orchestrates and defines contracts; the host (14 files) adapts Electron / CLI / IPC onto those contracts; the frontend (20 files) consumes 14 allowlisted methods and 5 allowlisted events through `window.rem2`; every business and ops capability (command, config, logging, health, theme, notification, inspector UI) is one of the 7 plugins under `plugins/`.
 
 ---
 
@@ -471,12 +471,12 @@ unloadPlugin(pluginId)
 
 ### 7.1 Four kinds of data
 
-| Data        | Produced by                                                                                                                                 | Flows through                                                                                                                                          | Consumed by                                                                                                                                        |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Data        | Produced by                                                                                                                                        | Flows through                                                                                                                                          | Consumed by                                                                                                                                        |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Config**  | `config-json` plugin (`JsonConfigProvider`, priority 10) + read-only kernel defaults `{app:{name:'rem2-kernel'}}` + writable `initialConfig` layer | `ConfigService.refresh()` deep-merges by ascending priority into a snapshot; `get()` refreshes lazily                                                  | plugins read `ctx.config.get(…)` in `onConfigure`; worker plugins get the init snapshot plus change pushes. **Config never leaks to the renderer** |
-| **Command** | input in `CommandPrompt.svelte`                                                                                                             | store → `ipc.request` → preload → `IpcBridge` (allowlist) → `bus.request(Topics.CommandExecute)`                                                       | kernel `CommandDispatcher` reads the `command.provide` slot → command plugin handler → `{ok, output}` back through the same path                   |
-| **Event**   | plugin `bus.emit`                                                                                                                           | `EventBusImpl` → `EVENT_FORWARD_MAP` (5 allowlisted topics) → `toDto` → `Ipc.Event`                                                                    | renderer `ipc.subscribe`                                                                                                                           |
-| **Theme**   | `theme-dark` plugin contributes `ui.theme` (light / dark token sets)                                                                        | extension slot → (`method-handlers.ts` → `syncThemeFromExtension()` **pull sync**) → host `ThemeRegistryImpl` (catalog + active) → `ui.theme.list/set` | renderer `theme` store → `theme/vars.ts` → CSS variables + `color-scheme`                                                                          |
+| **Command** | input in `CommandPrompt.svelte`                                                                                                                    | store → `ipc.request` → preload → `IpcBridge` (allowlist) → `bus.request(Topics.CommandExecute)`                                                       | kernel `CommandDispatcher` reads the `command.provide` slot → command plugin handler → `{ok, output}` back through the same path                   |
+| **Event**   | plugin `bus.emit`                                                                                                                                  | `EventBusImpl` → `EVENT_FORWARD_MAP` (5 allowlisted topics) → `toDto` → `Ipc.Event`                                                                    | renderer `ipc.subscribe`                                                                                                                           |
+| **Theme**   | `theme-dark` plugin contributes `ui.theme` (light / dark token sets)                                                                               | extension slot → (`method-handlers.ts` → `syncThemeFromExtension()` **pull sync**) → host `ThemeRegistryImpl` (catalog + active) → `ui.theme.list/set` | renderer `theme` store → `theme/vars.ts` → CSS variables + `color-scheme`                                                                          |
 
 The `initialConfig` memory layer has priority 1000, higher than every plugin provider — a plugin's `set()` always writes the memory layer. That is the intended "host config wins" semantics.
 
@@ -488,7 +488,7 @@ Kernel `PluginInfo` / `LoadedPlugin` / `HealthReport` carry container handles, p
 - `health.report` is trimmed by hand in `method-handlers.ts` to `{status, plugins:[{id,state,status,message?}]}`.
 - Frontend `bridge-types.ts` is the explicit whitelist of DTOs.
 
-Cost: every method and event needs a hand-written projection, and new kernel fields do not propagate automatically. Benefit: the leak surface is exactly **8 methods + 5 events**, two enumerable sets anchored to the real `Topics` values by contract tests. See [`03-frontend-ipc.md`](03-frontend-ipc.md) §3 for the lists.
+Cost: every method and event needs a hand-written projection, and new kernel fields do not propagate automatically. Benefit: the leak surface is exactly **15 methods + 5 events**, two enumerable sets anchored to the real `Topics` values by contract tests. See [`03-frontend-ipc.md`](03-frontend-ipc.md) §3 for the lists.
 
 ### 7.3 Single source of IPC contract
 
@@ -568,7 +568,7 @@ A class would drag a prototype chain into the bundle and `static create` would d
 `worker_threads` provides no V8 sandbox; worker code still has full Node capability. Narrowing the goal to "one plugin's failure cannot take down the kernel" is the honest framing. The real security boundary is the kernel-side `CapabilityGuard` plus the RPC allowlist.
 
 **D6 · Exact IPC allowlist matching**
-8 methods + 5 events enumerated as `Set<string>` (prefix matching would hand over an entire namespace). Judgment happens in the main process; preload only forwards. Cost: adding an IPC method touches two files (contract + implementation table), and forgetting one is a compile error.
+15 methods + 5 events enumerated as `Set<string>` (prefix matching would hand over an entire namespace). Judgment happens in the main process; preload only forwards. Cost: adding an IPC method touches two files (contract + implementation table), and forgetting one is a compile error.
 
 **D7 · DTO reduction instead of passing kernel objects through**
 The leak surface shrinks to two enumerable sets; the cost is hand-written projections and no automatic propagation of new kernel fields.
@@ -620,9 +620,9 @@ Command-style methods must be implemented as `null` (plugins respond the topic d
 
 ## 11. Known limitations and unwired surface
 
-| #   | Symptom                                                            | Nature                                                                             |
-| --- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| L1  | The three `*.replace` points only support startup-time replacement | Runtime replacement would drop `SerialScheduler` in-flight tasks; undesigned       |
+| #   | Symptom                                                                                                                                                      | Nature                                                                                                                                                        |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| L1  | The three `*.replace` points only support startup-time replacement                                                                                           | Runtime replacement would drop `SerialScheduler` in-flight tasks; undesigned                                                                                  |
 | L2  | On Windows only the squirrel maker is usable (verified: produces a `Setup.exe` carrying `resources/plugins-dist/`); the deb/rpm makers need Linux toolchains | Platform limit; if `out/` holds files locked by another process the packager's cleanup is aborted by this machine's safe-delete shim — clear `out/` and retry |
 
 ---

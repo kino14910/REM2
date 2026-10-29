@@ -47,7 +47,7 @@ Current verification baseline:
 
 ```
 pnpm typecheck:all    → 0 errors (3 tsconfigs)
-pnpm test:run         → 41 files / 327 cases green (~15s)
+pnpm test:run         → 43 files / 355 cases green (~15s)
 pnpm dev --exit-after-start → started=7 failed=0
 ```
 

@@ -85,7 +85,9 @@ plugins/my-plugin/
 }
 ```
 
-`manifest-validator` 在**发现阶段**校验清单，`manifest.schema.json` 是同一套规则的 JSON Schema 版本。改校验规则必须同时改两处。
+`manifest-validator` 在**发现阶段**校验清单，本地安装复用同一校验器；`manifest.schema.json` 是同一套规则的 JSON Schema 版本。改校验规则必须同时改两处。
+
+安装 / 启停 / 卸载、用户插件目录、状态与路径安全见 [`05-plugin-management.md`](05-plugin-management.md)。安装只接受已构建目录，默认禁用，不执行插件代码。
 
 ### 3.1 `entry` 为什么必须是 `dist/index.js`
 
@@ -115,7 +117,9 @@ plugins/my-plugin/
 **失败语义**：
 
 - `Load` / `Initialize` / `Start` 失败是**致命**的 → 逆序回滚已执行阶段 → 插件 `Failed`。
-- `Discover` 失败或软依赖缺失是**非致命**的 → `Degraded`，其余插件继续运行。
+- `Discover` 失败或软依赖缺失是**非致命**的 → `Degraded`，其余插件继续运行。健康信息会写明缺失项：`missing optional dependency: <id>`。
+- 软依赖随后被启用时，内核会重新评估并把该插件恢复为 `Active`（无需重启插件服务）；`enablePlugin` 幂等，可在 `Degraded` 状态上再次调用以强制重算。
+- 仅因软依赖缺失而 `Degraded` 的插件会被记录；`Active` / `Failed` / 卸载后自动清除该记录，避免误恢复。
 
 ---
 
