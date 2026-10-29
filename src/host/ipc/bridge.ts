@@ -16,6 +16,7 @@ import {
   ALLOWED_EVENT_SET,
   ALLOWED_METHOD_SET,
   Ipc,
+  channels,
   type AllowedEvent,
   type IpcEventPayload,
   type IpcRequest,
@@ -115,14 +116,16 @@ export class IpcBridge {
 
     try {
       const result = await this.bus.request(req.method, req.args, {
-        timeoutMs: 5000,
+        timeoutMs: timeoutFor(req.method),
       })
       this.reply({ id: req.id ?? '', ok: true, result })
     } catch (error) {
+      const code = (error as { code?: unknown }).code
       this.reply({
         id: req.id ?? '',
         ok: false,
         error: (error as Error).message,
+        ...(typeof code === 'string' ? { errorCode: code } : {}),
       })
     }
   }
@@ -130,4 +133,17 @@ export class IpcBridge {
   private reply(res: IpcResponse): void {
     this.transport?.send(Ipc.Invoke, res)
   }
+}
+
+function timeoutFor(method: string): number {
+  if (method === channels.pluginInstallFromDirectory) return 60_000
+  if (method === channels.pluginRestart) return 60_000
+  if (
+    method === channels.pluginEnable ||
+    method === channels.pluginDisable ||
+    method === channels.pluginUninstall
+  ) {
+    return 15_000
+  }
+  return 5000
 }

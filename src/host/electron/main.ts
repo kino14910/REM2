@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import process from 'node:process'
+import path from 'node:path'
 import { Kernel } from '../../kernel/kernel.js'
 import { createDeps } from '../../kernel/composition.js'
 import { KernelTokens } from '../../kernel/contracts/kernel-tokens.js'
@@ -10,6 +11,8 @@ import { builtinPluginsRoot } from '../cli/paths.js'
 import { createWindow } from './window.js'
 import type { EventBus } from '../../kernel/contracts/event-bus.js'
 import { ThemeRegistryImpl } from './theme-registry.js'
+import { LocalPluginManager } from '../plugins/local-plugin-manager.js'
+import { PluginStateStore } from '../plugins/state-store.js'
 
 let kernel: Kernel | null = null
 let bridge: IpcBridge | null = null
@@ -64,12 +67,24 @@ const themeRegistry = new ThemeRegistryImpl()
  * appear in exactly one place repo-wide (`shared/ipc-contract.ts`).
  * This file therefore contains no method-name strings — one less place to drift.
  */
-function registerWhitelistedMethods(kernelRef: Kernel): void {
+function registerWhitelistedMethods(
+  kernelRef: Kernel,
+  pluginManager: LocalPluginManager,
+): void {
   const bus = kernelRef.root.resolve<EventBus>(KernelTokens.EventBus)
   const handlers = createMethodHandlers({
     kernel: kernelRef,
     bus,
     themeRegistry,
+    pluginManager,
+    choosePluginDirectory: async () => {
+      const result = await dialog.showOpenDialog({
+        title: 'Install a built plugin directory',
+        buttonLabel: 'Install',
+        properties: ['openDirectory'],
+      })
+      return result.canceled ? undefined : result.filePaths[0]
+    },
   })
   for (const [method, handler] of Object.entries(handlers)) {
     // `null` = not implemented by the host (`command.execute` is responded by the command plugin itself).
@@ -79,11 +94,18 @@ function registerWhitelistedMethods(kernelRef: Kernel): void {
 }
 
 async function startKernel(): Promise<void> {
+  const userData = app.getPath('userData')
+  const userRoot = path.join(userData, 'plugins')
+  const builtinRoot = builtinPluginsRoot()
+  const state = new PluginStateStore(path.join(userData, 'plugin-manager.json'))
+  await state.load()
+
   kernel = new Kernel(
     createDeps({
       id: 'rem2-kernel-electron',
-      roots: [],
-      builtinRoot: builtinPluginsRoot(),
+      roots: [userRoot],
+      disabledPlugins: state.ids(),
+      builtinRoot,
       startTimeoutMs: 5000,
       stopTimeoutMs: 5000,
       legacyFallback: false,
@@ -95,7 +117,14 @@ async function startKernel(): Promise<void> {
   // Host-provided UI-side service: exposed only via KernelTokens, never special-cased for any specific plugin.
   kernel.root.registerInstance(KernelTokens.UiThemeRegistry, themeRegistry)
 
-  registerWhitelistedMethods(kernel)
+  const pluginManager = new LocalPluginManager({
+    kernel,
+    userRoot,
+    dataRoot: path.join(userData, 'plugin-data'),
+    state,
+    builtinRoot,
+  })
+  registerWhitelistedMethods(kernel, pluginManager)
   await kernel.start()
 
   const bus = kernel.root.resolve<EventBus>(KernelTokens.EventBus)

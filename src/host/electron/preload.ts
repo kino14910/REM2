@@ -32,7 +32,13 @@ const rem2Api: Rem2Bridge = {
         if (!payload || payload.id !== id) return
         ipcRenderer.removeListener(Ipc.Invoke, handler)
         if (payload.ok) resolve(payload.result)
-        else reject(new Error(payload.error ?? 'Unknown error'))
+        else {
+          const error = new Error(payload.error ?? 'Unknown error') as Error & {
+            code?: string
+          }
+          if (payload.errorCode) error.code = payload.errorCode
+          reject(error)
+        }
       }
       ipcRenderer.on(Ipc.Invoke, handler)
       ipcRenderer.send(Ipc.Invoke, { id, method, args })

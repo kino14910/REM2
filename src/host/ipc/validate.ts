@@ -12,9 +12,11 @@
  * meaningless empty-string lookup.
  */
 
+import { isValidPluginId } from '../../kernel/discovery/manifest-validator.js'
+
 /** Narrows unknown args to an object or throws with an explicit message. */
 function asObject(args: unknown): Record<string, unknown> {
-  if (typeof args !== 'object' || args === null) {
+  if (typeof args !== 'object' || args === null || Array.isArray(args)) {
     throw new Error('invalid args: expected an object')
   }
   return args as Record<string, unknown>
@@ -54,4 +56,16 @@ export function uiEventArgsOf(args: unknown): {
 /** Validates `{ themeId: string }` and returns the theme id. */
 export function themeIdOf(args: unknown): string {
   return nonEmptyString(asObject(args).themeId, 'themeId')
+}
+
+export function pluginIdOf(args: unknown): string {
+  const pluginId = nonEmptyString(asObject(args).pluginId, 'pluginId')
+  if (!isValidPluginId(pluginId)) {
+    throw new Error('invalid args: pluginId has an invalid format')
+  }
+  return pluginId
+}
+
+export function noArgsOf(args: unknown): void {
+  if (args !== undefined) throw new Error('invalid args: expected no arguments')
 }

@@ -43,7 +43,15 @@ import type {
   ThemeDefinition,
   ThemeRegistry,
 } from '../../kernel/contracts/ui.js'
-import { panelIdOf, themeIdOf, uiEventArgsOf } from './validate.js'
+import {
+  noArgsOf,
+  panelIdOf,
+  pluginIdOf,
+  themeIdOf,
+  uiEventArgsOf,
+} from './validate.js'
+import type { LocalPluginManager } from '../plugins/local-plugin-manager.js'
+import { PluginManagementError } from '../plugins/errors.js'
 
 /** Handler for a single method (args come from the renderer and are untrusted at runtime). */
 export type MethodHandler = (args: unknown) => unknown | Promise<unknown>
@@ -54,6 +62,18 @@ export interface MethodContext {
   kernel: Kernel
   bus: EventBus
   themeRegistry: ThemeRegistry
+  pluginManager?: LocalPluginManager
+  choosePluginDirectory?: () => Promise<string | undefined>
+}
+
+function pluginManagerOf(ctx: MethodContext): LocalPluginManager {
+  if (!ctx.pluginManager) {
+    throw new PluginManagementError(
+      'E_MANAGER_UNAVAILABLE',
+      'plugin manager is unavailable',
+    )
+  }
+  return ctx.pluginManager
 }
 
 /**
@@ -156,6 +176,58 @@ export const METHOD_FACTORIES = {
       if (!panel) return { ok: false }
       await bus.request(panel.command, { kind, payload })
       return { ok: true }
+    }
+  },
+
+  [channels.pluginList]: (ctx): MethodHandler => {
+    return args => {
+      noArgsOf(args)
+      return pluginManagerOf(ctx).list()
+    }
+  },
+
+  [channels.pluginDetail]: (ctx): MethodHandler => {
+    return args => pluginManagerOf(ctx).detail(pluginIdOf(args))
+  },
+
+  [channels.pluginInstallFromDirectory]: (ctx): MethodHandler => {
+    return async args => {
+      noArgsOf(args)
+      if (!ctx.choosePluginDirectory) {
+        throw new PluginManagementError(
+          'E_MANAGER_UNAVAILABLE',
+          'plugin directory chooser is unavailable',
+        )
+      }
+      const source = await ctx.choosePluginDirectory()
+      if (!source) {
+        return {
+          ok: true,
+          changed: false,
+          restartRequired: false,
+          message: 'Installation cancelled.',
+        }
+      }
+      return await pluginManagerOf(ctx).installFromDirectory(source)
+    }
+  },
+
+  [channels.pluginEnable]: (ctx): MethodHandler => {
+    return args => pluginManagerOf(ctx).enable(pluginIdOf(args))
+  },
+
+  [channels.pluginDisable]: (ctx): MethodHandler => {
+    return args => pluginManagerOf(ctx).disable(pluginIdOf(args))
+  },
+
+  [channels.pluginUninstall]: (ctx): MethodHandler => {
+    return args => pluginManagerOf(ctx).uninstall(pluginIdOf(args))
+  },
+
+  [channels.pluginRestart]: (ctx): MethodHandler => {
+    return args => {
+      noArgsOf(args)
+      return pluginManagerOf(ctx).restart()
     }
   },
 
