@@ -56,4 +56,25 @@ export const EVENT_FORWARD_MAP = {
     topic: Topics.KernelReady,
     toDto: p => p,
   },
+  [events.pluginDownloadProgress]: {
+    topic: Topics.PluginDownloadProgress,
+    toDto: p => {
+      const v = p as {
+        operationId: string
+        phase: string
+        receivedBytes?: number
+        totalBytes?: number
+      }
+      return {
+        operationId: v.operationId,
+        phase: v.phase,
+        ...(typeof v.receivedBytes === 'number'
+          ? { receivedBytes: v.receivedBytes }
+          : {}),
+        ...(typeof v.totalBytes === 'number'
+          ? { totalBytes: v.totalBytes }
+          : {}),
+      }
+    },
+  },
 } satisfies EventForwardMap

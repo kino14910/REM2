@@ -13,6 +13,10 @@
  */
 
 import { isValidPluginId } from '../../kernel/discovery/manifest-validator.js'
+import { isSha256 } from '../plugins/integrity.js'
+
+const MAX_URL_LENGTH = 2048
+const OPERATION_ID_RE = /^[A-Za-z0-9._:-]{1,64}$/
 
 /** Narrows unknown args to an object or throws with an explicit message. */
 function asObject(args: unknown): Record<string, unknown> {
@@ -68,4 +72,92 @@ export function pluginIdOf(args: unknown): string {
 
 export function noArgsOf(args: unknown): void {
   if (args !== undefined) throw new Error('invalid args: expected no arguments')
+}
+
+/**
+ * Validates `{ url }` for remote sources: HTTPS only, bounded length.
+ * Host allowlisting happens later in the downloader, not here.
+ */
+export function remoteUrlOf(args: unknown, field = 'url'): string {
+  const value = nonEmptyString(asObject(args)[field], field)
+  if (value.length > MAX_URL_LENGTH) {
+    throw new Error(
+      `invalid args: ${field} must be at most ${MAX_URL_LENGTH} characters`,
+    )
+  }
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    throw new Error(`invalid args: ${field} must be a valid URL`)
+  }
+  if (url.protocol !== 'https:') {
+    throw new Error(`invalid args: ${field} must use https`)
+  }
+  return value
+}
+
+/** Validates `{ operationId }` (renderer-generated; used for progress and cancellation). */
+export function operationIdOf(args: unknown): string {
+  const value = nonEmptyString(asObject(args).operationId, 'operationId')
+  if (!OPERATION_ID_RE.test(value)) {
+    throw new Error(
+      'invalid args: operationId must be 1..64 characters of [A-Za-z0-9._:-]',
+    )
+  }
+  return value
+}
+
+/** Validates `{ url, operationId? }` for remote inspection. */
+export function inspectRemoteArgsOf(args: unknown): {
+  url: string
+  operationId?: string
+} {
+  const obj = asObject(args)
+  const url = remoteUrlOf(obj)
+  return obj.operationId === undefined
+    ? { url }
+    : { url, operationId: operationIdOf(obj) }
+}
+
+/** Validates `{ operationId, url, sha256? }` for remote installation. */
+export function installRemoteArgsOf(args: unknown): {
+  operationId: string
+  url: string
+  sha256?: string
+} {
+  const obj = asObject(args)
+  const operationId = operationIdOf(obj)
+  const url = remoteUrlOf(obj)
+  if (obj.sha256 === undefined) return { operationId, url }
+  if (!isSha256(obj.sha256)) {
+    throw new Error(
+      'invalid args: sha256 must be exactly 64 hexadecimal characters',
+    )
+  }
+  return { operationId, url, sha256: obj.sha256.toLowerCase() }
+}
+
+/** Validates `{ pluginId? }` for update checks. */
+export function updateCheckArgsOf(args: unknown): { pluginId?: string } {
+  if (args === undefined) return {}
+  const obj = asObject(args)
+  if (obj.pluginId === undefined) return {}
+  const pluginId = nonEmptyString(obj.pluginId, 'pluginId')
+  if (!isValidPluginId(pluginId)) {
+    throw new Error('invalid args: pluginId has an invalid format')
+  }
+  return { pluginId }
+}
+
+/** Validates `{ operationId, pluginId }` for applying an update. */
+export function updateInstallArgsOf(args: unknown): {
+  operationId: string
+  pluginId: string
+} {
+  const obj = asObject(args)
+  return {
+    operationId: operationIdOf(obj),
+    pluginId: pluginIdOf(obj),
+  }
 }

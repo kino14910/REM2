@@ -44,13 +44,21 @@ import type {
   ThemeRegistry,
 } from '../../kernel/contracts/ui.js'
 import {
+  inspectRemoteArgsOf,
+  installRemoteArgsOf,
   noArgsOf,
+  operationIdOf,
   panelIdOf,
   pluginIdOf,
   themeIdOf,
   uiEventArgsOf,
+  updateCheckArgsOf,
+  updateInstallArgsOf,
 } from './validate.js'
-import type { LocalPluginManager } from '../plugins/local-plugin-manager.js'
+import type {
+  LocalPluginManager,
+  RemoteProgress,
+} from '../plugins/local-plugin-manager.js'
 import { PluginManagementError } from '../plugins/errors.js'
 
 /** Handler for a single method (args come from the renderer and are untrusted at runtime). */
@@ -74,6 +82,31 @@ function pluginManagerOf(ctx: MethodContext): LocalPluginManager {
     )
   }
   return ctx.pluginManager
+}
+
+/**
+ * Project manager progress into the kernel event bus.
+ *
+ * The operation id comes from the renderer so progress can be correlated
+ * before the call returns; without one there is nothing to correlate.
+ */
+function progressSinkFor(
+  ctx: MethodContext,
+  operationId: string | undefined,
+): ((progress: RemoteProgress) => void) | undefined {
+  if (!operationId) return undefined
+  return progress => {
+    void ctx.bus.emit(Topics.PluginDownloadProgress, {
+      operationId,
+      phase: progress.phase,
+      ...(progress.receivedBytes !== undefined
+        ? { receivedBytes: progress.receivedBytes }
+        : {}),
+      ...(progress.totalBytes !== undefined
+        ? { totalBytes: progress.totalBytes }
+        : {}),
+    })
+  }
 }
 
 /**
@@ -228,6 +261,55 @@ export const METHOD_FACTORIES = {
     return args => {
       noArgsOf(args)
       return pluginManagerOf(ctx).restart()
+    }
+  },
+
+  [channels.pluginRemoteInspect]: (ctx): MethodHandler => {
+    return async args => {
+      const { url, operationId } = inspectRemoteArgsOf(args)
+      const sink = progressSinkFor(ctx, operationId)
+      return await pluginManagerOf(ctx).inspectRemote({
+        url,
+        ...(operationId ? { operationId } : {}),
+        ...(sink ? { onProgress: sink } : {}),
+      })
+    }
+  },
+
+  [channels.pluginInstallFromRemote]: (ctx): MethodHandler => {
+    return async args => {
+      const { operationId, url, sha256 } = installRemoteArgsOf(args)
+      return await pluginManagerOf(ctx).installFromRemote(
+        { operationId, url, ...(sha256 ? { sha256 } : {}) },
+        progressSinkFor(ctx, operationId),
+      )
+    }
+  },
+
+  [channels.pluginDownloadCancel]: (ctx): MethodHandler => {
+    return args => {
+      const operationId = operationIdOf(args)
+      return {
+        ok: true,
+        cancelled: pluginManagerOf(ctx).cancelDownload(operationId),
+      }
+    }
+  },
+
+  [channels.pluginUpdateCheck]: (ctx): MethodHandler => {
+    return args => {
+      const { pluginId } = updateCheckArgsOf(args)
+      return pluginManagerOf(ctx).checkUpdates(pluginId)
+    }
+  },
+
+  [channels.pluginUpdateInstall]: (ctx): MethodHandler => {
+    return async args => {
+      const { operationId, pluginId } = updateInstallArgsOf(args)
+      return await pluginManagerOf(ctx).applyUpdate(
+        { operationId, pluginId },
+        progressSinkFor(ctx, operationId),
+      )
     }
   },
 

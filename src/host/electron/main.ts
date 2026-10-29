@@ -15,6 +15,7 @@ import type { EventBus } from '../../kernel/contracts/event-bus.js'
 import { ThemeRegistryImpl } from './theme-registry.js'
 import { LocalPluginManager } from '../plugins/local-plugin-manager.js'
 import { PluginStateStore } from '../plugins/state-store.js'
+import { PluginProvenanceStore } from '../plugins/provenance-store.js'
 
 let kernel: Kernel | null = null
 let bridge: IpcBridge | null = null
@@ -103,6 +104,12 @@ async function startKernel(): Promise<void> {
   const builtinRoot = builtinPluginsRoot()
   const state = new PluginStateStore(path.join(userData, 'plugin-manager.json'))
   await state.load()
+  // Remote provenance (source URL + published digest) is only readable here:
+  // the renderer never sees paths, and all network/file work stays in main.
+  const provenance = new PluginProvenanceStore(
+    path.join(userData, 'plugin-provenance.json'),
+  )
+  await provenance.load()
 
   kernel = new Kernel(
     createDeps({
@@ -127,6 +134,8 @@ async function startKernel(): Promise<void> {
     dataRoot: path.join(userData, 'plugin-data'),
     state,
     builtinRoot,
+    provenance,
+    packagesRoot: path.join(userData, 'plugin-packages'),
   })
   registerWhitelistedMethods(kernel, pluginManager)
   await kernel.start()

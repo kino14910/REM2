@@ -136,6 +136,14 @@ export class IpcBridge {
 }
 
 function timeoutFor(method: string): number {
+  if (
+    method === channels.pluginInstallFromRemote ||
+    method === channels.pluginUpdateInstall
+  ) {
+    return 120_000
+  }
+  if (method === channels.pluginRemoteInspect) return 60_000
+  if (method === channels.pluginUpdateCheck) return 30_000
   if (method === channels.pluginInstallFromDirectory) return 60_000
   if (method === channels.pluginRestart) return 60_000
   if (
