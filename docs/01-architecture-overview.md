@@ -40,9 +40,9 @@ graph BT
         KC["di / lifecycle / dependency / discovery / loader / isolation /<br/>security / observability / config / events / scheduler / semver /<br/>bootstrap / registry / extensions / context / util"]
     end
 
-    subgraph L5["tests/ —— 43 文件 / 355 用例"]
+    subgraph L5["tests/ —— 50 文件 / 466 用例"]
         TA["contract/（5）：kernel-deps · plugin-contract · ipc-contract ·<br/>extension-points · build-artifact"]
-        TB["unit/（20）+ integration/（18）"]
+        TB["unit/（26）+ integration/（19）"]
     end
 
     FB -->|"window.rem2（唯一通道）"| HB
@@ -487,7 +487,7 @@ unloadPlugin(pluginId)
 - `health.report` 在 `method-handlers.ts` 里手工裁剪为 `{status, plugins:[{id,state,status,message?}]}`。
 - 前端 `bridge-types.ts` 是 DTO 的显式白名单。
 
-代价：每个方法 / 事件都要手写投影，内核加字段不会自动传导到前端。收益：泄漏面收敛为 **14 方法 + 5 事件**两个穷举集合，且两者与内核 `Topics` 真值由契约测试锚定。方法与事件清单见 [`03-frontend-ipc.md`](03-frontend-ipc.md) §3。
+代价：每个方法 / 事件都要手写投影，内核加字段不会自动传导到前端。收益：泄漏面收敛为 **20 方法 + 6 事件**两个穷举集合，且两者与内核 `Topics` 真值由契约测试锚定。方法与事件清单见 [`03-frontend-ipc.md`](03-frontend-ipc.md) §3。
 
 ### 7.3 IPC 契约的单一来源
 
@@ -567,7 +567,7 @@ class 会在 bundle 里引入原型链，且 `static create` 依赖模块级状�
 `worker_threads` 不提供 V8 沙箱，Worker 内代码仍有完整 Node 能力。把目标收窄为「单插件故障不拖垮内核」才诚实。真正的安全边界是内核侧 `CapabilityGuard` + RPC 白名单。
 
 **D6 · IPC 白名单精确匹配**
-14 方法 + 5 事件穷举为 `Set<string>`（前缀匹配等于把整个命名空间交出去）。判定在主进程，preload 只透传。代价：新增一个 IPC 方法要动两个文件（契约 + 实现表），漏了就是编译错误。
+20 方法 + 6 事件穷举为 `Set<string>`（前缀匹配等于把整个命名空间交出去）。判定在主进程，preload 只透传。代价：新增一个 IPC 方法要动两个文件（契约 + 实现表），漏了就是编译错误。
 
 **D7 · DTO 降维，不透传内核对象**
 泄漏面收敛为两个穷举集合；代价是手写投影、内核加字段不自动到前端。

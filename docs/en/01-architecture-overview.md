@@ -40,9 +40,9 @@ graph BT
         KC["di / lifecycle / dependency / discovery / loader / isolation /<br/>security / observability / config / events / scheduler / semver /<br/>bootstrap / registry / extensions / context / util"]
     end
 
-    subgraph L5["tests/ — 43 files / 355 cases"]
+    subgraph L5["tests/ — 50 files / 466 cases"]
         TA["contract/ (5): kernel-deps · plugin-contract · ipc-contract ·<br/>extension-points · build-artifact"]
-        TB["unit/ (20) + integration/ (18)"]
+        TB["unit/ (26) + integration/ (19)"]
     end
 
     FB -->|"window.rem2 (only channel)"| HB
@@ -488,7 +488,7 @@ Kernel `PluginInfo` / `LoadedPlugin` / `HealthReport` carry container handles, p
 - `health.report` is trimmed by hand in `method-handlers.ts` to `{status, plugins:[{id,state,status,message?}]}`.
 - Frontend `bridge-types.ts` is the explicit whitelist of DTOs.
 
-Cost: every method and event needs a hand-written projection, and new kernel fields do not propagate automatically. Benefit: the leak surface is exactly **15 methods + 5 events**, two enumerable sets anchored to the real `Topics` values by contract tests. See [`03-frontend-ipc.md`](03-frontend-ipc.md) §3 for the lists.
+Cost: every method and event needs a hand-written projection, and new kernel fields do not propagate automatically. Benefit: the leak surface is exactly **20 methods + 6 events**, two enumerable sets anchored to the real `Topics` values by contract tests. See [`03-frontend-ipc.md`](03-frontend-ipc.md) §3 for the lists.
 
 ### 7.3 Single source of IPC contract
 
@@ -568,7 +568,7 @@ A class would drag a prototype chain into the bundle and `static create` would d
 `worker_threads` provides no V8 sandbox; worker code still has full Node capability. Narrowing the goal to "one plugin's failure cannot take down the kernel" is the honest framing. The real security boundary is the kernel-side `CapabilityGuard` plus the RPC allowlist.
 
 **D6 · Exact IPC allowlist matching**
-15 methods + 5 events enumerated as `Set<string>` (prefix matching would hand over an entire namespace). Judgment happens in the main process; preload only forwards. Cost: adding an IPC method touches two files (contract + implementation table), and forgetting one is a compile error.
+20 methods + 6 events enumerated as `Set<string>` (prefix matching would hand over an entire namespace). Judgment happens in the main process; preload only forwards. Cost: adding an IPC method touches two files (contract + implementation table), and forgetting one is a compile error.
 
 **D7 · DTO reduction instead of passing kernel objects through**
 The leak surface shrinks to two enumerable sets; the cost is hand-written projections and no automatic propagation of new kernel fields.

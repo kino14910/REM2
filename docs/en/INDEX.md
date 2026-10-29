@@ -12,9 +12,9 @@
 | --- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
 | 01  | [architecture-overview](01-architecture-overview.md) | **Authoritative architecture**: layers and dependency direction, per-file responsibilities, two-layer lifecycle, 12 extension points, isolation and permissions, call chains, data paths, build artifacts, 9 design decisions, extension flow, known limits, contract-test list | everyone starts here    |
 | 02  | [plugin-api](02-plugin-api.md)                       | **Plugin development guide**: `definePlugin`, `plugin.json` fields, lifecycle hooks, `PluginContext`, extension points, service tokens, command chain, isolation modes, error codes, self-check list                                                                            | plugin authors          |
-| 03  | [frontend-ipc](03-frontend-ipc.md)                   | **Frontend and IPC contract**: process and build boundaries, frontend layout, 15 methods + 5 events allowlist, DTOs, stores and the event bridge, theme path, vite/CSP constraints                                                                                              | frontend / host authors |
+| 03  | [frontend-ipc](03-frontend-ipc.md)                   | **Frontend and IPC contract**: process and build boundaries, frontend layout, 20 methods + 6 events allowlist, DTOs, stores and the event bridge, theme path, vite/CSP constraints                                                                                              | frontend / host authors |
 | 04  | [development-guide](04-development-guide.md)         | **Development guide**: environment, command matrix, build and packaging specs, tsconfig boundaries, extension flow, debugging, pitfalls, code conventions                                                                                                                       | anyone changing code    |
-| 05  | [plugin-management](05-plugin-management.md)         | **Local plugin management**: manifest checks, install/enable/disable/uninstall, directories and states, path safety, data preservation, IPC/UI, known limits                                                                                                                    | host / ops developers   |
+| 05  | [plugin-management](05-plugin-management.md)         | **Plugin management**: manifest checks, local and remote installs, updates and rollback, provenance, directories and states, path safety, data preservation, IPC/UI, known limits                                                                                               | host / ops developers   |
 
 **Diagrams**: [`class-diagram-v2.mermaid`](class-diagram-v2.mermaid) (class diagram), [`sequence-diagram-v2.mermaid`](sequence-diagram-v2.mermaid) (5 main-chain sequence diagrams).
 
@@ -35,7 +35,7 @@
 pnpm install
 pnpm dev                      # start the kernel in terminal form (7 builtin plugins)
 pnpm start                    # Electron desktop app (renderer is Svelte 5)
-pnpm test:run                 # full suite (43 files / 355 cases)
+pnpm test:run                 # full suite (50 files / 466 cases)
 pnpm typecheck:all            # three tsconfigs
 ```
 

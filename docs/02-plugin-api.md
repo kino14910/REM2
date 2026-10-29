@@ -85,9 +85,9 @@ plugins/my-plugin/
 }
 ```
 
-`manifest-validator` 在**发现阶段**校验清单，本地安装复用同一校验器；`manifest.schema.json` 是同一套规则的 JSON Schema 版本。改校验规则必须同时改两处。
+`manifest-validator` 在**发现阶段**校验清单，本地安装与远程 ZIP 包复用同一校验器；`manifest.schema.json` 是同一套规则的 JSON Schema 版本。改校验规则必须同时改两处。
 
-安装 / 启停 / 卸载、用户插件目录、状态与路径安全见 [`05-plugin-management.md`](05-plugin-management.md)。安装只接受已构建目录，默认禁用，不执行插件代码。
+安装 / 启停 / 卸载、用户插件目录、状态与路径安全见 [`05-plugin-management.md`](05-plugin-management.md)。本地安装只接受已构建目录，远程安装只接受带可信摘要的 ZIP 包；两者都默认禁用，不执行插件代码。
 
 ### 3.1 `entry` 为什么必须是 `dist/index.js`
 

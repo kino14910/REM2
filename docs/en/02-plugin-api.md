@@ -85,9 +85,9 @@ Constraints:
 }
 ```
 
-`manifest-validator` validates the manifest during **discovery**; local installation reuses the same validator, and `manifest.schema.json` is the JSON Schema form of the same rules. Changing validation rules requires changing both.
+`manifest-validator` validates the manifest during **discovery**; local installation and remote ZIP packages reuse the same validator, and `manifest.schema.json` is the JSON Schema form of the same rules. Changing validation rules requires changing both.
 
-Install / enable / disable / uninstall, user plugin roots, state and path safety are documented in [`05-plugin-management.md`](05-plugin-management.md). Installation accepts only pre-built directories, defaults to disabled, and never executes plugin code.
+Install / enable / disable / uninstall, user plugin roots, state and path safety are documented in [`05-plugin-management.md`](05-plugin-management.md). Local installation accepts only pre-built directories and remote installation only ZIP packages with a trusted digest; both default to disabled and never execute plugin code.
 
 ### 3.1 Why `entry` must be `dist/index.js`
 

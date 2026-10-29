@@ -14,6 +14,8 @@
 | 运行态          | `Kernel.pluginRegistry` + `Kernel.lastStartResult`                       |
 | 禁用意图        | `<userData>/plugin-manager.json`                                         |
 | 插件配置 / 数据 | 插件目录的 `config/`、`data/`，卸载时迁入 `<userData>/plugin-data/<id>/` |
+| 远程来源记录    | `<userData>/plugin-provenance.json`（URL + 发布方摘要 + 安装时间）       |
+| 远程包缓存      | `<userData>/plugin-packages/<sha256(url)>.zip`（TTL 10 分钟）            |
 | 可用 IPC 方法   | `src/shared/ipc-contract.ts`                                             |
 
 禁用意图与运行态分开保存：启用但启动失败的插件保持 `enabled: true`、运行态 `Failed`，用户可直接重试。
@@ -24,6 +26,8 @@ Electron 下目录固定为：
 <userData>/
 ├── plugins/<plugin-id>/          # 用户安装目录（可写）
 ├── plugin-manager.json           # { version: 1, disabled: string[] }
+├── plugin-provenance.json        # { version: 1, entries: { <id>: { kind, url, sha256, … } } }
+├── plugin-packages/<hash>.zip    # 远程下载缓存（10 分钟内复用）
 └── plugin-data/<plugin-id>/      # 卸载后保留的 config/ 与 data/
 ```
 
@@ -99,7 +103,120 @@ Electron 下目录固定为：
 
 ---
 
-## 5. 启用与禁用
+## 5. 远程安装
+
+远程安装拆成 **预览（inspect）→ 用户确认（install）** 两步，renderer 只提供 URL，下载、解压、校验全部在主进程完成。
+
+### 来源与摘要
+
+| 输入                                                            | 解析方式                                                                               |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `github.com/<owner>/<repo>/releases/download/<tag>/<asset>.zip` | 直链资产；仍会尝试读取同 tag 的 release 元数据以取得摘要                               |
+| `github.com/<owner>/<repo>/releases/tag/<tag>`                  | GitHub API `releases/tags/<tag>`，必须有且仅有 1 个 `.zip` 资产                        |
+| `github.com/<owner>/<repo>` / `.../releases/latest`             | GitHub API `releases/latest`，同样要求唯一 `.zip` 资产                                 |
+| 其它 `https://` 直链（路径以 `.zip` 结尾）                      | 直接下载；版本号尽力从文件名推断，**没有可信摘要**，`inspect` 返回 `sha256: undefined` |
+
+摘要只来自两处：release 资产的 `digest` 字段（`sha256:<hex>`）或同名 `<asset>.sha256` sidecar 文件。两者都没有就返回 `undefined`，绝不使用下载后自算的摘要冒充发布方摘要。
+
+### inspect（`plugin.remote.inspect`）
+
+1. 解析发布元数据 → 得到 `downloadUrl`、版本、发布时间、notes、发布方摘要与大小。
+2. 下载到 `<userData>/plugin-packages/<sha256(downloadUrl)>.zip`；命中 10 分钟内的缓存则跳过下载。仅 HTTPS，主机必须在 `github.com` / `api.github.com` / `objects.githubusercontent.com` / `release-assets.githubusercontent.com` allowlist 内；重定向手动跟随，拒绝协议降级与跨 allowlist 跳转，最多 5 次；默认 50 MiB 上限、30 s 超时。
+3. 若元数据带摘要则校验（`verifyFileDigest`）。
+4. 解压到 `<userRoot>/.inspect-*` 临时目录：EOCD + central directory 手工解析，支持 store / deflate，CRC32 校验；拒绝 zip64、加密、多卷、绝对路径、`..`、反斜杠、盘符、符号链接与特殊文件；默认 2000 文件 / 100 MiB / 单文件 25 MiB。
+5. 读取并校验 `plugin.json`、entry 存在性、版本兼容性与硬依赖可满足性（复用 `DependencyResolver`）。
+6. 返回 `PluginRemoteInspectionDto`；临时目录必删。**不写插件目录、不改禁用意图、不执行代码。**
+
+### install（`plugin.install.remote`）
+
+1. 必须有可信摘要：`release.sha256` 或调用方显式 `sha256`；缺失 → `E_DIGEST_MISSING`，不下载。
+2. 同一 id 已安装 → `E_DUPLICATE_ID`（更新走独立方法）。
+3. 下载 / 命中缓存 → 摘要校验（不匹配 `E_DIGEST_MISMATCH`）。
+4. 解压到 `<userRoot>/.install-*` → 复核 manifest → 原子 `rename` 到 `<userRoot>/<id>` → 写禁用意图。
+5. 成功后写 provenance；任一步失败删除已提交目录、回滚禁用意图并删除本次缓存，避免半安装。
+
+### 进度与取消
+
+- `operationId` 由 renderer 生成（1..64 安全字符），inspect / install / update 的下载与校验阶段通过 `plugin.download.progress` 事件推送 `{ operationId, phase, receivedBytes?, totalBytes? }`，phase 为 `downloading` / `verifying` / `extracting` / `installing`。
+- `plugin.download.cancel` 按 `operationId` 中止对应的 `AbortController`；下载中的 `.part-*` 临时文件会被清理，重复取消幂等（第二次返回 `cancelled: false`）。
+
+### 远程错误码
+
+| code                  | 含义                                                      |
+| --------------------- | --------------------------------------------------------- |
+| `E_SOURCE_INVALID`    | 非 HTTPS、主机不在 allowlist、重定向违规或 URL 形式不支持 |
+| `E_DOWNLOAD`          | 非 2xx、网络失败或响应缺少 body                           |
+| `E_DOWNLOAD_TIMEOUT`  | 超过总超时（默认 30 s）                                   |
+| `E_CANCELLED`         | 调用方取消或外部 signal 中止                              |
+| `E_PACKAGE_TOO_LARGE` | 声明或流式超过大小上限；解压文件数 / 总字节超限           |
+| `E_PACKAGE_INVALID`   | 非 ZIP、zip64、加密、多卷、未知压缩、CRC 或结构损坏       |
+| `E_PATH_ESCAPE`       | ZIP 条目绝对路径 / `..` / 反斜杠 / 盘符 / NUL             |
+| `E_UNSAFE_TREE`       | ZIP 条目为符号链接或特殊文件                              |
+| `E_DIGEST_MISSING`    | 发布方未提供摘要，安装被阻止                              |
+| `E_DIGEST_INVALID`    | 摘要不是 64 位十六进制                                    |
+| `E_DIGEST_MISMATCH`   | 下载实体与可信摘要不一致                                  |
+
+---
+
+## 6. 更新与回滚
+
+`plugin.update.check`（可选 `pluginId`）按 provenance 记录的发布源解析最新 release：
+
+- 仅比较带 provenance 的用户插件；没有 provenance 的插件不会被检查，指定单插件且缺 provenance 时返回 `E_PROVENANCE_MISSING`。
+- 版本比较复用内核 semver（`parseVersion` / `compareVersions`）；无法解析时 `hasUpdate: false`。
+- 批量检查会跳过单个不可达来源，定向检查则原样报错。
+
+`plugin.update.install`（`{ operationId, pluginId }`）步骤：
+
+1. 校验 provenance 与来源；最新版本不高于已安装版本 → `changed: false`，不落盘。
+2. 解析 / 下载 / 摘要校验 / 解压 / manifest 校验；缺发布摘要 → `E_DIGEST_MISSING`。
+3. 用新 manifest 替换旧 candidate 再跑一次 `DependencyResolver`；被 drop → `E_DEPENDENCY`，不落盘。
+4. 备份：`<userRoot>/<id>` 原子 rename 到 `<userRoot>/.backup-<id>-<ts>`（同卷）。
+5. 新版本 staging → rename 到 `<userRoot>/<id>`；把备份里的 `config/`、`data/` 合并进新目录，**已存在的用户文件不覆盖**。
+6. 保持原 `enabled` 意图；原本运行中的插件调用 `Kernel.restartPlugins(state.ids())`，并检查结果是否为 `Active` / `Degraded`。
+7. 任一步失败或新版本起不来：删除新目录、把备份 rename 回原位、再次 `restartPlugins` 恢复运行态，provenance 保持旧值，返回 `E_UPDATE_FAILED`；若回滚本身失败则 `E_ROLLBACK_FAILED`，消息里同时带出两个错误。
+8. 成功：删除备份、更新 provenance，返回 `restartRequired`（未运行中的插件为 `false`）。
+
+并发：所有管理操作串行执行；同一 `operationId` 不允许重复注册，同一插件不允许并发 update / install（`pendingByPlugin` 检查）。
+
+---
+
+## 7. 来源记录（provenance）
+
+`<userData>/plugin-provenance.json` 只记录**远程来源**：
+
+```json
+{
+  "version": 1,
+  "entries": {
+    "com.acme.hello": {
+      "kind": "remote",
+      "url": "https://github.com/acme/hello",
+      "sha256": "<发布方摘要>",
+      "publishedAt": "2026-01-01T00:00:00Z",
+      "installedAt": "2026-02-01T00:00:00Z"
+    }
+  }
+}
+```
+
+- 原子写入；文件损坏或字段非法 → `E_STATE_INVALID`；写入失败回滚内存并 `E_STATE_WRITE`。
+- `PluginDetailDto.origin` 由它投影而来（`kind: 'remote'` + URL + 摘要 + 发布时间）；renderer 只展示 URL 与摘要前 12 位，不拿路径。
+- 卸载时删除对应条目，避免对已不存在的插件继续提示更新。
+- 更新检查与更新安装只信任这里记录的 URL，不接受 renderer 传入的更新来源。
+
+---
+
+## 8. 完整性 vs 真实性
+
+- **SHA-256 只证明完整性**：下载内容与发布方给出的摘要一致，不证明发布者身份，也不能阻止发布者自己发布恶意包。
+- 当前**没有**签名验证、来源信誉评分、漏洞扫描或证书固定；GitHub 账号被盗即等于来源被盗。
+- 权限声明（`requires`）不是沙箱：远程插件与本地插件一样走 `requires → PermissionManager → CapabilityGuard`，不能获得额外 Electron 主进程能力；`in-process` 插件仍可导入 Node API。
+- 因此 UI 在预览与更新确认框里同时展示来源 URL、版本、发布时间、权限声明与摘要，并明确写出上述限制；安装按钮在缺少摘要时禁用。
+
+---
+
+## 9. 启用与禁用
 
 ### 启用
 
@@ -131,7 +248,7 @@ Electron 下目录固定为：
 
 ---
 
-## 6. 卸载
+## 10. 卸载
 
 1. 仅允许 `source === 'user'`；内置插件返回 `E_BUILTIN_PROTECTED`。
 2. 任意已安装插件（无论启用与否）硬依赖目标时返回 `E_DEPENDENTS`。
@@ -144,29 +261,40 @@ Electron 下目录固定为：
 
 ---
 
-## 7. IPC 与 UI
+## 11. IPC 与 UI
 
-新增 7 个精确白名单方法：
+插件管理共 12 个精确白名单方法：
 
-| method                     | 参数           | 说明                                             |
-| -------------------------- | -------------- | ------------------------------------------------ |
-| `plugin.list`              | —              | 完整管理 DTO 列表、磁盘校验 issues、重启待办标记 |
-| `plugin.detail`            | `{ pluginId }` | 单个插件详情                                     |
-| `plugin.install.directory` | —              | 主进程目录选择后安装，取消返回 `changed:false`   |
-| `plugin.enable`            | `{ pluginId }` | 启用并等待生命周期完成                           |
-| `plugin.disable`           | `{ pluginId }` | 持久禁用意图，运行中的实例等重启才停止           |
-| `plugin.uninstall`         | `{ pluginId }` | 卸载并保留用户数据                               |
-| `plugin.restart`           | —              | 仅重启插件服务，内核与主进程不动                 |
+| method                     | 参数                            | 说明                                             |
+| -------------------------- | ------------------------------- | ------------------------------------------------ |
+| `plugin.list`              | —                               | 完整管理 DTO 列表、磁盘校验 issues、重启待办标记 |
+| `plugin.detail`            | `{ pluginId }`                  | 单个插件详情（含 `origin`）                      |
+| `plugin.install.directory` | —                               | 主进程目录选择后安装，取消返回 `changed:false`   |
+| `plugin.install.remote`    | `{ operationId, url, sha256? }` | 远程安装；无发布摘要时拒绝                       |
+| `plugin.remote.inspect`    | `{ url, operationId? }`         | 远程预览；下载 + 校验 + 临时解压，不安装         |
+| `plugin.download.cancel`   | `{ operationId }`               | 取消进行中的下载                                 |
+| `plugin.update.check`      | `{ pluginId? }`                 | 检查单个或全部远程插件的更新                     |
+| `plugin.update.install`    | `{ operationId, pluginId }`     | 执行更新；失败自动回滚                           |
+| `plugin.enable`            | `{ pluginId }`                  | 启用并等待生命周期完成                           |
+| `plugin.disable`           | `{ pluginId }`                  | 持久禁用意图，运行中的实例等重启才停止           |
+| `plugin.uninstall`         | `{ pluginId }`                  | 卸载并保留用户数据                               |
+| `plugin.restart`           | —                               | 仅重启插件服务，内核与主进程不动                 |
 
-所有参数在 `host/ipc/validate.ts` 运行时校验。错误响应新增可选 `errorCode`，前端 preload 将其挂到 `Error.code`；`message` 保持人类可读。管理操作在 `LocalPluginManager` 内串行执行，防止重复安装、并发启停和状态覆盖。
+所有参数在 `host/ipc/validate.ts` 运行时校验（URL 仅 HTTPS 且 ≤ 2048 字符、`operationId` 为 1..64 安全字符、`pluginId` 为合法格式）。错误响应新增可选 `errorCode`，前端 preload 将其挂到 `Error.code`；`message` 保持人类可读。管理操作在 `LocalPluginManager` 内串行执行，防止重复安装、并发启停和状态覆盖。
 
-管理 UI 是宿主常驻的 `PluginManager.svelte`，从顶栏 Plugins 进入。它不依赖 `plugin-inspector`，因此检查器被禁用时仍可恢复。列表、详情、加载、空态、错误和 issues 均由该组件处理；DTO 在 renderer 侧由 `parsePluginList` / `parsePluginOperation` 再次校验。
+管理 UI 是宿主常驻的 `PluginManager.svelte`，从顶栏 Plugins 进入。它不依赖 `plugin-inspector`，因此检查器被禁用时仍可恢复。列表、详情、加载、空态、错误和 issues 均由该组件处理；DTO 在 renderer 侧由 `parsePluginList` / `parsePluginOperation` / `parsePluginInspection` / `parsePluginUpdateCheck` / `parseDownloadProgress` 再次校验。
 
-交互约定：**禁用不需要二次确认**，点击即写意图；只有卸载保留确认框（会删除安装目录）。当列表或操作结果显示 `restartRequired` 时，顶部出现重启提示与 “Restart plugins” 按钮，调用 `plugin.restart`；提示里的 “pending changes” 可点击，弹出对话框列出仍处于运行态但已写入禁用意图的插件（名称、id、当前状态），确认后再重启。
+交互约定：
+
+- **禁用不需要二次确认**，点击即写意图；只有卸载保留确认框（会删除安装目录）。
+- 当列表或操作结果显示 `restartRequired` 时，顶部出现重启提示与 “Restart plugins” 按钮，调用 `plugin.restart`；提示里的 “pending changes” 可点击，弹出对话框列出仍处于运行态但已写入禁用意图的插件（名称、id、当前状态），确认后再重启。
+- **远程安装**：工具栏 “Install from URL…”，输入 → Inspect → 展示来源 URL、id / name / version、发布时间、更新说明、权限声明、依赖与 SHA-256（并标注是否来自发布元数据）→ Confirm install；下载中显示进度条与 Cancel，结束后展示结果或错误码。
+- **更新**：工具栏 “Check updates”，列表展示 current → latest、发布时间与 notes 摘要；每条 “Update” 打开确认弹窗（版本 / 来源 / 摘要 / 权限），确认后才执行，**绝不静默安装**。
+- 错误统一映射：`Error.code` → 可读文案；`E_DIGEST_MISSING` 明确提示“发布方未提供摘要，已阻止安装”。
 
 ---
 
-## 8. 安全边界
+## 12. 安全边界
 
 - renderer 无 Node / 文件系统能力，只能调用白名单 IPC；管理操作全部在主进程执行。
 - 路径 containment 同时做词法检查和 `realpath` 检查；安装拒绝符号链接、特殊文件、绝对/`../` entry 与受管目录互含。
@@ -174,17 +302,24 @@ Electron 下目录固定为：
 - 安装默认禁用，避免安装即执行代码。
 - 依赖一致性：禁用会级联关闭已加载的依赖者；卸载拒绝仍被已安装插件硬依赖；启用会同步拉起已安装的依赖闭包，只有依赖确实缺失才报错。
 - 权限系统只约束内核能力（`requires` → `PermissionManager` → `CapabilityGuard`），**不是操作系统沙箱**。`in-process` 与 `worker` 插件仍可导入 Node API；worker 只提供故障隔离，不是安全沙箱。
-- 当前没有签名校验、来源信誉、ZIP 解包或自动依赖安装。仅应安装可信插件。
+- 远程安装额外约束：仅 HTTPS + 主机 allowlist；重定向不得降级或跳出 allowlist，最多 5 次；只接受 ZIP；摘要只来自发布元数据或调用方显式传入；ZIP 解包防 Zip Slip / 绝对路径 / `..` / 反斜杠 / 符号链接 / 特殊文件 / 压缩炸弹，并在解压后再次做词法 + `realpath` containment。
+- 当前没有签名校验、来源信誉、漏洞扫描或自动依赖安装。SHA-256 只证明完整性，不证明发布者身份；仅应安装可信插件。
 
 ---
 
-## 9. 已知限制
+## 13. 已知限制
 
-| #   | 限制                                                                     | 影响 / 后续                                  |
-| --- | ------------------------------------------------------------------------ | -------------------------------------------- |
-| M1  | 安装仅支持本地已构建目录                                                 | 无 ZIP、无构建、无 npm 依赖安装              |
-| M2  | 无签名与恶意代码沙箱                                                     | 用户须自行确认来源可信                       |
-| M3  | 插件 manifest 在安装后若被外部修改，列表会显示校验 issue，但不会自动修复 | 重新安装或手工修复                           |
-| M4  | 卸载保留 `config/`、`data/`，不会自动清理                                | 需要删除用户数据时必须手工处理 `plugin-data` |
-| M5  | 重启只重载插件，不重置主进程或内核内存                                   | 旧模块实例等 GC 回收；这不是进程级重置       |
-| M6  | 多窗口管理页依赖各自主动刷新                                             | 未新增 catalog 事件；当前状态事件只覆盖启停  |
+| #   | 限制                                                                     | 影响 / 后续                                      |
+| --- | ------------------------------------------------------------------------ | ------------------------------------------------ |
+| M1  | 远程安装仅支持 ZIP                                                       | 无 tar.gz、无 registry、无构建、无 npm 依赖安装  |
+| M2  | 无签名与恶意代码沙箱                                                     | 用户须自行确认来源可信                           |
+| M3  | 插件 manifest 在安装后若被外部修改，列表会显示校验 issue，但不会自动修复 | 重新安装或手工修复                               |
+| M4  | 卸载保留 `config/`、`data/`，不会自动清理                                | 需要删除用户数据时必须手工处理 `plugin-data`     |
+| M5  | 重启只重载插件，不重置主进程或内核内存                                   | 旧模块实例等 GC 回收；这不是进程级重置           |
+| M6  | 多窗口管理页依赖各自主动刷新                                             | 未新增 catalog 事件；当前状态事件只覆盖启停      |
+| R1  | GitHub 发布必须恰好包含 1 个 `.zip` 资产                                 | 多资产 / 无资产 / 仅 tar.gz 的发布无法自动解析   |
+| R2  | 摘要依赖 GitHub API 的 `digest` 或 `.sha256` sidecar                     | 发布方两者都不提供时安装被阻止（设计如此）       |
+| R3  | 直链 URL 无法取得可信摘要                                                | 需要用户在调用参数中显式提供 `sha256`            |
+| R4  | 更新检查按 provenance 的来源逐个请求，无 token 与缓存                    | GitHub 未认证请求有速率限制                      |
+| R5  | 更新只在主进程串行执行，长下载会阻塞同队列的列表 / 详情请求              | 进度事件让 UI 仍可显示状态，但其他管理操作需等待 |
+| R6  | 无自动回滚重试、无灰度与降级通道                                         | 回滚失败时需人工检查目录（`E_ROLLBACK_FAILED`）  |

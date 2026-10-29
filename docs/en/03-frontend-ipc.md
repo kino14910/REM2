@@ -101,45 +101,51 @@ export const Ipc = {
 
 Responses and events live on separate channels so the frontend `subscribe` only listens to one. Request/response pairing still uses ids (done inside preload) rather than relying on `ipcRenderer.invoke` pairing.
 
-### 3.2 Method allowlist (15, exhaustive)
+### 3.2 Method allowlist (20, exhaustive)
 
-| #   | method (`channels.*`)      | payload                       | Response                                  | Host implementation                                                                                                                      |
-| --- | -------------------------- | ----------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `ui.panel.list`            | —                             | `PanelDto[]`                              | `kernel.extensions.listAll('ui.panel')`                                                                                                  |
-| 2   | `ui.panel.data`            | `{ panelId }`                 | `unknown` (plugin-defined)                | `bus.request` using the panel's declared `command`                                                                                       |
-| 3   | `ui.route.list`            | —                             | `RouteDto[]`                              | `kernel.extensions.listAll('ui.route')`                                                                                                  |
-| 4   | `ui.theme.list`            | —                             | `ThemeCatalogDto` (`{themes, activeId?}`) | `ThemeRegistry.list()` + `.active()` (pull-syncs the slot before reading)                                                                |
-| 5   | `ui.theme.set`             | `{ themeId }`                 | `{ ok }`                                  | `ThemeRegistry.activate()`; emits **only when the active theme really changes**                                                          |
-| 6   | `ui.event`                 | `{ panelId, kind, payload? }` | `{ ok }`                                  | routes to the panel's declared `command`                                                                                                 |
-| 7   | `command.execute`          | `{ command, args? }`          | `CommandResultDto`                        | **`null`** — dispatch lives in the kernel `CommandDispatcher` (reads the `command.provide` slot); the host does not implement it         |
-| 8   | `health.report`            | —                             | `HealthDto`                               | `kernel.health()` + trimming                                                                                                             |
-| 9   | `plugin.list`              | —                             | `PluginListDto`                           | scans installed dirs + runtime state + disabled intent                                                                                   |
-| 10  | `plugin.detail`            | `{ pluginId }`                | `PluginDetailDto`                         | `LocalPluginManager.detail()`                                                                                                            |
-| 11  | `plugin.install.directory` | —                             | `PluginOperationResultDto`                | native directory chooser → validate → staging copy → atomic commit; disabled by default (remote install will be `plugin.install.remote`) |
-| 12  | `plugin.enable`            | `{ pluginId }`                | `PluginOperationResultDto`                | persist intent, including the installed hard-dependency closure → `Kernel.enablePlugin()` with dependency ordering                       |
-| 13  | `plugin.disable`           | `{ pluginId }`                | `PluginOperationResultDto`                | cascade-disable loaded dependents → persist disabled intent; a live plugin stops on the next plugin-service restart                      |
-| 14  | `plugin.uninstall`         | `{ pluginId }`                | `PluginOperationResultDto`                | user source only; stop, preserve config/data, exact-directory delete                                                                     |
-| 15  | `plugin.restart`           | —                             | `PluginOperationResultDto`                | `Kernel.restartPlugins()`: stop all plugins, rediscover/resolve/start with the disabled set; kernel and host stay alive                  |
+| #   | method (`channels.*`)      | payload                         | Response                                  | Host implementation                                                                                                                                          |
+| --- | -------------------------- | ------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | `ui.panel.list`            | —                               | `PanelDto[]`                              | `kernel.extensions.listAll('ui.panel')`                                                                                                                      |
+| 2   | `ui.panel.data`            | `{ panelId }`                   | `unknown` (plugin-defined)                | `bus.request` using the panel's declared `command`                                                                                                           |
+| 3   | `ui.route.list`            | —                               | `RouteDto[]`                              | `kernel.extensions.listAll('ui.route')`                                                                                                                      |
+| 4   | `ui.theme.list`            | —                               | `ThemeCatalogDto` (`{themes, activeId?}`) | `ThemeRegistry.list()` + `.active()` (pull-syncs the slot before reading)                                                                                    |
+| 5   | `ui.theme.set`             | `{ themeId }`                   | `{ ok }`                                  | `ThemeRegistry.activate()`; emits **only when the active theme really changes**                                                                              |
+| 6   | `ui.event`                 | `{ panelId, kind, payload? }`   | `{ ok }`                                  | routes to the panel's declared `command`                                                                                                                     |
+| 7   | `command.execute`          | `{ command, args? }`            | `CommandResultDto`                        | **`null`** — dispatch lives in the kernel `CommandDispatcher` (reads the `command.provide` slot); the host does not implement it                             |
+| 8   | `health.report`            | —                               | `HealthDto`                               | `kernel.health()` + trimming                                                                                                                                 |
+| 9   | `plugin.list`              | —                               | `PluginListDto`                           | scans installed dirs + runtime state + disabled intent                                                                                                       |
+| 10  | `plugin.detail`            | `{ pluginId }`                  | `PluginDetailDto`                         | `LocalPluginManager.detail()` (includes `origin`)                                                                                                            |
+| 11  | `plugin.install.directory` | —                               | `PluginOperationResultDto`                | native directory chooser → validate → staging copy → atomic commit; disabled by default                                                                      |
+| 12  | `plugin.enable`            | `{ pluginId }`                  | `PluginOperationResultDto`                | persist intent, including the installed hard-dependency closure → `Kernel.enablePlugin()` with dependency ordering                                           |
+| 13  | `plugin.disable`           | `{ pluginId }`                  | `PluginOperationResultDto`                | cascade-disable loaded dependents → persist disabled intent; a live plugin stops on the next plugin-service restart                                          |
+| 14  | `plugin.uninstall`         | `{ pluginId }`                  | `PluginOperationResultDto`                | user source only; stop, preserve config/data, exact-directory delete                                                                                         |
+| 15  | `plugin.restart`           | —                               | `PluginOperationResultDto`                | `Kernel.restartPlugins()`: stop all plugins, rediscover/resolve/start with the disabled set; kernel and host stay alive                                      |
+| 16  | `plugin.remote.inspect`    | `{ url, operationId? }`         | `PluginRemoteInspectionDto`               | resolve release metadata → download (cancellable + progress) → digest check → temp extract → manifest/dependency preflight; **never writes the plugin root** |
+| 17  | `plugin.install.remote`    | `{ operationId, url, sha256? }` | `PluginOperationResultDto`                | reuse the inspected package → trusted digest → staging → atomic rename → disabled intent + provenance                                                        |
+| 18  | `plugin.download.cancel`   | `{ operationId }`               | `{ ok: true, cancelled }`                 | aborts the matching `AbortController`; repeated cancels are idempotent                                                                                       |
+| 19  | `plugin.update.check`      | `{ pluginId? }`                 | `PluginUpdateCheckDto`                    | resolves the latest release from the recorded provenance and compares versions; `hasUpdate: false` means up to date                                          |
+| 20  | `plugin.update.install`    | `{ operationId, pluginId }`     | `PluginOperationResultDto`                | download/verify/extract → dependency preflight → backup → install → preserve config/data → optional restart; rolls back on failure                           |
 
-### 3.3 Event allowlist (5)
+### 3.3 Event allowlist (6)
 
-| #   | event (`events.*`)     | topic (kernel `Topics`)     | payload                                    | Purpose                     |
-| --- | ---------------------- | --------------------------- | ------------------------------------------ | --------------------------- |
-| 1   | `ui.theme.changed`     | `Topics.UiThemeChanged`     | `ThemeDto`                                 | recompute CSS variables     |
-| 2   | `plugin.state-changed` | `Topics.PluginStateChanged` | `{ pluginId, state }`                      | reflect plugin start/stop   |
-| 3   | `panel.data-changed`   | `Topics.PanelDataChanged`   | `{ panelId, data }`                        | plugin-pushed panel refresh |
-| 4   | `command.result`       | `Topics.CommandResult`      | `CommandResultDto`                         | command result              |
-| 5   | `kernel.ready`         | `Topics.KernelReady`        | `{ loadOrder, started, degraded, failed }` | first-paint availability    |
+| #   | event (`events.*`)         | topic (kernel `Topics`)         | payload                                               | Purpose                                                                |
+| --- | -------------------------- | ------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------- |
+| 1   | `ui.theme.changed`         | `Topics.UiThemeChanged`         | `ThemeDto`                                            | recompute CSS variables                                                |
+| 2   | `plugin.state-changed`     | `Topics.PluginStateChanged`     | `{ pluginId, state }`                                 | reflect plugin start/stop                                              |
+| 3   | `panel.data-changed`       | `Topics.PanelDataChanged`       | `{ panelId, data }`                                   | plugin-pushed panel refresh                                            |
+| 4   | `command.result`           | `Topics.CommandResult`          | `CommandResultDto`                                    | command result                                                         |
+| 5   | `kernel.ready`             | `Topics.KernelReady`            | `{ loadOrder, started, degraded, failed }`            | first-paint availability                                               |
+| 6   | `plugin.download.progress` | `Topics.PluginDownloadProgress` | `{ operationId, phase, receivedBytes?, totalBytes? }` | remote download/verify progress; the renderer filters by `operationId` |
 
 ### 3.4 Explicitly forbidden
 
 | Forbidden                                                      | Reason                                                                                                                         |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| any `bus.request(method)` passthrough                          | prefix matching would hand over a whole namespace; judgment must be an exact set of 14 names                                   |
+| any `bus.request(method)` passthrough                          | prefix matching would hand over a whole namespace; judgment must be an exact set of 20 names                                   |
 | reading config (any `config.*`)                                | config may hold sensitive values; when a panel needs config, the plugin decides what to expose in its `ui.panel.data` response |
 | reading kernel services (`services.*` / `kernel.*`)            | the renderer deals in DTOs, not in the kernel object graph                                                                     |
-| arbitrary lifecycle calls (`plugin.start` / `stop` / `unload`) | lifecycle is a kernel/host privilege; only the four guarded management methods in §3.2 are allowed                             |
-| subscribing to arbitrary kernel events                         | only the 5 in §3.3; other topics (e.g. `config.changed`) carry internal state                                                  |
+| arbitrary lifecycle calls (`plugin.start` / `stop` / `unload`) | lifecycle is a kernel/host privilege; only the guarded management methods in §3.2 are allowed                                  |
+| subscribing to arbitrary kernel events                         | only the 6 in §3.3; other topics (e.g. `config.changed`) carry internal state                                                  |
 | receiving raw plugin events (e.g. `ui.theme.registered`)       | only DTO-ized semantic events are exposed                                                                                      |
 
 **Enforcement point**: `IpcBridge.handleInvoke` checks `allowedMethods.has(method)` (exact `Set` match) **before** `bus.request`. Not in the set → replies `{ok:false,error}` immediately, **never entering the event bus**.
@@ -189,7 +195,77 @@ interface CommandResultDto {
   output?: string
   error?: string
 }
+interface PluginDetailDto {
+  id
+  name
+  version
+  description?
+  source: 'builtin' | 'user' | 'workspace'
+  state: PluginRuntimeStateDto // includes the management state 'Disabled'
+  enabled: boolean
+  builtin: boolean
+  error?
+  entry
+  author?
+  homepage?
+  tags: string[]
+  dependencies: Record<string, string>
+  optionalDependencies: Record<string, string>
+  requires: string[]
+  compatibility: { minKernel; maxKernel?; contractVersion }
+  canUninstall: boolean
+  restartRequired: boolean
+  origin?: { kind: 'directory' | 'remote'; url?; sha256?; publishedAt? }
+}
+interface PluginRemoteInspectionDto {
+  url
+  downloadUrl
+  id
+  name
+  version
+  description?
+  requires: string[]
+  dependencies: Record<string, string>
+  optionalDependencies: Record<string, string>
+  compatibility: { minKernel; maxKernel?; contractVersion }
+  publishedAt?
+  notes?
+  sha256? // from release metadata only, never computed from the download
+  size?
+}
+interface PluginUpdateDto {
+  pluginId
+  currentVersion
+  latestVersion
+  hasUpdate: boolean
+  url
+  publishedAt?
+  notes?
+  sha256?
+}
+interface PluginUpdateCheckDto {
+  updates: PluginUpdateDto[]
+}
+interface PluginDownloadProgressDto {
+  operationId
+  phase: 'downloading' | 'verifying' | 'extracting' | 'installing'
+  receivedBytes?
+  totalBytes?
+}
+interface PluginListDto {
+  plugins: PluginDetailDto[]
+  issues: string[]
+}
+interface PluginOperationResultDto {
+  ok: true
+  changed: boolean
+  restartRequired: boolean
+  plugin?: PluginDetailDto
+  message?: string
+}
 ```
+
+Plugin management DTOs **never** include `rootDir`, absolute paths, container, permissions or the raw manifest; the renderer re-validates every payload with `parsePluginList` / `parsePluginOperation` / `parsePluginInspection` / `parsePluginUpdateCheck` / `parseDownloadProgress`. `origin`, inspections and update entries are strict objects: a bad field drops the list entry (into issues) or throws for single objects, so a half-valid preview is never rendered. Management errors carry a stable `errorCode` in `IpcResponse`; preload attaches it to `Error.code`. Remote operations use a renderer-generated `operationId`: progress events are filtered by it and cancellation targets it.
 
 A DTO is an **explicit projection whitelist**, not a rename of a kernel type. `CommandResultDto` field names must match what command plugins actually return: `IpcBridge` puts the plugin's return value into `reply.result` unchanged, preload unwraps `payload.result`, so the frontend `invoke` receives the plugin's original object (`{ok, output}`). A wrong field name produces no type error, a blank UI and a clean console — the most typical silent-defect shape in this project.
 
@@ -203,8 +279,8 @@ The `command` field is filled in by the frontend store (`command.svelte.ts` → 
 
 | Direction             | Allowed                                          | Implementation                                                                                         |
 | --------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| kernel → renderer     | ✅ one-way push, only the 5 events in §3.3       | `IpcBridge` subscribes the topic → `toDto` → `Ipc.Event`                                               |
-| renderer → kernel     | ✅ one-way requests, only the 15 methods in §3.2 | `ipc.request`                                                                                          |
+| kernel → renderer     | ✅ one-way push, only the 6 events in §3.3       | `IpcBridge` subscribes the topic → `toDto` → `Ipc.Event`                                               |
+| renderer → kernel     | ✅ one-way requests, only the 20 methods in §3.2 | `ipc.request`                                                                                          |
 | renderer ↔ kernel bus | ❌ **never proxied**                             | proxying the bus would let the renderer `emit` / subscribe any topic, defeating every capability guard |
 
 Two red lines:
@@ -374,3 +450,7 @@ object-src 'none'; base-uri 'none';
 | F3  | `preload.cjs` filename is an implicit contract (hardcoded in main)                         | renaming it fails as "preload script failed to load" with no hint about the filename                                 |
 | F4  | Runes in a plain `.ts` silently do nothing                                                 | only the `.svelte.ts` naming convention catches it                                                                   |
 | F5  | ~~No builtin plugin contributes `ui.panel` / `ui.route`~~ **resolved**                     | `plugin-inspector` contributes the `/plugins` route + the inspector panel                                            |
+| F6  | Installs provide no security sandbox, only path/dependency/lifecycle guards                | only install trusted plugins; see `05-plugin-management.md`                                                          |
+| F7  | Multiple windows do not share catalog-change events                                        | lifecycle uses the existing state events; install/uninstall requires a manual Refresh per window                     |
+| F8  | Remote install accepts only HTTPS ZIP assets from an allowlisted host                      | no registry, no tar.gz, no signature verification; SHA-256 proves integrity, not who published it                    |
+| F9  | Update checks hit the release API on every click, with no cache or throttling              | unauthenticated GitHub requests are rate-limited; checking many plugins from one source stacks requests              |

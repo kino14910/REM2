@@ -12,9 +12,9 @@
 | --- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
 | 01  | [architecture-overview](01-architecture-overview.md) | **架构权威**：分层与依赖方向、全量目录职责、生命周期两层模型、12 个扩展点、隔离与权限、调用链路、数据通路、构建产物、9 条设计决策、扩展流程、已知限制、契约测试清单 | 所有人先读这一份  |
 | 02  | [plugin-api](02-plugin-api.md)                       | **插件开发指南**：`definePlugin`、`plugin.json` 字段、生命周期钩子、`PluginContext`、扩展点表、服务令牌、命令链路、隔离模式、错误码、自检清单                       | 插件作者          |
-| 03  | [frontend-ipc](03-frontend-ipc.md)                   | **前端与 IPC 契约**：进程与构建边界、前端目录职责、14 方法 + 5 事件白名单、DTO、store 与事件桥、主题通路、vite/CSP 约束                                             | 前端 / 宿主开发者 |
+| 03  | [frontend-ipc](03-frontend-ipc.md)                   | **前端与 IPC 契约**：进程与构建边界、前端目录职责、20 方法 + 6 事件白名单、DTO、store 与事件桥、主题通路、vite/CSP 约束                                             | 前端 / 宿主开发者 |
 | 04  | [development-guide](04-development-guide.md)         | **开发指南**：环境、命令矩阵、构建与打包规格、tsconfig 职责、扩展流程、调试手段、已知坑、代码约定                                                                   | 动手改代码的人    |
-| 05  | [plugin-management](05-plugin-management.md)         | **本地插件管理**：manifest 校验、安装 / 启停 / 卸载、目录与状态、路径安全、数据保留、IPC / UI、已知限制                                                             | 宿主 / 运维开发者 |
+| 05  | [plugin-management](05-plugin-management.md)         | **插件管理**：manifest 校验、本地与远程安装、更新与回滚、provenance、目录与状态、路径安全、数据保留、IPC / UI、已知限制                                             | 宿主 / 运维开发者 |
 
 **架构图**：[`class-diagram-v2.mermaid`](class-diagram-v2.mermaid)（类图）、[`sequence-diagram-v2.mermaid`](sequence-diagram-v2.mermaid)（5 条主链路时序）。
 
@@ -35,7 +35,7 @@
 pnpm install
 pnpm dev                      # 终端形态启动内核（7 个 builtin 插件）
 pnpm start                    # Electron 桌面应用（renderer 是 Svelte 5）
-pnpm test:run                 # 全量测试（43 文件 / 355 用例）
+pnpm test:run                 # 全量测试（50 文件 / 466 用例）
 pnpm typecheck:all            # 三份 tsconfig 类型检查
 ```
 
