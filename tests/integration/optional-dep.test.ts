@@ -54,4 +54,33 @@ describe('integration · optional-dependency', () => {
 
     await kernel.shutdown()
   })
+
+  it('re-enabling a missing optional dependency recovers the degraded plugin', async () => {
+    const fx = await materializePlugins([
+      { id: 'com.rem2.base' },
+      {
+        id: 'com.rem2.app',
+        optionalDependencies: { 'com.rem2.base': '^1.0.0' },
+      },
+    ])
+    cleanup = fx.cleanup
+
+    const kernel = new Kernel({
+      roots: [fx.root],
+      disabledPlugins: ['com.rem2.base'],
+    })
+    const result = await kernel.start()
+    expect(result.degraded).toContain('com.rem2.app')
+    expect(
+      kernel.pluginRegistry.getLoaded('com.rem2.app')!.health.message,
+    ).toMatch(/missing optional dependency: com\.rem2\.base/)
+
+    await kernel.enablePlugin('com.rem2.base', [])
+
+    const recovered = kernel.pluginRegistry.getLoaded('com.rem2.app')!
+    expect(recovered.state).toBe('Active')
+    expect(recovered.health.message).toBeUndefined()
+
+    await kernel.shutdown()
+  })
 })

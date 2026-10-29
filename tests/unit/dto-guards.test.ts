@@ -15,8 +15,11 @@ import { describe, expect, it } from 'vitest'
 import {
   parsePanelData,
   parsePanelList,
+  parsePluginList,
+  parsePluginOperation,
   parseRouteList,
 } from '../../src/frontend/lib/dto-guards.js'
+import type { PluginDetailDto } from '../../src/shared/ipc-contract.js'
 import type { PanelDto, RouteDto } from '../../src/frontend/lib/bridge-types.js'
 
 function validPanel(): PanelDto {
@@ -27,6 +30,26 @@ function validPanel(): PanelDto {
     region: 'main',
     order: 10,
     command: 'com.rem2.plugin-inspector.data',
+  }
+}
+
+function validPlugin(): PluginDetailDto {
+  return {
+    id: 'com.example.plugin',
+    name: 'Example',
+    version: '1.0.0',
+    source: 'user',
+    state: 'Active',
+    enabled: true,
+    builtin: false,
+    entry: 'dist/index.js',
+    tags: [],
+    dependencies: {},
+    optionalDependencies: {},
+    requires: [],
+    compatibility: { minKernel: '^1.0.0', contractVersion: '1' },
+    canUninstall: true,
+    restartRequired: false,
   }
 }
 
@@ -186,5 +209,82 @@ describe('unit · dto guards · parsePanelData', () => {
       kind: 'invalid',
       reason: 'panel data exceeds 32KB limit',
     })
+  })
+})
+
+describe('unit · dto guards · plugin management', () => {
+  it('accepts a valid plugin list and merges host issues', () => {
+    const result = parsePluginList({
+      plugins: [validPlugin()],
+      issues: ['broken plugin on disk'],
+      restartRequired: true,
+    })
+    expect(result.items).toEqual([validPlugin()])
+    expect(result.issues).toEqual(['broken plugin on disk'])
+    expect(result.restartRequired).toBe(true)
+  })
+
+  it('derives restartRequired from per-plugin projections when the list omits it', () => {
+    const result = parsePluginList({
+      plugins: [{ ...validPlugin(), restartRequired: true }],
+      issues: [],
+    })
+    expect(result.restartRequired).toBe(true)
+
+    const clean = parsePluginList({
+      plugins: [validPlugin()],
+      issues: [],
+    })
+    expect(clean.restartRequired).toBe(false)
+  })
+
+  it('drops malformed plugin entries with indexed issues', () => {
+    const result = parsePluginList({
+      plugins: [
+        validPlugin(),
+        { ...validPlugin(), id: '' },
+        { ...validPlugin(), state: 'Running' },
+        { ...validPlugin(), enabled: 'yes' },
+        { ...validPlugin(), dependencies: { x: 1 } },
+      ],
+      issues: [],
+    })
+    expect(result.items).toEqual([validPlugin()])
+    expect(result.issues).toHaveLength(4)
+    expect(result.issues[0]).toContain('plugin[1]')
+    expect(result.issues[3]).toContain('plugin[4]')
+  })
+
+  it('rejects malformed list envelopes instead of rendering partial data', () => {
+    expect(() => parsePluginList(null)).toThrow(/expected an object/)
+    expect(() => parsePluginList({ plugins: [], issues: 'x' })).toThrow(
+      /must be arrays/,
+    )
+  })
+
+  it('validates operation results and nested plugin projections', () => {
+    expect(
+      parsePluginOperation({
+        ok: true,
+        changed: true,
+        restartRequired: false,
+        plugin: validPlugin(),
+      }),
+    ).toMatchObject({ ok: true, changed: true })
+    expect(() =>
+      parsePluginOperation({
+        ok: false,
+        changed: true,
+        restartRequired: false,
+      }),
+    ).toThrow(/fields/)
+    expect(() =>
+      parsePluginOperation({
+        ok: true,
+        changed: true,
+        restartRequired: false,
+        plugin: { ...validPlugin(), entry: '' },
+      }),
+    ).toThrow(/plugin/)
   })
 })

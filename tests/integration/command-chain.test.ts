@@ -12,6 +12,7 @@
  * any self-mapping recurses. This suite pins that mapping down.
  */
 
+import { execFile } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -25,6 +26,66 @@ import type { EventBus } from '../../src/kernel/contracts/event-bus.js'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = path.resolve(HERE, '..', '..')
 const BUILTIN_ROOT = path.join(PROJECT_ROOT, 'plugins-dist')
+
+const RECURSION_PROBE = `
+import { pathToFileURL } from 'node:url'
+const base = pathToFileURL(process.cwd() + '/src/').href
+const { Kernel } = await import(base + 'kernel/kernel.ts')
+const { KernelTokens } = await import(base + 'kernel/contracts/kernel-tokens.ts')
+const { Topics } = await import(base + 'kernel/topics.ts')
+const { IpcBridge } = await import(base + 'host/ipc/bridge.ts')
+const { Ipc } = await import(base + 'shared/ipc-contract.ts')
+
+const kernel = new Kernel({
+  id: 'rem2-self-recursion-child',
+  roots: [],
+  startTimeoutMs: 5000,
+  stopTimeoutMs: 5000,
+  logLevel: 'error',
+})
+const earlyBus = kernel.root.resolve(KernelTokens.EventBus)
+earlyBus.respond(Topics.CommandExecute, args =>
+  earlyBus.request(Topics.CommandExecute, args, { timeoutMs: 5000 }),
+)
+await kernel.start()
+const bus = kernel.root.resolve(KernelTokens.EventBus)
+const bridge = new IpcBridge(bus)
+const response = await new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error('recursion probe timed out')), 8000)
+  bridge.bind({
+    send: (_channel, payload) => {
+      if (payload && payload.ok === false) {
+        clearTimeout(timer)
+        resolve(payload)
+      }
+    },
+    on: (channel, handler) => {
+      if (channel === Ipc.Invoke) {
+        void handler({ id: 'recur-1', method: 'command.execute', args: { command: 'hello' } })
+      }
+      return () => undefined
+    },
+  })
+})
+process.stdout.write(JSON.stringify(response) + '\\n', () => process.exit(0))
+`
+
+function runRecursionProbe(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      process.execPath,
+      ['--import', 'tsx', '--input-type=module', '-e', RECURSION_PROBE],
+      { cwd: PROJECT_ROOT, timeout: 20_000, windowsHide: true },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error(`${error.message}\n${stderr}`))
+          return
+        }
+        resolve(stdout)
+      },
+    )
+  })
+}
 
 function createKernel(): Kernel {
   return new Kernel({
@@ -170,67 +231,15 @@ describe('integration · command chain', () => {
   })
 
   it('★ regression guard: the self-recursing forwarder must be caught (once caused RangeError)', async () => {
-    // Reproduces the real user timing: the host responder is registered before
-    // kernel.start() (main.ts:172 ahead of :173), so its seq is smaller and
-    // `pickResponder` prefers it - while its implementation requests the same
-    // topic, recursing infinitely into `Maximum call stack size exceeded`.
-    // If someone re-adds this forwarder, this case goes red.
-    const kernel = new Kernel({
-      id: 'rem2-self-recursion',
-      roots: [],
-      builtinRoot: BUILTIN_ROOT,
-      startTimeoutMs: 5000,
-      stopTimeoutMs: 5000,
-      legacyFallback: false,
-      logLevel: 'error',
-      initialConfig: { app: { greeting: 'Hello from rem2' } },
-    })
-    try {
-      const busEarly = kernel.root.resolve<EventBus>(KernelTokens.EventBus)
-      busEarly.respond<{ command: string }, unknown>('command.execute', args =>
-        busEarly.request(Topics.CommandExecute, args, { timeoutMs: 5000 }),
-      )
-      await kernel.start()
-      const bus = kernel.root.resolve<EventBus>(KernelTokens.EventBus)
-
-      const bridge = new IpcBridge(bus)
-      const received: unknown[] = []
-      bridge.bind({
-        send: (_ch, payload) => received.push(payload),
-        on: (ch, handler) => {
-          if (ch !== Ipc.Invoke) return () => undefined
-          return () => {
-            void handler({
-              id: 'recur-1',
-              method: 'command.execute',
-              args: { command: 'hello' },
-            })
-          }
-        },
-      })
-
-      const response = await new Promise<{ ok: boolean; error?: string }>(
-        resolve => {
-          received.length = 0
-          void (
-            bridge as unknown as {
-              handleInvoke(payload: unknown): Promise<void>
-            }
-          ).handleInvoke({
-            id: 'recur-1',
-            method: 'command.execute',
-            args: { command: 'hello' },
-          })
-          setTimeout(() => resolve(received[0] as never), 1500)
-        },
-      )
-
-      // The recursion is caught by the bridge as an error response in the form of a RangeError - exactly what the user saw.
-      expect(response.ok).toBe(false)
-      expect(response.error).toMatch(/call stack/i)
-      bridge.unbind()
-    } finally {
-      await kernel.shutdown()
+    // A genuine stack overflow leaves orphaned rejected promises behind. Running
+    // the probe in a child process keeps those artifacts out of Vitest while
+    // still exercising the real kernel, event bus and IPC bridge.
+    const stdout = await runRecursionProbe()
+    const response = JSON.parse(stdout.trim()) as {
+      ok: boolean
+      error?: string
     }
+    expect(response.ok).toBe(false)
+    expect(response.error).toMatch(/call stack/i)
   })
 })
