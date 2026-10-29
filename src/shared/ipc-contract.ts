@@ -66,6 +66,17 @@ export const channels = {
   pluginUninstall: 'plugin.uninstall',
   /** Restart every plugin in place; the kernel, host process and window stay alive. */
   pluginRestart: 'plugin.restart',
+  /**
+   * Remote install is split into inspect (download + verify + read manifest,
+   * nothing installed) and install (explicit user confirmation). `operationId`
+   * is renderer-generated so progress events and cancellation can be correlated
+   * before the operation finishes.
+   */
+  pluginRemoteInspect: 'plugin.remote.inspect',
+  pluginInstallFromRemote: 'plugin.install.remote',
+  pluginDownloadCancel: 'plugin.download.cancel',
+  pluginUpdateCheck: 'plugin.update.check',
+  pluginUpdateInstall: 'plugin.update.install',
   /** Execute a command (responded directly by a command plugin; the host does not implement it). */
   commandExecute: 'command.execute',
   /** Fetch the health report. */
@@ -89,6 +100,8 @@ export const events = {
   commandResult: 'command.result',
   /** Kernel ready. */
   kernelReady: 'kernel.ready',
+  /** Remote package download/verification progress (host-originated). */
+  pluginDownloadProgress: 'plugin.download.progress',
 } as const
 
 /** Method names the renderer may call (union type). */
@@ -154,6 +167,67 @@ export interface PluginDetailDto extends PluginSummaryDto {
   canUninstall: boolean
   /** Disabled on disk but still loaded in the running plugin service. */
   restartRequired: boolean
+  /** Where this plugin came from; remote installs keep their release URL and digest. */
+  origin?: PluginOriginDto
+}
+
+export interface PluginOriginDto {
+  kind: 'directory' | 'remote'
+  url?: string
+  sha256?: string
+  publishedAt?: string
+}
+
+/** Read-only view of a remote release, produced before anything is installed. */
+export interface PluginRemoteInspectionDto {
+  url: string
+  downloadUrl: string
+  id: string
+  name: string
+  version: string
+  description?: string
+  requires: string[]
+  dependencies: Record<string, string>
+  optionalDependencies: Record<string, string>
+  compatibility: {
+    minKernel: string
+    maxKernel?: string
+    contractVersion: string
+  }
+  publishedAt?: string
+  notes?: string
+  /** Digest from trusted release metadata; never derived from the download itself. */
+  sha256?: string
+  /** Bytes of the downloaded archive, when known. */
+  size?: number
+}
+
+export interface PluginUpdateDto {
+  pluginId: string
+  currentVersion: string
+  latestVersion: string
+  hasUpdate: boolean
+  url: string
+  publishedAt?: string
+  notes?: string
+  sha256?: string
+}
+
+export interface PluginUpdateCheckDto {
+  updates: PluginUpdateDto[]
+}
+
+export type PluginDownloadPhase =
+  | 'downloading'
+  | 'verifying'
+  | 'extracting'
+  | 'installing'
+
+export interface PluginDownloadProgressDto {
+  operationId: string
+  phase: PluginDownloadPhase
+  receivedBytes?: number
+  totalBytes?: number
 }
 
 export interface PluginListDto {

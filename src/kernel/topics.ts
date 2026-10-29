@@ -14,6 +14,8 @@ export const Topics = {
   PluginFailed: 'kernel.plugin.failed',
   PluginReloaded: 'kernel.plugin.reloaded',
   PluginUnloaded: 'kernel.plugin.unloaded',
+  /** Host-originated remote package download progress (forwarded to the renderer). */
+  PluginDownloadProgress: 'plugin.download.progress',
 
   /** Configuration */
   ConfigChanged: 'config.changed',
