@@ -11,8 +11,12 @@
 import type { PanelDto, RouteDto } from './bridge-types.js'
 import type {
   PluginDetailDto,
+  PluginDownloadPhase,
+  PluginDownloadProgressDto,
   PluginOperationResultDto,
+  PluginRemoteInspectionDto,
   PluginRuntimeStateDto,
+  PluginUpdateDto,
 } from '../../shared/ipc-contract.js'
 
 /** Upper bound for rendered panel data (keeps a rogue plugin from freezing the UI). */
@@ -273,6 +277,8 @@ function pluginIssue(entry: unknown, index: number): string | undefined {
       return `plugin[${index}]: field "${field}" must be a string`
     }
   }
+  const origin = originIssue(plugin.origin)
+  if (origin) return `plugin[${index}]: ${origin}`
   return undefined
 }
 
@@ -283,6 +289,55 @@ function isStringMap(value: unknown): value is Record<string, string> {
     !Array.isArray(value) &&
     Object.values(value).every(entry => typeof entry === 'string')
   )
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isHttpsUrl(value: unknown): value is string {
+  if (!isNonEmptyString(value)) return false
+  try {
+    return new URL(value).protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function isSha256Text(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-f\d]{64}$/i.test(value)
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(isNonEmptyString)
+}
+
+/** Optional field check shared by origin/inspection/update entries. */
+function optionalString(
+  record: Record<string, unknown>,
+  field: string,
+): boolean {
+  return record[field] === undefined || typeof record[field] === 'string'
+}
+
+function originIssue(value: unknown): string | undefined {
+  if (value === undefined) return undefined
+  if (!isRecord(value)) return 'origin must be an object'
+  if (value.kind !== 'directory' && value.kind !== 'remote') {
+    return 'origin.kind must be "directory" or "remote"'
+  }
+  for (const field of ['url', 'sha256', 'publishedAt'] as const) {
+    if (!optionalString(value, field)) {
+      return `origin.${field} must be a string`
+    }
+  }
+  if (value.url !== undefined && !isHttpsUrl(value.url)) {
+    return 'origin.url must be an https URL'
+  }
+  if (value.sha256 !== undefined && !isSha256Text(value.sha256)) {
+    return 'origin.sha256 must be 64 hexadecimal characters'
+  }
+  return undefined
 }
 
 function isCompatibility(value: unknown): boolean {
@@ -352,6 +407,155 @@ export function parsePluginOperation(value: unknown): PluginOperationResultDto {
     ...(result.message !== undefined ? { message: result.message } : {}),
     ...(result.plugin !== undefined
       ? { plugin: result.plugin as unknown as PluginDetailDto }
+      : {}),
+  }
+}
+
+/**
+ * Validates a remote inspection payload as a whole.
+ *
+ * Unlike a list this is one object shown in a confirmation dialog: a half-valid
+ * inspection must never be rendered, so any bad field throws.
+ */
+export function parsePluginInspection(
+  value: unknown,
+): PluginRemoteInspectionDto {
+  if (!isRecord(value)) {
+    throw new Error('invalid remote inspection: expected an object')
+  }
+  for (const field of [
+    'url',
+    'downloadUrl',
+    'id',
+    'name',
+    'version',
+  ] as const) {
+    if (!isNonEmptyString(value[field])) {
+      throw new Error(`invalid remote inspection: "${field}" is required`)
+    }
+  }
+  if (!isHttpsUrl(value.url) || !isHttpsUrl(value.downloadUrl)) {
+    throw new Error('invalid remote inspection: source URLs must use https')
+  }
+  if (!isStringArray(value.requires)) {
+    throw new Error(
+      'invalid remote inspection: "requires" must be a string array',
+    )
+  }
+  for (const field of ['dependencies', 'optionalDependencies'] as const) {
+    if (!isStringMap(value[field])) {
+      throw new Error(
+        `invalid remote inspection: "${field}" must be a string map`,
+      )
+    }
+  }
+  if (!isCompatibility(value.compatibility)) {
+    throw new Error('invalid remote inspection: "compatibility" is invalid')
+  }
+  for (const field of ['description', 'publishedAt', 'notes'] as const) {
+    if (!optionalString(value, field)) {
+      throw new Error(`invalid remote inspection: "${field}" must be a string`)
+    }
+  }
+  if (value.sha256 !== undefined && !isSha256Text(value.sha256)) {
+    throw new Error(
+      'invalid remote inspection: "sha256" must be 64 hexadecimal characters',
+    )
+  }
+  if (
+    value.size !== undefined &&
+    (typeof value.size !== 'number' ||
+      !Number.isFinite(value.size) ||
+      value.size < 0)
+  ) {
+    throw new Error(
+      'invalid remote inspection: "size" must be a non-negative number',
+    )
+  }
+  return value as unknown as PluginRemoteInspectionDto
+}
+
+/** One entry of an update check; a malformed entry is dropped, never rendered. */
+function updateIssue(entry: unknown, index: number): string | undefined {
+  if (!isRecord(entry)) return `update[${index}]: not an object`
+  for (const field of [
+    'pluginId',
+    'currentVersion',
+    'latestVersion',
+  ] as const) {
+    if (!isNonEmptyString(entry[field])) {
+      return `update[${index}]: field "${field}" must be a non-empty string`
+    }
+  }
+  if (typeof entry.hasUpdate !== 'boolean') {
+    return `update[${index}]: field "hasUpdate" must be boolean`
+  }
+  if (!isHttpsUrl(entry.url)) {
+    return `update[${index}]: field "url" must be an https URL`
+  }
+  for (const field of ['publishedAt', 'notes'] as const) {
+    if (!optionalString(entry, field)) {
+      return `update[${index}]: field "${field}" must be a string`
+    }
+  }
+  if (entry.sha256 !== undefined && !isSha256Text(entry.sha256)) {
+    return `update[${index}]: field "sha256" must be 64 hexadecimal characters`
+  }
+  return undefined
+}
+
+export function parsePluginUpdateCheck(value: unknown): {
+  items: PluginUpdateDto[]
+  issues: string[]
+} {
+  if (!isRecord(value) || !Array.isArray(value.updates)) {
+    throw new Error('invalid update check: expected { updates: array }')
+  }
+  const items: PluginUpdateDto[] = []
+  const issues: string[] = []
+  value.updates.forEach((entry, index) => {
+    const issue = updateIssue(entry, index)
+    if (issue) issues.push(issue)
+    else items.push(entry as unknown as PluginUpdateDto)
+  })
+  return { items, issues }
+}
+
+const DOWNLOAD_PHASES = new Set<PluginDownloadPhase>([
+  'downloading',
+  'verifying',
+  'extracting',
+  'installing',
+])
+
+function isByteCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+}
+
+/** Validates one progress event; malformed events are ignored (never rendered). */
+export function parseDownloadProgress(
+  value: unknown,
+): PluginDownloadProgressDto | undefined {
+  if (!isRecord(value)) return undefined
+  const { operationId, phase } = value
+  if (typeof operationId !== 'string' || operationId.length === 0) {
+    return undefined
+  }
+  if (!DOWNLOAD_PHASES.has(phase as PluginDownloadPhase)) return undefined
+  if (value.receivedBytes !== undefined && !isByteCount(value.receivedBytes)) {
+    return undefined
+  }
+  if (value.totalBytes !== undefined && !isByteCount(value.totalBytes)) {
+    return undefined
+  }
+  return {
+    operationId,
+    phase: phase as PluginDownloadPhase,
+    ...(value.receivedBytes !== undefined
+      ? { receivedBytes: value.receivedBytes as number }
+      : {}),
+    ...(value.totalBytes !== undefined
+      ? { totalBytes: value.totalBytes as number }
       : {}),
   }
 }
