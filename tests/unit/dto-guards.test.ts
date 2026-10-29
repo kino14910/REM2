@@ -13,10 +13,13 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  parseDownloadProgress,
   parsePanelData,
   parsePanelList,
+  parsePluginInspection,
   parsePluginList,
   parsePluginOperation,
+  parsePluginUpdateCheck,
   parseRouteList,
 } from '../../src/frontend/lib/dto-guards.js'
 import type { PluginDetailDto } from '../../src/shared/ipc-contract.js'
@@ -286,5 +289,162 @@ describe('unit · dto guards · plugin management', () => {
         plugin: { ...validPlugin(), entry: '' },
       }),
     ).toThrow(/plugin/)
+  })
+})
+
+const DIGEST = 'a'.repeat(64)
+
+function validInspection(): Record<string, unknown> {
+  return {
+    url: 'https://github.com/acme/hello',
+    downloadUrl:
+      'https://github.com/acme/hello/releases/download/v1.0.0/hello.zip',
+    id: 'com.acme.hello',
+    name: 'Hello',
+    version: '1.0.0',
+    requires: [],
+    dependencies: {},
+    optionalDependencies: {},
+    compatibility: { minKernel: '^1.0.0', contractVersion: '1' },
+    sha256: DIGEST,
+    size: 1024,
+  }
+}
+
+describe('unit · dto guards · remote install DTOs', () => {
+  it('accepts a valid inspection and keeps optional metadata', () => {
+    expect(
+      parsePluginInspection({
+        ...validInspection(),
+        publishedAt: '2026-01-01T00:00:00Z',
+        notes: 'Release notes',
+      }),
+    ).toMatchObject({
+      id: 'com.acme.hello',
+      version: '1.0.0',
+      sha256: DIGEST,
+    })
+  })
+
+  it('accepts an inspection without a digest (the UI blocks install itself)', () => {
+    const { sha256: _sha256, ...rest } = validInspection()
+    expect(parsePluginInspection(rest).sha256).toBeUndefined()
+  })
+
+  it.each([
+    ['a non-object', null],
+    ['a missing id', { ...validInspection(), id: '' }],
+    [
+      'a non-https source',
+      { ...validInspection(), url: 'http://github.com/a/b' },
+    ],
+    [
+      'a non-https asset',
+      {
+        ...validInspection(),
+        downloadUrl: 'http://github.com/acme/hello/hello.zip',
+      },
+    ],
+    ['a malformed digest', { ...validInspection(), sha256: 'abc' }],
+    ['a negative size', { ...validInspection(), size: -1 }],
+    ['a non-array requires', { ...validInspection(), requires: 'x' }],
+    ['bad compatibility', { ...validInspection(), compatibility: {} }],
+  ])('rejects %s instead of rendering a partial preview', (_label, value) => {
+    expect(() => parsePluginInspection(value)).toThrow(/remote inspection/)
+  })
+
+  it('validates update checks and drops only the malformed entries', () => {
+    const good = {
+      pluginId: 'com.acme.hello',
+      currentVersion: '1.0.0',
+      latestVersion: '1.1.0',
+      hasUpdate: true,
+      url: 'https://github.com/acme/hello',
+      sha256: DIGEST,
+    }
+    const parsed = parsePluginUpdateCheck({
+      updates: [
+        good,
+        { ...good, pluginId: '' },
+        { ...good, hasUpdate: 'yes' },
+        { ...good, url: 'http://github.com/acme/hello' },
+        { ...good, sha256: 'nope' },
+      ],
+    })
+    expect(parsed.items).toEqual([good])
+    expect(parsed.issues).toHaveLength(4)
+    expect(parsed.issues[0]).toContain('update[1]')
+    expect(parsed.issues[3]).toContain('update[4]')
+  })
+
+  it('rejects malformed update envelopes', () => {
+    expect(() => parsePluginUpdateCheck(null)).toThrow(/update check/)
+    expect(() => parsePluginUpdateCheck({ updates: 'x' })).toThrow(
+      /update check/,
+    )
+  })
+
+  it('validates download progress events and ignores malformed ones', () => {
+    expect(
+      parseDownloadProgress({
+        operationId: 'op-1',
+        phase: 'downloading',
+        receivedBytes: 10,
+        totalBytes: 100,
+      }),
+    ).toEqual({
+      operationId: 'op-1',
+      phase: 'downloading',
+      receivedBytes: 10,
+      totalBytes: 100,
+    })
+    expect(
+      parseDownloadProgress({ operationId: 'op-1', phase: 'installing' }),
+    ).toEqual({ operationId: 'op-1', phase: 'installing' })
+    for (const value of [
+      null,
+      {},
+      { operationId: '', phase: 'downloading' },
+      { operationId: 'op-1', phase: 'unknown' },
+      { operationId: 'op-1', phase: 'downloading', receivedBytes: -1 },
+      { operationId: 'op-1', phase: 'downloading', totalBytes: 'x' },
+    ]) {
+      expect(parseDownloadProgress(value)).toBeUndefined()
+    }
+  })
+
+  it('accepts a well-formed remote origin on a plugin detail', () => {
+    const result = parsePluginList({
+      plugins: [
+        {
+          ...validPlugin(),
+          origin: {
+            kind: 'remote',
+            url: 'https://github.com/acme/hello',
+            sha256: DIGEST,
+            publishedAt: '2026-01-01T00:00:00Z',
+          },
+        },
+      ],
+      issues: [],
+    })
+    expect(result.items[0]?.origin).toMatchObject({ kind: 'remote' })
+  })
+
+  it('drops a plugin entry whose origin is malformed', () => {
+    for (const origin of [
+      { kind: 'unknown' },
+      { kind: 'remote', sha256: 'abc' },
+      { kind: 'remote', url: 'http://github.com/acme/hello' },
+      { kind: 'remote', url: 42 },
+      'https://github.com/acme/hello',
+    ]) {
+      const result = parsePluginList({
+        plugins: [{ ...validPlugin(), origin }],
+        issues: [],
+      })
+      expect(result.items).toEqual([])
+      expect(result.issues).toHaveLength(1)
+    }
   })
 })

@@ -35,6 +35,7 @@ const ALLOWED_NODE_BUILTINS = [
   'node:stream',
   'node:crypto',
   'node:util',
+  'node:zlib',
 ]
 
 /**
