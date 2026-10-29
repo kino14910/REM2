@@ -11,6 +11,7 @@
   import Shell from './Shell.svelte'
   import CommandPrompt from './components/CommandPrompt.svelte'
   import ThemeToggle from './components/ThemeToggle.svelte'
+  import PluginManager from './components/PluginManager.svelte'
   import { ipc } from '../lib/ipc-client'
   import { events } from '../../shared/ipc-contract'
   import { panels } from '../lib/stores/panels.svelte'
@@ -19,6 +20,8 @@
   import { health } from '../lib/stores/health.svelte'
   import { resolveActivePanel } from '../lib/nav-link'
   import type { ThemeDto } from '../lib/bridge-types'
+
+  let managingPlugins = $state(false)
 
   // Route drives which panel is active. The four loads start in parallel, so
   // neither store is guaranteed to arrive first: this effect re-resolves
@@ -42,15 +45,26 @@
     })
     // Any plugin state change can add contributions (Active) or reclaim them
     // (Stopped / Failed): re-pull unconditionally, because filtering by state
-    // set would miss a late-arriving Active.
-    const offPluginState = ipc.subscribe(events.pluginStateChanged, () => {
-      void panels.load()
-      void routes.load()
-      void health.load()
-    })
+    // set would miss a late-arriving Active. Coalesced because a plugin-service
+    // restart unloads and reloads every plugin, i.e. dozens of events in a row.
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined
+    const scheduleRefresh = (): void => {
+      if (refreshTimer !== undefined) return
+      refreshTimer = setTimeout(() => {
+        refreshTimer = undefined
+        void panels.load()
+        void routes.load()
+        void health.load()
+      }, 60)
+    }
+    const offPluginState = ipc.subscribe(
+      events.pluginStateChanged,
+      scheduleRefresh,
+    )
     return () => {
       offTheme()
       offPluginState()
+      if (refreshTimer !== undefined) clearTimeout(refreshTimer)
     }
   })
 </script>
@@ -58,9 +72,21 @@
 <div class="app">
   <header class="topbar">
     <CommandPrompt />
+    <button
+      type="button"
+      class:active={managingPlugins}
+      aria-pressed={managingPlugins}
+      onclick={() => (managingPlugins = !managingPlugins)}
+    >
+      Plugins
+    </button>
     <ThemeToggle />
   </header>
-  <Shell />
+  {#if managingPlugins}
+    <PluginManager />
+  {:else}
+    <Shell />
+  {/if}
 </div>
 
 <style>
@@ -75,5 +101,17 @@
     align-items: center;
     padding: var(--rem2-space-sm) var(--rem2-space-md);
     border-bottom: 1px solid var(--rem2-color-border);
+  }
+  .topbar > button {
+    padding: 6px 10px;
+    border: 1px solid var(--rem2-color-border);
+    border-radius: 4px;
+    background: var(--rem2-color-surface);
+    color: var(--rem2-color-text);
+    font: inherit;
+    cursor: pointer;
+  }
+  .topbar > button.active {
+    border-color: var(--rem2-color-accent);
   }
 </style>

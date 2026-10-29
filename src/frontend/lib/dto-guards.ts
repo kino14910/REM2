@@ -9,6 +9,11 @@
  */
 
 import type { PanelDto, RouteDto } from './bridge-types.js'
+import type {
+  PluginDetailDto,
+  PluginOperationResultDto,
+  PluginRuntimeStateDto,
+} from '../../shared/ipc-contract.js'
 
 /** Upper bound for rendered panel data (keeps a rogue plugin from freezing the UI). */
 const MAX_PANEL_DATA_CHARS = 32768
@@ -203,4 +208,150 @@ export function parsePanelData(value: unknown): ParsedPanelData {
     return { kind: 'invalid', reason: 'panel data exceeds 32KB limit' }
   }
   return { kind: 'json', text }
+}
+
+const PLUGIN_STATES = new Set<PluginRuntimeStateDto>([
+  'Registered',
+  'Resolved',
+  'Dropped',
+  'Loaded',
+  'Initialized',
+  'Configured',
+  'Active',
+  'Degraded',
+  'Failed',
+  'Stopped',
+  'Unloaded',
+  'Disposed',
+  'Disabled',
+])
+
+function pluginIssue(entry: unknown, index: number): string | undefined {
+  if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+    return `plugin[${index}]: not an object`
+  }
+  const plugin = entry as Record<string, unknown>
+  for (const field of ['id', 'name', 'version', 'entry'] as const) {
+    if (!isNonEmptyString(plugin[field])) {
+      return `plugin[${index}]: field "${field}" must be a non-empty string`
+    }
+  }
+  if (!['builtin', 'user', 'workspace'].includes(String(plugin.source))) {
+    return `plugin[${index}]: invalid source`
+  }
+  if (!PLUGIN_STATES.has(plugin.state as PluginRuntimeStateDto)) {
+    return `plugin[${index}]: invalid state`
+  }
+  for (const field of [
+    'enabled',
+    'builtin',
+    'canUninstall',
+    'restartRequired',
+  ] as const) {
+    if (typeof plugin[field] !== 'boolean') {
+      return `plugin[${index}]: field "${field}" must be boolean`
+    }
+  }
+  for (const field of ['tags', 'requires'] as const) {
+    if (
+      !Array.isArray(plugin[field]) ||
+      !plugin[field].every(isNonEmptyString)
+    ) {
+      return `plugin[${index}]: field "${field}" must be a string array`
+    }
+  }
+  for (const field of ['dependencies', 'optionalDependencies'] as const) {
+    if (!isStringMap(plugin[field])) {
+      return `plugin[${index}]: field "${field}" must be a string map`
+    }
+  }
+  if (!isCompatibility(plugin.compatibility)) {
+    return `plugin[${index}]: invalid compatibility`
+  }
+  for (const field of ['description', 'author', 'homepage', 'error'] as const) {
+    if (plugin[field] !== undefined && typeof plugin[field] !== 'string') {
+      return `plugin[${index}]: field "${field}" must be a string`
+    }
+  }
+  return undefined
+}
+
+function isStringMap(value: unknown): value is Record<string, string> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.values(value).every(entry => typeof entry === 'string')
+  )
+}
+
+function isCompatibility(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    return false
+  const compatibility = value as Record<string, unknown>
+  return (
+    isNonEmptyString(compatibility.minKernel) &&
+    isNonEmptyString(compatibility.contractVersion) &&
+    (compatibility.maxKernel === undefined ||
+      isNonEmptyString(compatibility.maxKernel))
+  )
+}
+
+export function parsePluginList(value: unknown): {
+  items: PluginDetailDto[]
+  issues: string[]
+  restartRequired: boolean
+} {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('invalid plugin list: expected an object')
+  }
+  const list = value as Record<string, unknown>
+  if (!Array.isArray(list.plugins) || !Array.isArray(list.issues)) {
+    throw new Error('invalid plugin list: plugins and issues must be arrays')
+  }
+  const items: PluginDetailDto[] = []
+  const issues = list.issues.filter(
+    (issue): issue is string => typeof issue === 'string',
+  )
+  list.plugins.forEach((entry, index) => {
+    const issue = pluginIssue(entry, index)
+    if (issue) issues.push(issue)
+    else items.push(entry as PluginDetailDto)
+  })
+  // Trust the explicit flag, but never hide a pending restart if only the
+  // per-plugin projection carries it (defensive against partial responses).
+  const restartRequired =
+    list.restartRequired === true ||
+    items.some(item => item.restartRequired === true)
+  return { items, issues, restartRequired }
+}
+
+export function parsePluginOperation(value: unknown): PluginOperationResultDto {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('invalid plugin operation result')
+  }
+  const result = value as Record<string, unknown>
+  if (
+    result.ok !== true ||
+    typeof result.changed !== 'boolean' ||
+    typeof result.restartRequired !== 'boolean' ||
+    (result.message !== undefined && typeof result.message !== 'string')
+  ) {
+    throw new Error('invalid plugin operation result fields')
+  }
+  if (
+    result.plugin !== undefined &&
+    pluginIssue(result.plugin, 0) !== undefined
+  ) {
+    throw new Error('invalid plugin operation result plugin')
+  }
+  return {
+    ok: true,
+    changed: result.changed,
+    restartRequired: result.restartRequired,
+    ...(result.message !== undefined ? { message: result.message } : {}),
+    ...(result.plugin !== undefined
+      ? { plugin: result.plugin as unknown as PluginDetailDto }
+      : {}),
+  }
 }
