@@ -6,6 +6,8 @@ export interface KernelOptions {
   id: string
   /** User plugin root directories. */
   roots: string[]
+  /** Persisted disabled plugin ids, excluded before dependency resolution. */
+  disabledPlugins: readonly string[]
   /** Built-in plugin root directory (source=builtin implies trusted). */
   builtinRoot?: string
   workspaceRoot?: string
@@ -34,6 +36,7 @@ export function defaultKernelOptions(
   return {
     id: partial.id ?? 'rem2-kernel',
     roots: partial.roots ?? [],
+    disabledPlugins: partial.disabledPlugins ?? [],
     ...(partial.builtinRoot !== undefined
       ? { builtinRoot: partial.builtinRoot }
       : {}),

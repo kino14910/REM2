@@ -27,7 +27,7 @@ import type { Unsubscribe } from './contracts/event-bus.js'
 import type { TrustLevel } from './contracts/permission.js'
 import { trustLevelFor } from './security/trust-policy.js'
 import type { LoadOptions } from './loader/loader.js'
-import type { ResolveIssue } from './dependency/resolver.js'
+import type { ResolveIssue, ResolutionPlan } from './dependency/resolver.js'
 
 type StartOutcome = 'started' | 'degraded' | 'failed'
 
@@ -40,6 +40,8 @@ export class Kernel {
 
   private started = false
   private reloadCounter = 0
+  /** Plugins whose Degraded state is caused solely by missing optional dependencies. */
+  private readonly softDegraded = new Set<string>()
   /** Unsubscribe for the kernel's own command dispatcher responder (set in start()). */
   private commandExecuteUnsub: Unsubscribe | null = null
   private startResult: KernelStartResult = {
@@ -111,6 +113,54 @@ export class Kernel {
       payload => this.deps.commandDispatcher.dispatch(payload),
     )
 
+    const result = await this.launch()
+    log.info(
+      `kernel start complete: started=${result.started.length} degraded=${result.degraded.length} failed=${result.failed.length} dropped=${result.dropped.length}`,
+    )
+    return result
+  }
+
+  /**
+   * Restart the plugin service in place: stop every loaded plugin, then run
+   * discovery/resolution/start again with the current disabled set.
+   *
+   * Deliberately narrower than shutdown(): the root container, event bus,
+   * command dispatcher, log/trace sinks and therefore the host process stay
+   * untouched. Plugins are reloaded with a cache-busting query so module-level
+   * state does not survive the restart.
+   */
+  async restartPlugins(
+    disabledPluginIds: readonly string[] = this.options.disabledPlugins,
+  ): Promise<KernelStartResult> {
+    if (!this.started) {
+      throw new KernelError('E_GENERIC', 'kernel is not started')
+    }
+    const log = this.deps.log.child('kernel')
+    log.info('restarting plugin service (plugins only)')
+
+    await this.stopAllPlugins()
+    this.startResult = {
+      loadOrder: [],
+      started: [],
+      degraded: [],
+      failed: [],
+      dropped: [],
+    }
+    const result = await this.launch(disabledPluginIds, {
+      cacheBust: `restart-${this.reloadCounter++}`,
+    })
+    log.info(
+      `plugin service restarted: started=${result.started.length} degraded=${result.degraded.length} failed=${result.failed.length} dropped=${result.dropped.length}`,
+    )
+    return result
+  }
+
+  private async launch(
+    disabledPluginIds: readonly string[] = this.options.disabledPlugins,
+    loadOptions?: LoadOptions,
+  ): Promise<KernelStartResult> {
+    const log = this.deps.log.child('kernel')
+
     // Config: plugins read configuration during Initialize, so providers must be merged into a snapshot first.
     await this.deps.config.refresh()
 
@@ -127,8 +177,11 @@ export class Kernel {
     for (const issue of discovered.issues) {
       log.warn(`discovery issue: ${issue.dir} - ${issue.message}`)
     }
+    const candidates = discovered.candidates.filter(
+      c => !disabledPluginIds.includes(c.manifest.id),
+    )
     // Dependency resolution must complete here: the dependency graph requires the manifests from discovery.
-    const plan = this.deps.planOf(discovered.candidates)
+    const plan = this.deps.planOf(candidates)
     for (const issue of plan.issues) {
       const line = `[${issue.code}] ${issue.pluginId}: ${issue.detail}`
       if (issue.level === 'error') log.error(line)
@@ -139,7 +192,7 @@ export class Kernel {
     const degraded: string[] = []
     const failed: string[] = []
     const candidatesById = new Map<string, Candidate>(
-      discovered.candidates.map(c => [c.manifest.id, c]),
+      candidates.map(c => [c.manifest.id, c]),
     )
     const missingOptionalById = new Map<string, string[]>(
       plan.steps.map(s => [s.candidate.manifest.id, s.missingOptional]),
@@ -156,6 +209,7 @@ export class Kernel {
       }
 
       const outcome = await this.startOnePlugin(candidate, {
+        ...(loadOptions ? { loadOptions } : {}),
         missingOptional: missingOptionalById.get(pluginId) ?? [],
       })
       if (outcome === 'started') started.push(pluginId)
@@ -171,9 +225,6 @@ export class Kernel {
       failed,
       dropped: plan.dropped,
     }
-    log.info(
-      `kernel start complete: started=${started.length} degraded=${degraded.length} failed=${failed.length} dropped=${plan.dropped.length}`,
-    )
     await this.deps.events.emit(Topics.KernelReady, {
       loadOrder: plan.loadOrder,
       started,
@@ -181,6 +232,47 @@ export class Kernel {
       failed,
     })
     return this.startResult
+  }
+
+  /**
+   * Stop every loaded plugin in reverse start order and reclaim its artifacts.
+   * Used by restartPlugins(); shutdown() additionally disposes kernel-level
+   * infrastructure, which must survive a plugin-service restart.
+   */
+  private async stopAllPlugins(): Promise<void> {
+    const order = this.startResult.loadOrder.toReversed()
+    const orderedLoaded: LoadedPlugin[] = [
+      ...order
+        .map(id => this.deps.registry.getLoaded(id))
+        .filter((p): p is LoadedPlugin => p !== undefined),
+      ...this.deps.registry
+        .allLoaded()
+        .filter(p => !order.includes(p.manifest.id)),
+    ]
+
+    for (const loaded of orderedLoaded) {
+      const pluginId = loaded.manifest.id
+      const log = this.deps.log.child(`plugin:${pluginId}`, pluginId)
+      try {
+        await this.deps.lifecycle.runStopSequence(
+          loaded.hooks,
+          loaded.context,
+          'reload',
+        )
+        this.applyPluginState(pluginId, 'Stopped')
+      } catch (error) {
+        log.warn(
+          `plugin failed to stop during restart: ${(error as Error).message}`,
+        )
+      }
+      this.teardownPluginArtifacts(loaded)
+      this.deps.registry.remove(pluginId)
+      this.softDegraded.delete(pluginId)
+      await this.deps.events.emit(Topics.PluginUnloaded, {
+        pluginId,
+        reason: 'reload',
+      })
+    }
   }
 
   async reload(pluginId: string): Promise<void> {
@@ -279,6 +371,7 @@ export class Kernel {
     this.teardownPluginArtifacts(loaded)
     this.applyPluginState(pluginId, 'Stopped')
     this.deps.registry.remove(pluginId)
+    this.softDegraded.delete(pluginId)
 
     this.startResult.loadOrder = this.startResult.loadOrder.filter(
       id => id !== pluginId,
@@ -297,6 +390,115 @@ export class Kernel {
     await this.deps.events.emit(Topics.PluginUnloaded, { pluginId, reason })
   }
 
+  async enablePlugin(
+    pluginId: string,
+    disabledPluginIds: readonly string[] = this.options.disabledPlugins,
+  ): Promise<void> {
+    if (!this.started) {
+      throw new KernelError('E_GENERIC', 'kernel is not started')
+    }
+    const current = this.deps.registry.getLoaded(pluginId)
+    // Active is a no-op. Degraded is not: a plugin degraded only because an
+    // optional dependency was absent must be re-evaluated once that dependency
+    // becomes available again.
+    if (current?.state === 'Active') return
+
+    const discovered = await this.deps.discovery.discoverDetailed({
+      roots: this.options.roots,
+      ...(this.options.builtinRoot
+        ? { builtinRoot: this.options.builtinRoot }
+        : {}),
+      ...(this.options.workspaceRoot
+        ? { workspaceRoot: this.options.workspaceRoot }
+        : {}),
+      legacyFallback: this.options.legacyFallback,
+    })
+    const candidates = discovered.candidates.filter(
+      c =>
+        c.manifest.id === pluginId ||
+        !disabledPluginIds.includes(c.manifest.id),
+    )
+    const candidate = candidates.find(c => c.manifest.id === pluginId)
+    if (!candidate) {
+      throw new KernelError('E_GENERIC', `plugin not found: ${pluginId}`)
+    }
+
+    const plan = this.deps.planOf(candidates)
+    if (!plan.loadOrder.includes(pluginId)) {
+      const issue = plan.issues.find(i => i.pluginId === pluginId)
+      throw new KernelError(
+        'E_GENERIC',
+        `plugin cannot be enabled: ${issue ? `${issue.code}: ${issue.detail}` : 'dependency resolution failed'}`,
+      )
+    }
+
+    const byId = new Map(candidates.map(c => [c.manifest.id, c]))
+    const required = new Set<string>()
+    const collect = (id: string): void => {
+      if (required.has(id)) return
+      required.add(id)
+      for (const dep of Object.keys(
+        byId.get(id)?.manifest.dependencies ?? {},
+      )) {
+        collect(dep)
+      }
+    }
+    collect(pluginId)
+
+    for (const id of plan.loadOrder) {
+      if (!required.has(id)) continue
+      const step = plan.steps.find(s => s.candidate.manifest.id === id)
+      if (!step) continue
+      const loaded = this.deps.registry.getLoaded(id)
+      if (loaded?.state === 'Active') continue
+      if (loaded?.state === 'Degraded') {
+        // A degraded dependency is still usable. The target itself is only
+        // restarted when its missing optional set actually shrank; otherwise
+        // there is nothing new to evaluate.
+        if (id !== pluginId) continue
+        if (step.missingOptional.length > 0) return
+      }
+      if (loaded) await this.unloadPlugin(id, 'reload')
+
+      const outcome = await this.startOnePlugin(step.candidate, {
+        loadOptions: { cacheBust: `${Date.now()}-${this.reloadCounter++}` },
+        missingOptional: step.missingOptional,
+      })
+      this.recordStartOutcome(id, outcome)
+      if (outcome === 'failed') {
+        const message = this.deps.registry.getLoaded(id)?.health.message
+        throw new KernelError(
+          'E_GENERIC',
+          `plugin failed to start: ${id}${message ? ` (${message})` : ''}`,
+        )
+      }
+    }
+
+    await this.recoverSoftDegraded(plan)
+  }
+
+  /**
+   * Re-run plugins that were degraded purely by a missing optional dependency
+   * once that dependency is available again. Without this the stale Degraded
+   * state (and its health message) survives until a full restart.
+   */
+  private async recoverSoftDegraded(plan: ResolutionPlan): Promise<void> {
+    // allLoaded() already returns a fresh array, so unloads below are safe.
+    for (const loaded of this.deps.registry.allLoaded()) {
+      const id = loaded.manifest.id
+      if (loaded.state !== 'Degraded' || !this.softDegraded.has(id)) continue
+      const step = plan.steps.find(s => s.candidate.manifest.id === id)
+      if (!step || step.missingOptional.length > 0) continue
+
+      await this.unloadPlugin(id, 'reload')
+      const outcome = await this.startOnePlugin(step.candidate, {
+        loadOptions: { cacheBust: `${Date.now()}-${this.reloadCounter++}` },
+        missingOptional: [],
+      })
+      this.recordStartOutcome(id, outcome)
+    }
+  }
+
   async disablePlugin(pluginId: string): Promise<void> {
     await this.unloadPlugin(pluginId, 'user-disable')
   }
@@ -305,7 +507,7 @@ export class Kernel {
     const log = this.deps.log.child('kernel')
     log.info('kernel shutting down...')
 
-    const order = [...this.startResult.loadOrder].reverse()
+    const order = this.startResult.loadOrder.toReversed()
     const orderedLoaded = [
       ...order
         .map(id => this.deps.registry.getLoaded(id))
@@ -329,6 +531,7 @@ export class Kernel {
         // Isolation: a single plugin failing to stop does not block overall shutdown.
       }
       this.teardownPluginArtifacts(loaded)
+      this.softDegraded.delete(loaded.manifest.id)
     }
 
     this.commandExecuteUnsub?.()
@@ -382,12 +585,18 @@ export class Kernel {
       )
 
       if (outcome.ok && outcome.degraded) {
+        const missing = opts.missingOptional ?? []
         this.applyPluginState(pluginId, 'Degraded')
         this.deps.registry.setHealth(pluginId, {
           status: 'degraded',
-          message: 'soft dependency missing or non-fatal phase failure',
+          message:
+            missing.length > 0
+              ? `missing optional dependency: ${missing.join(', ')}`
+              : 'non-fatal lifecycle phase failure',
           checkedAt: Date.now(),
         })
+        if (missing.length > 0) this.softDegraded.add(pluginId)
+        else this.softDegraded.delete(pluginId)
         this.registerHealthCheck(withPerms)
         log.warn('plugin started degraded')
         this.deps.metrics
@@ -398,6 +607,7 @@ export class Kernel {
       }
 
       if (outcome.ok) {
+        this.softDegraded.delete(pluginId)
         this.applyPluginState(pluginId, outcome.finalState)
         this.deps.registry.setHealth(pluginId, {
           status: 'healthy',
@@ -411,6 +621,7 @@ export class Kernel {
         return 'started'
       }
 
+      this.softDegraded.delete(pluginId)
       this.applyPluginState(pluginId, 'Failed')
       this.deps.registry.setHealth(pluginId, {
         status: 'unhealthy',
@@ -427,6 +638,7 @@ export class Kernel {
       })
       return 'failed'
     } catch (error) {
+      this.softDegraded.delete(pluginId)
       this.applyPluginState(pluginId, 'Failed')
       log.error(`plugin load/authorization failed: ${(error as Error).message}`)
       this.deps.metrics
@@ -480,6 +692,18 @@ export class Kernel {
     const container = loaded.container as Container
     this.deps.rootContainer.unmountChildContainer(container)
     container.dispose()
+  }
+
+  private recordStartOutcome(pluginId: string, outcome: StartOutcome): void {
+    if (!this.startResult.loadOrder.includes(pluginId)) {
+      this.startResult.loadOrder.push(pluginId)
+    }
+    for (const key of ['started', 'degraded', 'failed'] as const) {
+      this.startResult[key] = this.startResult[key].filter(
+        id => id !== pluginId,
+      )
+    }
+    this.startResult[outcome].push(pluginId)
   }
 
   private hasFailedDependency(candidate: Candidate, failed: string[]): boolean {

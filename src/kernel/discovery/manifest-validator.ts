@@ -44,6 +44,10 @@ const ENTRY_RE = /\.(js|mjs)$/
 /** Set of declared extension point ids (from `extensions/definitions.ts`, single source of truth). */
 const KNOWN_POINTS: ReadonlySet<string> = new Set(EXTENSION_POINT_IDS)
 
+export function isValidPluginId(value: unknown): value is string {
+  return typeof value === 'string' && value.length >= 3 && ID_RE.test(value)
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return (
     value !== null &&
@@ -69,12 +73,7 @@ export function validateManifest(raw: unknown): ManifestValidationResult {
 
   const obj = raw
 
-  if (typeof obj.id !== 'string' || obj.id.length < 3) {
-    issues.push({
-      path: '$.id',
-      message: 'id must be a string with at least 3 characters',
-    })
-  } else if (!ID_RE.test(obj.id)) {
+  if (!isValidPluginId(obj.id)) {
     issues.push({
       path: '$.id',
       message: `invalid id format: ${obj.id} (reverse-DNS recommended)`,

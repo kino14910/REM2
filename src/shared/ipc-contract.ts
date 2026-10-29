@@ -53,6 +53,19 @@ export const channels = {
   themeSet: 'ui.theme.set',
   /** Report a UI interaction. */
   uiEvent: 'ui.event',
+  pluginList: 'plugin.list',
+  pluginDetail: 'plugin.detail',
+  /**
+   * Install from a directory picked in the main process. The source is part of
+   * the method name so a future remote install gets its own explicit method
+   * (`plugin.install.remote`) instead of overloading one `install`.
+   */
+  pluginInstallFromDirectory: 'plugin.install.directory',
+  pluginEnable: 'plugin.enable',
+  pluginDisable: 'plugin.disable',
+  pluginUninstall: 'plugin.uninstall',
+  /** Restart every plugin in place; the kernel, host process and window stay alive. */
+  pluginRestart: 'plugin.restart',
   /** Execute a command (responded directly by a command plugin; the host does not implement it). */
   commandExecute: 'command.execute',
   /** Fetch the health report. */
@@ -96,6 +109,68 @@ export const ALLOWED_METHOD_SET: ReadonlySet<string> = new Set(ALLOWED_METHODS)
 /** Event whitelist set. */
 export const ALLOWED_EVENT_SET: ReadonlySet<string> = new Set(ALLOWED_EVENTS)
 
+export type PluginSourceDto = 'builtin' | 'user' | 'workspace'
+
+export type PluginRuntimeStateDto =
+  | 'Registered'
+  | 'Resolved'
+  | 'Dropped'
+  | 'Loaded'
+  | 'Initialized'
+  | 'Configured'
+  | 'Active'
+  | 'Degraded'
+  | 'Failed'
+  | 'Stopped'
+  | 'Unloaded'
+  | 'Disposed'
+  | 'Disabled'
+
+export interface PluginSummaryDto {
+  id: string
+  name: string
+  version: string
+  description?: string
+  source: PluginSourceDto
+  state: PluginRuntimeStateDto
+  enabled: boolean
+  builtin: boolean
+  error?: string
+}
+
+export interface PluginDetailDto extends PluginSummaryDto {
+  entry: string
+  author?: string
+  homepage?: string
+  tags: string[]
+  dependencies: Record<string, string>
+  optionalDependencies: Record<string, string>
+  requires: string[]
+  compatibility: {
+    minKernel: string
+    maxKernel?: string
+    contractVersion: string
+  }
+  canUninstall: boolean
+  /** Disabled on disk but still loaded in the running plugin service. */
+  restartRequired: boolean
+}
+
+export interface PluginListDto {
+  plugins: PluginDetailDto[]
+  issues: string[]
+  /** Any plugin whose disabled intent is not yet reflected in the running service. */
+  restartRequired: boolean
+}
+
+export interface PluginOperationResultDto {
+  ok: true
+  changed: boolean
+  restartRequired: boolean
+  plugin?: PluginDetailDto
+  message?: string
+}
+
 /** IPC request payload. */
 export interface IpcRequest {
   id: string
@@ -110,6 +185,7 @@ export interface IpcResponse {
   ok: boolean
   result?: unknown
   error?: string
+  errorCode?: string
 }
 
 /** Event push payload. */
