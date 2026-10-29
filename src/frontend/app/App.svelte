@@ -9,6 +9,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import Shell from './Shell.svelte'
+  import TitleBar from './components/TitleBar.svelte'
   import CommandPrompt from './components/CommandPrompt.svelte'
   import ThemeToggle from './components/ThemeToggle.svelte'
   import PluginManager from './components/PluginManager.svelte'
@@ -70,6 +71,7 @@
 </script>
 
 <div class="app">
+  <TitleBar />
   <header class="topbar">
     <CommandPrompt />
     <button

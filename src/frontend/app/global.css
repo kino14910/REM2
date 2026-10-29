@@ -24,6 +24,9 @@
   --rem2-space-sm: 8px;
   --rem2-space-md: 16px;
   --rem2-space-lg: 24px;
+
+  /* Custom title bar height; must match TITLE_BAR_HEIGHT in host/electron/window.ts. */
+  --rem2-titlebar-height: 36px;
 }
 
 * {

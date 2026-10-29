@@ -4,11 +4,13 @@ import path from 'node:path'
 import { Kernel } from '../../kernel/kernel.js'
 import { createDeps } from '../../kernel/composition.js'
 import { KernelTokens } from '../../kernel/contracts/kernel-tokens.js'
+import { Topics } from '../../kernel/topics.js'
+import type { ThemeDefinition } from '../../kernel/contracts/ui.js'
 import { IpcBridge } from '../ipc/bridge.js'
 import { EVENT_FORWARD_MAP } from '../ipc/forward-map.js'
 import { createMethodHandlers } from '../ipc/method-handlers.js'
 import { builtinPluginsRoot } from '../cli/paths.js'
-import { createWindow } from './window.js'
+import { createWindow, applyTitleBarTheme } from './window.js'
 import type { EventBus } from '../../kernel/contracts/event-bus.js'
 import { ThemeRegistryImpl } from './theme-registry.js'
 import { LocalPluginManager } from '../plugins/local-plugin-manager.js'
@@ -16,6 +18,8 @@ import { PluginStateStore } from '../plugins/state-store.js'
 
 let kernel: Kernel | null = null
 let bridge: IpcBridge | null = null
+/** Unsubscribes the native title-bar overlay from theme changes (see `startKernel`). */
+let themeUnsubscribe: (() => void) | null = null
 
 /**
  * In GPU-less / virtualized environments (VMs, CI, remote desktop, restricted
@@ -141,6 +145,27 @@ async function startKernel(): Promise<void> {
       return () => ipcMain.removeListener(channel, listener)
     },
   })
+
+  // The window-controls overlay is painted by the OS, so it cannot follow the
+  // renderer's CSS variables; drive it from the same topic that feeds the
+  // renderer's `ui.theme.changed` event.
+  themeUnsubscribe = bus.on(Topics.UiThemeChanged, payload => {
+    const theme = (payload as ThemeDefinition | null) ?? null
+    for (const win of BrowserWindow.getAllWindows()) {
+      applyTitleBarTheme(win, theme)
+    }
+  })
+}
+
+/** Create the shell window, applying the active theme to the native overlay (macOS reactivation included). */
+function createAppWindow(): BrowserWindow {
+  const window = createWindow()
+  const activeId = themeRegistry.active()
+  applyTitleBarTheme(
+    window,
+    activeId ? (themeRegistry.get(activeId) ?? null) : null,
+  )
+  return window
 }
 
 app.whenReady().then(async () => {
@@ -157,10 +182,10 @@ app.whenReady().then(async () => {
     return
   }
 
-  createWindow()
+  createAppWindow()
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BrowserWindow.getAllWindows().length === 0) createAppWindow()
   })
 })
 
@@ -175,6 +200,8 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', async () => {
   bridge?.unbind()
+  themeUnsubscribe?.()
+  themeUnsubscribe = null
   if (kernel) {
     await kernel.shutdown()
     kernel = null
