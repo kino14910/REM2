@@ -68,4 +68,9 @@ export interface PluginContext {
   readonly plugins: PluginsRegistryView
   /** Resolves a relative path to an absolute path under the plugin rootDir; escaping the root throws EntryEscapeError. */
   resolvePath(relative: string): string
+  /**
+   * Resolves a writable per-plugin data path outside the install directory.
+   * Hosts must provide `pluginDataRoot`; absent it falls back to `<rootDir>/data` for compatibility.
+   */
+  dataPath(relative: string): string
 }

@@ -53,6 +53,8 @@ export interface WorkerHostFacilities {
    * defect, not a design choice.
    */
   permissions?: { granted: string[]; denied: string[] }
+  /** Host-owned plugin data root; the worker receives its own isolated directory. */
+  pluginDataRoot?: string
   /** Extension point contribution target (workers: three sink kinds only). */
   extensions?: {
     contribute(pluginId: string, point: string, contribution: unknown): void
@@ -159,6 +161,9 @@ export class WorkerPluginHost {
         entrySpecifier: specifier,
         manifest,
         rootDir: path.resolve(rootDir),
+        dataRoot: this.facilities.pluginDataRoot
+          ? path.resolve(this.facilities.pluginDataRoot, manifest.id)
+          : path.resolve(rootDir, 'data'),
         configSnapshot: this.facilities.config.snapshotOf(),
         permissions: this.facilities.permissions ?? { granted: [], denied: [] },
       })

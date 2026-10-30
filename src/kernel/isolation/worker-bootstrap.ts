@@ -147,6 +147,9 @@ function buildContext(init) {
     resolvePath(rel) {
       return path.resolve(init.rootDir, rel);
     },
+    dataPath(rel) {
+      return path.resolve(init.dataRoot, rel);
+    },
     container: { register: unsupported('container'), registerInstance: unsupported('container') },
     services: {
       register: unsupported('services.register'),

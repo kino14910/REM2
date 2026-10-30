@@ -23,6 +23,10 @@ import { fileURLToPath } from 'node:url'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = path.resolve(HERE, '..')
 const PLUGINS_DIR = path.join(PROJECT_ROOT, 'plugins')
+/** External sources stay in their own repository; only built artifacts enter plugins-dist. */
+const EXTERNAL_PLUGINS_DIR =
+  process.env.REM2_EXTERNAL_PLUGINS_DIR ??
+  path.resolve(PROJECT_ROOT, '..', 'REM2-plugins')
 
 /** esbuild target: Node 20 (aligned with `engines.node: '>=20'`). */
 const ESBUILD_TARGET = 'node20'
@@ -81,11 +85,37 @@ async function main() {
     return
   }
 
+  const pluginSources = entries.map(name => ({
+    name,
+    pluginDir: path.join(PLUGINS_DIR, name),
+  }))
+  if (EXTERNAL_PLUGINS_DIR) {
+    try {
+      const external = await readdir(EXTERNAL_PLUGINS_DIR, {
+        withFileTypes: true,
+      })
+      for (const entry of external) {
+        if (
+          !entry.isDirectory() ||
+          entry.name.startsWith('.') ||
+          entry.name === 'node_modules'
+        ) {
+          continue
+        }
+        const pluginDir = path.join(EXTERNAL_PLUGINS_DIR, entry.name)
+        if (existsSync(path.join(pluginDir, 'plugin.json'))) {
+          pluginSources.push({ name: entry.name, pluginDir })
+        }
+      }
+    } catch {
+      // The external repository is optional for standalone kernel checkouts.
+    }
+  }
+
   let built = 0
   const failures = []
 
-  for (const name of entries) {
-    const pluginDir = path.join(PLUGINS_DIR, name)
+  for (const { name, pluginDir } of pluginSources) {
     const source = await resolveEntrySource(pluginDir)
     if (!source) {
       failures.push(`${name}: entry source not found (src/index.ts)`)
@@ -134,7 +164,9 @@ async function main() {
     }
   }
 
-  process.stdout.write(`Plugin build complete: ${built}/${entries.length}\n`)
+  process.stdout.write(
+    `Plugin build complete: ${built}/${pluginSources.length}\n`,
+  )
   if (failures.length > 0) {
     for (const f of failures) process.stderr.write(`  ✗ ${f}\n`)
     process.exitCode = 1

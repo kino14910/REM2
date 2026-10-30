@@ -27,6 +27,7 @@ export async function run(
       id: args.id,
       roots: extraRoots,
       builtinRoot,
+      pluginDataRoot: path.join(root, 'plugin-data'),
       ...(args.configPath
         ? { configPath: path.resolve(root, args.configPath) }
         : {}),

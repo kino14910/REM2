@@ -17,7 +17,6 @@
     "name": "rem2-team"
   },
   "main": ".vite/build/main.cjs",
-  "packageManager": "pnpm@12.8.1",
   "engines": {
     "node": ">=20",
     "pnpm": ">=9"

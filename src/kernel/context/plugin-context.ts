@@ -39,11 +39,26 @@ export interface ContextDeps {
   guard: CapabilityGuard
   /** Extension-point contribution view for this plugin. */
   extensions: ExtensionContributorView
+  /** Host-owned writable root; each plugin gets an isolated subdirectory. */
+  pluginDataRoot?: string
   /** State reader (returns the current plugin's logical state). */
   stateOf: (pluginId: string) => PluginStateT
   /** Export mounting hooks (provided by the kernel so the plugin API never touches the parent container). */
   mountExported: PluginApiHooks['mountExported']
   unmountExported: PluginApiHooks['unmountExported']
+}
+
+function resolveInside(
+  rootDir: string,
+  relative: string,
+  pluginId: string,
+): string {
+  const resolved = path.resolve(rootDir, relative)
+  const rel = path.relative(rootDir, resolved)
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new EntryEscapeError(pluginId, relative)
+  }
+  return resolved
 }
 
 export function createPluginContext(
@@ -91,6 +106,10 @@ export function createPluginContext(
     list: () => diContainer.list(),
   }
 
+  const pluginDataDir = deps.pluginDataRoot
+    ? path.resolve(deps.pluginDataRoot, pluginId)
+    : path.join(rootDir, 'data')
+
   const context: PluginContext = {
     pluginId,
     manifest,
@@ -107,15 +126,11 @@ export function createPluginContext(
     extensions: deps.extensions,
     api,
     plugins: deps.registry as PluginsRegistryView,
-    resolvePath: (relative: string): string => {
-      const resolved = path.resolve(rootDir, relative)
-      const rel = path.relative(rootDir, resolved)
-      // Entry sandbox: plugins must not use resolvePath to escape rootDir.
-      if (rel.startsWith('..') || path.isAbsolute(rel)) {
-        throw new EntryEscapeError(pluginId, relative)
-      }
-      return resolved
-    },
+    // Entry sandbox: plugins must not use these helpers to escape their roots.
+    resolvePath: (relative: string): string =>
+      resolveInside(rootDir, relative, pluginId),
+    dataPath: (relative: string): string =>
+      resolveInside(pluginDataDir, relative, pluginId),
   }
 
   return context

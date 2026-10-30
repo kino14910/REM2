@@ -13,6 +13,8 @@ export interface KernelOptions {
   workspaceRoot?: string
   /** Config file path (passed through to the config provider; the kernel itself does not parse it). */
   configPath?: string
+  /** Root for writable plugin data; each plugin resolves into `<pluginDataRoot>/<pluginId>`. */
+  pluginDataRoot?: string
   /** Global trust-level override (defaults to source-based detection). */
   trustLevel?: TrustLevel
   /** Start timeout (single plugin Start phase). */
@@ -45,6 +47,9 @@ export function defaultKernelOptions(
       : {}),
     ...(partial.configPath !== undefined
       ? { configPath: partial.configPath }
+      : {}),
+    ...(partial.pluginDataRoot !== undefined
+      ? { pluginDataRoot: partial.pluginDataRoot }
       : {}),
     ...(partial.trustLevel !== undefined
       ? { trustLevel: partial.trustLevel }

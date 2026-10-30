@@ -34,6 +34,8 @@ export interface InitMessage {
   entrySpecifier: string
   manifest: { id: string; name: string; version: string }
   rootDir: string
+  /** Writable directory for this plugin (outside the install tree). */
+  dataRoot: string
   configSnapshot: Record<string, unknown>
   /** Real permission snapshot (C8: the old implementation hardcoded an empty set). */
   permissions: { granted: string[]; denied: string[] }

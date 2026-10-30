@@ -67,7 +67,8 @@ export interface LocalPluginManagerOptions {
 
 export class LocalPluginManager {
   private readonly kernel: Kernel
-  private readonly userRoot: string
+  /** Canonicalized in ensureReady(): Windows temp paths may use 8.3 aliases. */
+  private userRoot: string
   private readonly dataRoot: string
   private readonly state: PluginStateStore
   private readonly builtinRoot?: string
@@ -874,16 +875,16 @@ export class LocalPluginManager {
     await mkdir(this.dataRoot, { recursive: true })
     const stat = await lstat(this.userRoot)
     const real = await realpath(this.userRoot)
-    if (
-      stat.isSymbolicLink() ||
-      !stat.isDirectory() ||
-      path.resolve(real) !== this.userRoot
-    ) {
+    if (stat.isSymbolicLink() || !stat.isDirectory()) {
       throw new PluginManagementError(
         'E_PATH_ESCAPE',
         'user plugin root must be a real directory',
       )
     }
+    // Adopt the canonical path instead of requiring it to equal the configured
+    // one: Windows short (8.3) temp paths and case differences are aliases of
+    // the same real directory, and lexical containment checks must use one form.
+    this.userRoot = path.resolve(real)
     this.ready = true
   }
 
@@ -903,7 +904,13 @@ export class LocalPluginManager {
         'plugin source must be a real directory',
       )
     }
-    if (isWithin(source, this.userRoot) || isWithin(this.userRoot, source)) {
+    // Compare canonical forms: Windows short/case aliases must not bypass the
+    // "source and managed roots are separate" check.
+    const realSource = path.resolve(await realpath(source))
+    if (
+      isWithin(realSource, this.userRoot) ||
+      isWithin(this.userRoot, realSource)
+    ) {
       throw new PluginManagementError(
         'E_SOURCE_INVALID',
         'plugin source and managed roots must be separate',

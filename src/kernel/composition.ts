@@ -188,6 +188,9 @@ export function createDeps(partial: CreateDepsOptions = {}): KernelDeps {
         metrics,
         registry,
         guard,
+        ...(options.pluginDataRoot !== undefined
+          ? { pluginDataRoot: options.pluginDataRoot }
+          : {}),
         extensions: {
           contribute: (point, contribution) => {
             extensions.contribute(candidate.manifest.id, point, contribution)
@@ -214,6 +217,9 @@ export function createDeps(partial: CreateDepsOptions = {}): KernelDeps {
       config,
       logService: log,
       metrics,
+      ...(options.pluginDataRoot !== undefined
+        ? { pluginDataRoot: options.pluginDataRoot }
+        : {}),
       extensions: {
         contribute: (pluginId, point, contribution) => {
           extensions.contribute(pluginId, point as never, contribution as never)
