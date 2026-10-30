@@ -17,7 +17,8 @@ class ThemeStore {
 
   active = $derived(this.list.find(t => t.id === this.activeId))
   light = $derived(this.list.find(t => t.mode === 'light'))
-  dark = $derived(this.list.find(t => t.mode === 'dark'))
+  dark = $derived(this.list.find(t => t.id === 'dark' || t.mode === 'dark'))
+  system = $derived(this.list.find(t => t.followSystem))
   /** A switch only makes sense when both modes are resident (e.g. the theme plugin is loaded). */
   canSwitchMode = $derived(this.light !== undefined && this.dark !== undefined)
 
@@ -42,7 +43,7 @@ class ThemeStore {
     void ipc.request<{ ok: boolean }>(channels.themeSet, { themeId: theme.id })
   }
 
-  setMode(mode: 'light' | 'dark'): void {
+  setMode(mode: ThemeDto['mode']): void {
     const target = this.list.find(t => t.mode === mode)
     if (target && target.id !== this.activeId) this.setActive(target)
   }

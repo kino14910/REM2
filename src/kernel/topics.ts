@@ -25,6 +25,9 @@ export const Topics = {
   CommandResult: 'command.result',
 
   /** UI (consumed by the frontend via an IPC allowlist; raw plugin events never leak) */
+  UiThemeSet: 'ui.theme.set',
+  /** Re-read a mutated theme catalog and publish the materialized active theme. */
+  UiThemeRefresh: 'ui.theme.refresh',
   UiThemeChanged: 'ui.theme.changed',
   /** Plugins proactively push panel data refreshes (`panel.data-changed`). */
   PanelDataChanged: 'ui.panel.data-changed',

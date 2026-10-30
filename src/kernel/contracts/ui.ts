@@ -23,15 +23,36 @@
  * The kernel never interprets it: the shell uses it to pair one theme per mode into
  * a light/dark switch and to set the CSS `color-scheme`.
  */
-export type ThemeMode = 'light' | 'dark'
+export type ThemeMode = 'light' | 'dark' | 'system'
 
 export interface ThemeDefinition {
   readonly id: string
-  /** Mode this token set represents (one theme per mode is what makes the switch meaningful). */
+  /** Mode this token set represents. A system entry is materialized to light/dark by the host. */
   readonly mode: ThemeMode
   readonly colors: Readonly<Record<string, string>>
   readonly fonts: Readonly<Record<string, string>>
   readonly spacing: Readonly<Record<string, string>>
+  /** Resolve this entry from the current OS palette while preserving its own id and accent. */
+  readonly followSystem?: boolean
+}
+
+export interface PanelFormOption {
+  readonly value: string
+  readonly label: string
+}
+
+/** Declarative form field rendered by the generic PanelShell. */
+export interface PanelFormField {
+  readonly id: string
+  readonly label: string
+  readonly type: 'select' | 'color'
+  readonly value: string
+  readonly options?: readonly PanelFormOption[]
+}
+
+export interface PanelFormData {
+  readonly kind: 'form'
+  readonly fields: readonly PanelFormField[]
 }
 
 /**

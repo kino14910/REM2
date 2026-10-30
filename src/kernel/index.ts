@@ -94,6 +94,9 @@ export type {
   ThemeRegistry,
   PanelContribution,
   PanelRegion,
+  PanelFormData,
+  PanelFormField,
+  PanelFormOption,
   RouteContribution,
 } from './contracts/index.js'
 

@@ -41,14 +41,27 @@ export interface PanelTableDto {
   rows: Array<Array<string | number>>
 }
 
+/** Generic declarative form rendered by PanelShell. */
+export interface PanelFormDto {
+  kind: 'form'
+  fields: Array<{
+    id: string
+    label: string
+    type: 'select' | 'color'
+    value: string
+    options?: Array<{ value: string; label: string }>
+  }>
+}
+
 /** Theme DTO, projected from `ThemeDefinition` in `kernel/contracts/ui.ts`. */
 export interface ThemeDto {
   id: string
-  /** Light/dark classification; drives the mode switch and the CSS `color-scheme`. */
-  mode: 'light' | 'dark'
+  /** System entries are materialized to light/dark by the host before rendering. */
+  mode: 'light' | 'dark' | 'system'
   colors: Record<string, string>
   fonts: Record<string, string>
   spacing: Record<string, string>
+  followSystem?: boolean
 }
 
 /**

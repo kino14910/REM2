@@ -12,11 +12,33 @@
 
 {#if theme.canSwitchMode}
   <div class="mode-switch" role="group" aria-label="Color mode">
+    {#if theme.system}
+      <button
+        type="button"
+        class="mode-switch__option"
+        aria-label="System theme"
+        aria-pressed={theme.activeId === theme.system.id}
+        onclick={() => theme.setActive(theme.system!)}
+      >
+        <svg
+          viewBox="0 0 16 16"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.3"
+          aria-hidden="true"
+        >
+          <rect x="2" y="2.5" width="12" height="9" rx="1" />
+          <path d="M6 13.5h4" />
+        </svg>
+      </button>
+    {/if}
     <button
       type="button"
       class="mode-switch__option"
       aria-label="Light mode"
-      aria-pressed={theme.active?.mode === 'light'}
+      aria-pressed={!theme.active?.followSystem && theme.active?.mode === 'light'}
       onclick={() => theme.setMode('light')}
     >
       <svg
@@ -39,7 +61,7 @@
       type="button"
       class="mode-switch__option"
       aria-label="Dark mode"
-      aria-pressed={theme.active?.mode === 'dark'}
+      aria-pressed={!theme.active?.followSystem && theme.active?.mode === 'dark'}
       onclick={() => theme.setMode('dark')}
     >
       <svg

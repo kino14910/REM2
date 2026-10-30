@@ -70,6 +70,8 @@ export interface MethodContext {
   kernel: Kernel
   bus: EventBus
   themeRegistry: ThemeRegistry
+  /** Electron nativeTheme in production; deterministic injection for tests. */
+  isSystemDark?: () => boolean
   pluginManager?: LocalPluginManager
   choosePluginDirectory?: () => Promise<string | undefined>
 }
@@ -112,7 +114,7 @@ function progressSinkFor(
 /**
  * Sync contributions from the `ui.theme` extension slot into the theme registry.
  *
- * Why this bridge is needed (it really broke once): `theme-dark` contributes its
+ * Why this bridge is needed (it really broke once): `theme-switcher` contributes its
  * theme into the `ui.theme` slot, but responders read from `themeRegistry` (a
  * separate piece of memory). Nothing connected the two sides, so theme data died at
  * the extension point - `ui.theme.list` always returned [] and `ui.theme.set` always
@@ -129,20 +131,62 @@ function progressSinkFor(
  * CSS fallbacks are dark, so first paint does not flash); an existing selection is
  * never overridden.
  */
+function materializeThemes(
+  contributed: readonly ThemeDefinition[],
+  ctx: MethodContext,
+): ThemeDefinition[] {
+  const systemMode = ctx.isSystemDark?.() === true ? 'dark' : 'light'
+  return contributed.map(theme => {
+    if (!theme.followSystem) return theme
+    const effective = contributed.find(
+      candidate =>
+        !candidate.followSystem &&
+        (candidate.id === systemMode || candidate.mode === systemMode),
+    )
+    if (!effective) return { ...theme, mode: systemMode }
+    return {
+      ...theme,
+      mode: systemMode,
+      colors: {
+        ...effective.colors,
+        ...(theme.colors.accent !== undefined
+          ? { accent: theme.colors.accent }
+          : {}),
+      },
+      fonts: { ...effective.fonts },
+      spacing: { ...effective.spacing },
+    }
+  })
+}
+
 function syncThemeFromExtension(ctx: MethodContext): void {
-  const contributed = ctx.kernel.extensions.listAll<ThemeDefinition>('ui.theme')
+  const contributed = materializeThemes(
+    ctx.kernel.extensions.listAll<ThemeDefinition>('ui.theme'),
+    ctx,
+  )
   const existing = new Set(contributed.map(t => t.id))
 
   for (const t of ctx.themeRegistry.list()) {
     if (!existing.has(t.id)) ctx.themeRegistry.unregister(t.id)
   }
-  for (const t of contributed) {
-    if (!ctx.themeRegistry.get(t.id)) ctx.themeRegistry.register(t)
-  }
+  // Register every entry, not only new ids: plugins may replace or mutate tokens
+  // and the OS may have changed the effective palette of a followSystem entry.
+  for (const t of contributed) ctx.themeRegistry.register(t)
 
   if (ctx.themeRegistry.active()) return
   const preferred = contributed.find(t => t.mode === 'dark') ?? contributed[0]
   if (preferred) ctx.themeRegistry.activate(preferred.id)
+}
+
+/** Plugin-side refresh after in-place token changes (not exposed as a renderer IPC method). */
+export function createThemeRefreshHandler(ctx: MethodContext): MethodHandler {
+  return () => {
+    syncThemeFromExtension(ctx)
+    const activeId = ctx.themeRegistry.active()
+    const active = activeId ? ctx.themeRegistry.get(activeId) : undefined
+    if (active) void ctx.bus.emit(Topics.UiThemeChanged, active)
+    return active ?? null
+  }
 }
 
 /**
@@ -207,7 +251,11 @@ export const METHOD_FACTORIES = {
       const panels = kernel.extensions.listAll<PanelContribution>('ui.panel')
       const panel = panels.find(p => p.panelId === panelId)
       if (!panel) return { ok: false }
-      await bus.request(panel.command, { kind, payload })
+      const result = await bus.request(panel.command, { kind, payload })
+      // Preserve a plugin's explicit rejection (including its error message).
+      if (typeof result === 'object' && result !== null && 'ok' in result) {
+        return result
+      }
       return { ok: true }
     }
   },

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme } from 'electron'
 import process from 'node:process'
 import path from 'node:path'
 import { Kernel } from '../../kernel/kernel.js'
@@ -8,7 +8,10 @@ import { Topics } from '../../kernel/topics.js'
 import type { ThemeDefinition } from '../../kernel/contracts/ui.js'
 import { IpcBridge } from '../ipc/bridge.js'
 import { EVENT_FORWARD_MAP } from '../ipc/forward-map.js'
-import { createMethodHandlers } from '../ipc/method-handlers.js'
+import {
+  createMethodHandlers,
+  createThemeRefreshHandler,
+} from '../ipc/method-handlers.js'
 import { builtinPluginsRoot } from '../cli/paths.js'
 import { createWindow, applyTitleBarTheme } from './window.js'
 import type { EventBus } from '../../kernel/contracts/event-bus.js'
@@ -21,6 +24,8 @@ let kernel: Kernel | null = null
 let bridge: IpcBridge | null = null
 /** Unsubscribes the native title-bar overlay from theme changes (see `startKernel`). */
 let themeUnsubscribe: (() => void) | null = null
+/** Unsubscribes OS light/dark changes when the shell exits. */
+let systemThemeUnsubscribe: (() => void) | null = null
 
 /**
  * In GPU-less / virtualized environments (VMs, CI, remote desktop, restricted
@@ -77,10 +82,11 @@ function registerWhitelistedMethods(
   pluginManager: LocalPluginManager,
 ): void {
   const bus = kernelRef.root.resolve<EventBus>(KernelTokens.EventBus)
-  const handlers = createMethodHandlers({
+  const methodContext = {
     kernel: kernelRef,
     bus,
     themeRegistry,
+    isSystemDark: () => nativeTheme.shouldUseDarkColors,
     pluginManager,
     choosePluginDirectory: async () => {
       const result = await dialog.showOpenDialog({
@@ -90,7 +96,9 @@ function registerWhitelistedMethods(
       })
       return result.canceled ? undefined : result.filePaths[0]
     },
-  })
+  }
+  const handlers = createMethodHandlers(methodContext)
+  bus.respond(Topics.UiThemeRefresh, createThemeRefreshHandler(methodContext))
   for (const [method, handler] of Object.entries(handlers)) {
     // `null` = not implemented by the host (`command.execute` is responded by the command plugin itself).
     if (!handler) continue
@@ -117,6 +125,7 @@ async function startKernel(): Promise<void> {
       roots: [userRoot],
       disabledPlugins: state.ids(),
       builtinRoot,
+      pluginDataRoot: path.join(userData, 'plugin-data'),
       startTimeoutMs: 5000,
       stopTimeoutMs: 5000,
       legacyFallback: false,
@@ -164,6 +173,20 @@ async function startKernel(): Promise<void> {
       applyTitleBarTheme(win, theme)
     }
   })
+
+  const onSystemThemeChange = (): void => {
+    const activeId = themeRegistry.active()
+    if (!activeId || !themeRegistry.get(activeId)?.followSystem) return
+    void bus
+      .request(Topics.UiThemeRefresh, undefined)
+      .catch(error =>
+        console.error('[rem2-kernel] System theme refresh failed:', error),
+      )
+  }
+  nativeTheme.on('updated', onSystemThemeChange)
+  systemThemeUnsubscribe = () => {
+    nativeTheme.removeListener('updated', onSystemThemeChange)
+  }
 }
 
 /** Create the shell window, applying the active theme to the native overlay (macOS reactivation included). */
@@ -211,6 +234,8 @@ app.on('before-quit', async () => {
   bridge?.unbind()
   themeUnsubscribe?.()
   themeUnsubscribe = null
+  systemThemeUnsubscribe?.()
+  systemThemeUnsubscribe = null
   if (kernel) {
     await kernel.shutdown()
     kernel = null

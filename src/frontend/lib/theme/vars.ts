@@ -50,6 +50,13 @@ export function applyTheme(theme: ThemeDto): void {
   for (const [name, value] of themeToCssVars(theme)) {
     root.style.setProperty(name, value)
   }
-  // Native widgets (scrollbars, inputs, selection) follow the mode, not the palette.
-  root.style.setProperty('color-scheme', theme.mode)
+  // Defensive fallback for hosts that forward an unmaterialized system entry.
+  const mode =
+    theme.mode === 'system'
+      ? typeof window !== 'undefined' &&
+        window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light'
+      : theme.mode
+  root.style.setProperty('color-scheme', mode)
 }

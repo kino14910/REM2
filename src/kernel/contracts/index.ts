@@ -114,5 +114,8 @@ export type {
   ThemeRegistry,
   PanelContribution,
   PanelRegion,
+  PanelFormData,
+  PanelFormField,
+  PanelFormOption,
   RouteContribution,
 } from './ui.js'
