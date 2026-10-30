@@ -8,7 +8,7 @@
  * lists throw so the store can degrade to its error state.
  */
 
-import type { PanelDto, RouteDto } from './bridge-types.js'
+import type { PanelDto, PanelFormDto, RouteDto } from './bridge-types.js'
 import type {
   PluginDetailDto,
   PluginDownloadPhase,
@@ -113,6 +113,7 @@ export function parseRouteList(value: unknown): {
 
 export type ParsedPanelData =
   | { kind: 'table'; columns: string[]; rows: Array<Array<string | number>> }
+  | { kind: 'form'; fields: PanelFormDto['fields'] }
   | { kind: 'json'; text: string }
   | { kind: 'empty' }
   | { kind: 'invalid'; reason: string }
@@ -181,10 +182,77 @@ function asTable(value: unknown): TableAttempt {
   }
 }
 
+type FormAttempt =
+  | { ok: true; fields: PanelFormDto['fields'] }
+  | { ok: false; attempted: boolean; reason: string }
+
+/** Validates the generic form contract; malformed declared forms never fall back to JSON. */
+function asForm(value: unknown): FormAttempt {
+  if (typeof value !== 'object' || value === null) {
+    return { ok: false, attempted: false, reason: '' }
+  }
+  const v = value as Record<string, unknown>
+  if (v.kind !== 'form') return { ok: false, attempted: false, reason: '' }
+  const invalid = (reason: string): FormAttempt => ({
+    ok: false,
+    attempted: true,
+    reason: `invalid form: ${reason}`,
+  })
+  if (!Array.isArray(v.fields) || v.fields.length === 0) {
+    return invalid('"fields" must be a non-empty array')
+  }
+
+  const ids = new Set<string>()
+  for (const entry of v.fields) {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+      return invalid('every field must be an object')
+    }
+    const field = entry as Record<string, unknown>
+    if (!isNonEmptyString(field.id) || !isNonEmptyString(field.label)) {
+      return invalid('field id and label must be non-empty strings')
+    }
+    if (ids.has(field.id)) return invalid(`duplicate field id: ${field.id}`)
+    ids.add(field.id)
+    if (typeof field.value !== 'string') {
+      return invalid(`field ${field.id} value must be a string`)
+    }
+    if (field.type === 'color') {
+      if (!/^#[0-9a-fA-F]{6}$/.test(field.value)) {
+        return invalid(`color field ${field.id} requires #RRGGBB`)
+      }
+      continue
+    }
+    if (field.type !== 'select') {
+      return invalid(`field ${field.id} has unsupported type`)
+    }
+    if (!Array.isArray(field.options) || field.options.length === 0) {
+      return invalid(`select field ${field.id} requires options`)
+    }
+    const options = new Set<string>()
+    for (const option of field.options) {
+      if (typeof option !== 'object' || option === null) {
+        return invalid(`select field ${field.id} has an invalid option`)
+      }
+      const item = option as Record<string, unknown>
+      if (!isNonEmptyString(item.value) || !isNonEmptyString(item.label)) {
+        return invalid(`select field ${field.id} has an invalid option`)
+      }
+      if (options.has(item.value)) {
+        return invalid(`select field ${field.id} has duplicate options`)
+      }
+      options.add(item.value)
+    }
+    if (!options.has(field.value)) {
+      return invalid(`select field ${field.id} value is not in options`)
+    }
+  }
+  return { ok: true, fields: v.fields as PanelFormDto['fields'] }
+}
+
 /**
  * Classifies a panel data payload into a renderable shape.
  *
- * - table contract satisfied and within the size budget -> `table`
+ * - table/form contract satisfied and within the size budget -> `table` / `form`
  * - undefined / null -> `empty` (the panel provides no data)
  * - declared `kind:'table'` but malformed -> `invalid` with the reason
  * - anything else -> pretty-printed JSON (primitives included)
@@ -202,6 +270,17 @@ export function parsePanelData(value: unknown): ParsedPanelData {
   }
   if (table.attempted) {
     return { kind: 'invalid', reason: table.reason }
+  }
+
+  const form = asForm(value)
+  if (form.ok) {
+    if (JSON.stringify(value).length > MAX_PANEL_DATA_CHARS) {
+      return { kind: 'invalid', reason: 'panel data exceeds 32KB limit' }
+    }
+    return { kind: 'form', fields: form.fields }
+  }
+  if (form.attempted) {
+    return { kind: 'invalid', reason: form.reason }
   }
 
   const text = JSON.stringify(value, null, 2)

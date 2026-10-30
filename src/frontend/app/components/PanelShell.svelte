@@ -17,6 +17,8 @@
   let data = $state<unknown>(undefined)
   let loading = $state<boolean>(false)
   let error = $state<string | undefined>(undefined)
+  let actionError = $state<string | undefined>(undefined)
+  let changing = $state<boolean>(false)
 
   const parsed = $derived(parsePanelData(data))
 
@@ -55,6 +57,31 @@
       .catch(() => undefined)
     void reload()
   }
+
+  async function onFieldChange(fieldId: string, event: Event): Promise<void> {
+    if (changing) return
+    const target = event.currentTarget as HTMLInputElement | HTMLSelectElement
+    changing = true
+    actionError = undefined
+    try {
+      const result = await ipc.request<
+        { ok?: boolean; error?: string } | undefined
+      >(channels.uiEvent, {
+        panelId: panel.panelId,
+        kind: 'change',
+        payload: { fieldId, value: target.value },
+      })
+      if (result?.ok === false) {
+        throw new Error(result.error ?? 'The change was rejected')
+      }
+    } catch (e) {
+      actionError = (e as Error).message
+    } finally {
+      // Re-read after success and failure: the plugin owns the canonical value.
+      await reload()
+      changing = false
+    }
+  }
 </script>
 
 <section class="panel">
@@ -68,6 +95,37 @@
       <p class="muted">Loading…</p>
     {:else if error}
       <p class="error">{error}</p>
+    {:else if parsed.kind === 'form'}
+      <form class="settings-form" onsubmit={(event) => event.preventDefault()}>
+        {#each parsed.fields as field (field.id)}
+          <label class="form-field" for={`${panel.panelId}-${field.id}`}>
+            <span>{field.label}</span>
+            {#if field.type === 'select'}
+              <select
+                id={`${panel.panelId}-${field.id}`}
+                value={field.value}
+                disabled={changing}
+                onchange={(event) => void onFieldChange(field.id, event)}
+              >
+                {#each field.options ?? [] as option (option.value)}
+                  <option value={option.value}>{option.label}</option>
+                {/each}
+              </select>
+            {:else}
+              <input
+                id={`${panel.panelId}-${field.id}`}
+                type="color"
+                value={field.value}
+                disabled={changing}
+                onchange={(event) => void onFieldChange(field.id, event)}
+              />
+            {/if}
+          </label>
+        {/each}
+        {#if actionError}
+          <p class="error" role="alert">{actionError}</p>
+        {/if}
+      </form>
     {:else if parsed.kind === 'table'}
       <table>
         <thead>
@@ -117,6 +175,40 @@
   }
   .panel-body {
     padding: var(--rem2-space-md);
+  }
+  .settings-form {
+    display: grid;
+    gap: var(--rem2-space-md);
+    max-width: 32rem;
+  }
+  .form-field {
+    display: grid;
+    grid-template-columns: minmax(8rem, 1fr) minmax(10rem, 2fr);
+    align-items: center;
+    gap: var(--rem2-space-md);
+    color: var(--rem2-color-text);
+  }
+  .form-field select {
+    padding: var(--rem2-space-xs) var(--rem2-space-sm);
+    border: 1px solid var(--rem2-color-border);
+    border-radius: 4px;
+    background: var(--rem2-color-background);
+    color: var(--rem2-color-text);
+    font: inherit;
+  }
+  .form-field input[type='color'] {
+    width: 4rem;
+    height: 2rem;
+    padding: 2px;
+    border: 1px solid var(--rem2-color-border);
+    border-radius: 4px;
+    background: var(--rem2-color-background);
+    cursor: pointer;
+  }
+  .form-field select:focus-visible,
+  .form-field input:focus-visible {
+    outline: 2px solid var(--rem2-color-accent);
+    outline-offset: 2px;
   }
   pre {
     margin: 0;
