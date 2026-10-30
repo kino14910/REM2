@@ -5,7 +5,7 @@
 > **Kernel + Everything-as-Plugin** 的独立从零实现。
 > 内核只做 7 件事，其余一切（日志、配置、业务、运维、UI）都是插件。
 
-[![tests](https://img.shields.io/badge/tests-466%20passing-brightgreen)](#测试)
+[![tests](https://img.shields.io/badge/tests-478%20passing-brightgreen)](#测试)
 [![kernel deps](https://img.shields.io/badge/kernel%20deps-0-blue)](#内核边界)
 [![typescript](https://img.shields.io/badge/TypeScript-strict-blue)](#)
 
@@ -52,8 +52,8 @@ pnpm dev --log-level debug
 
 ```
 ──── rem2-kernel started ────
-loadOrder : com.rem2.config-json -> com.rem2.hello-command -> com.rem2.logger-console -> com.rem2.health-http -> com.rem2.notify-worker -> com.rem2.plugin-inspector -> com.rem2.theme-dark
-started   : com.rem2.config-json, com.rem2.hello-command, com.rem2.logger-console, com.rem2.health-http, com.rem2.notify-worker, com.rem2.plugin-inspector, com.rem2.theme-dark
+loadOrder : com.rem2.config-json -> com.rem2.hello-command -> com.rem2.logger-console -> com.rem2.health-http -> com.rem2.notify-worker -> com.rem2.plugin-inspector -> com.rem2.theme-switcher
+started   : com.rem2.config-json, com.rem2.hello-command, com.rem2.logger-console, com.rem2.health-http, com.rem2.notify-worker, com.rem2.plugin-inspector, com.rem2.theme-switcher
 degraded  : (none)
 failed    : (none)
 health    : healthy
@@ -63,7 +63,7 @@ health    : healthy
   - com.rem2.logger-console [Active] healthy
   - com.rem2.notify-worker [Active] healthy
   - com.rem2.plugin-inspector [Active] healthy
-  - com.rem2.theme-dark [Active] healthy
+  - com.rem2.theme-switcher [Active] healthy
 ─────────────────────────────
 ```
 
@@ -158,7 +158,7 @@ export default definePlugin(
 
 ---
 
-## 示例插件（7 类扩展点）
+## 示例插件（共 7 个随包插件）
 
 | 插件                                           | 证明什么                                                                | 依赖                  |
 | ---------------------------------------------- | ----------------------------------------------------------------------- | --------------------- |
@@ -166,9 +166,13 @@ export default definePlugin(
 | [`config-json`](plugins/config-json)           | **配置来源是插件** — 提供 `config.provider`                             | —                     |
 | [`hello-command`](plugins/hello-command)       | **业务功能是插件** — 提供 `command.provide`                             | 软依赖 config-json    |
 | [`health-http`](plugins/health-http)           | **运维是插件** — 暴露 `/health` 端点                                    | 硬依赖 logger-console |
-| [`theme-dark`](plugins/theme-dark)             | **UI 是插件** — 无 UI 外壳时优雅降级                                    | —                     |
+| `theme-switcher`（外部）                       | **UI 是插件** — 亮/暗/跟随系统、强调色表单、选择持久化                  | —                     |
 | [`plugin-inspector`](plugins/plugin-inspector) | **检查器自身也是插件** — 贡献 `ui.panel` + `ui.route`，提供实时插件表格 | —                     |
 | [`notify-worker`](plugins/notify-worker)       | **Worker 线程隔离** — 崩溃不影响内核（故障隔离）                        | —                     |
+
+`theme-switcher` 的源码位于同级 `REM2-plugins` 仓库。存在该 checkout 时，
+`pnpm build:plugins` 会直接把它构建进 `plugins-dist`；可用
+`REM2_EXTERNAL_PLUGINS_DIR` 指向其他位置。
 
 ---
 
@@ -200,7 +204,7 @@ pnpm typecheck:all   # 内核 + Electron + 前端三份类型检查
 | 单元     | 26                     | semver / 拓扑排序 / 环检测 / DI 容器 / 容器隔离 / 事件总线 / 生命周期 / manifest 校验 / 权限 / 配置服务 / 健康服务 / **命令分发器** / **DTO 校验** / **路由→面板决议** / **插件根路径解析** / **插件状态存储** / **摘要与完整性** / **远程下载** / **ZIP 解包** / **发布源解析** / **provenance 存储** / **版本比较** |
 | 集成     | 19                     | 启动顺序 / 软依赖降级 / 硬依赖级联 / 故障隔离 / 配置插件 / 可观测性 / 热重载 / 卸载级联 / 安全边界 / Worker 隔离 / **命令链路** / **主题链路** / **UI 链路** / **inspector 数据链** / **本地插件管理** / **远程安装、更新与回滚**                                                                                     |
 | 契约     | 5                      | 插件导入边界 / 内核依赖白名单 / 扩展点清单一致性 / **构建产物为浏览器版 svelte** / **IPC 白名单与内核 Topics 一致**                                                                                                                                                                                                   |
-| **合计** | **50 文件 / 466 用例** |                                                                                                                                                                                                                                                                                                                       |
+| **合计** | **50 文件 / 479 用例** |                                                                                                                                                                                                                                                                                                                       |
 
 ---
 
@@ -258,8 +262,8 @@ src/
 │   └── lib/              # ipc-client / bridge-types / nav-link / dto-guards / stores / theme
 ├── main.ts               # Electron Forge 主进程入口（转发壳）
 └── preload.ts            # Forge preload 入口（转发壳）
-plugins/                  # 7 个示例插件（源码 + plugin.json + 独立 tsconfig）
-plugins-dist/             # 插件构建产物（esbuild ESM bundle，进 extraResource）
+plugins/                  # 6 个内置插件（外部 theme-switcher 来自 REM2-plugins）
+plugins-dist/             # 全部插件构建产物（esbuild ESM bundle，进 extraResource）
 dist/                     # 内核产物（tsc，含 .d.ts）
 tests/                    # 单元 / 集成 / 契约测试
 docs/                     # 架构与 API 文档（入口见 docs/INDEX.md；英文见 docs/en/）

@@ -73,7 +73,7 @@ src/frontend/
     ├── ipc-client.ts            # window.rem2 的类型化唯一封装（方法 / 事件参数是白名单联合类型）
     ├── bridge-types.ts          # DTO：Panel / Route / PanelTable / Theme / ThemeCatalog / Health / CommandResult / PluginStateChanged
     ├── nav-link.ts              # 纯函数：route + panels + panelsReady → 激活面板决议（含 notice）
-    ├── dto-guards.ts            # 纯函数：面板 / 路由列表运行时校验 + 面板数据分类（table / json / empty / invalid）
+    ├── dto-guards.ts            # 纯函数：面板 / 路由列表运行时校验 + 面板数据分类（table / form / json / empty / invalid）
     ├── stores/                  # Svelte 5 runes；文件名必须以 .svelte.ts 结尾
     │   └── panels · routes · theme · health · command · plugins（各一个 .svelte.ts）
     └── theme/vars.ts            # ThemeDto → CSS 变量映射（--rem2-*）
@@ -271,7 +271,7 @@ DTO 是**显式投影白名单**，不是「内核类型改个名字」。`Comma
 
 `command` 字段由前端 store 补上（`command.svelte.ts` → `{...res, command}`），不要求插件返回。
 
-**面板数据契约**：`PanelTableDto` 是唯一被渲染成表格的结构化形状（`dto-guards.ts` → `parsePanelData` 在 renderer 侧做运行时分类与校验）：不变量为 table → 表格；`undefined` / `null` → 空态；其余 → 美化 JSON；序列化超过 **32KB** → `invalid` 显式报错（防失控插件拖垮 renderer）；声明了 `kind:'table'` 但形状不符 → `invalid` 并说明原因。列表类数据（`ui.panel.list` / `ui.route.list`）同样逐条目校验：坏条目丢弃并计入 `panels.issues`，整个载荷非数组则抛错走 store 的 error 态。
+**面板数据契约**：`PanelTableDto` / `PanelFormDto` 是两种结构化形状（`dto-guards.ts` → `parsePanelData` 在 renderer 侧做运行时分类与校验）：table → 表格；form → 渲染 `select` / `color` 字段，变更通过 `ui.event {kind:'change', payload:{fieldId,value}}` 回传；`undefined` / `null` → 空态；其余 → 美化 JSON；序列化超过 **32KB** → `invalid` 显式报错；声明 `kind` 但形状不符 → `invalid` 并说明原因。插件返回的 `{ok:false,error}` 会原样传到 `PanelShell`，不再被宿主改写成成功。列表类数据（`ui.panel.list` / `ui.route.list`）同样逐条目校验：坏条目丢弃并计入 `panels.issues`，整个载荷非数组则抛错走 store 的 error 态。
 
 ---
 
@@ -329,14 +329,14 @@ $effect(() => {
 
 ```mermaid
 sequenceDiagram
-  participant TD as theme-dark 插件
+  participant TD as theme-switcher 插件
   participant EP as ExtensionPointRegistry
   participant BR as method-handlers
   participant TR as ThemeRegistryImpl（宿主）
   participant TH as ThemeToggle.svelte
   participant V as lib/theme/vars.ts
 
-  TD->>EP: contribute('ui.theme', {contributionId: 'light' | 'dark', impl: themeDef})
+  TD->>EP: contribute('ui.theme', {contributionId: 'light' | 'dark' | 'system', impl: themeDef})
   BR->>BR: syncThemeFromExtension()（每次读时 pull 同步）
   BR->>TR: list() / active()
   TH->>BR: ui.theme.list → ThemeCatalogDto
@@ -347,7 +347,7 @@ sequenceDiagram
 
 三条不变量：
 
-1. **`ui.theme` 是 multi 槽＝主题目录**，不是「单例激活主题」。`ThemeDefinition` 带 `mode: 'light' | 'dark'`，两份主题共存才能切换。
+1. **`ui.theme` 是 multi 槽＝主题目录**，不是「单例激活主题」。`ThemeDefinition` 带 `mode: 'light' | 'dark' | 'system'`；`followSystem` 项由宿主按 OS 当前明暗物化为 light/dark 调色板，同时保留 `system` 作为激活 id。
 2. **激活态归宿主**（`ThemeRegistryImpl.active()`）。`ui.theme.list` 返回 `{themes, activeId}` —— 目录与激活项一起给，前端不得自行推断（两边各猜一次，最终生效的取决于谁后猜）。
 3. **`ui.theme.set` 只在激活项真变化时 emit**。否则前端 `setActive`（先本地应用再请求）会触发 `set → emit → set` 无限回环。
 
@@ -441,14 +441,14 @@ object-src 'none'; base-uri 'none';
 
 ## 8. 已知限制
 
-| #   | 限制                                                              | 影响                                                                                  |
-| --- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| F1  | ~~`ui.panel.data` 的数据形状由插件自定，内核不校验~~ **已正式化** | `dto-guards.ts` → `parsePanelData`：table / json / empty / invalid 四分类 + 32KB 上限 |
-| F2  | `bridge-types.ts` 手写 DTO，内核契约改了前端不会自动报错          | 靠注释标注来源 + 赋值处类型对齐；`ui.*` 的 `impl` 类型来自内核契约                    |
-| F3  | `preload.cjs` 文件名是隐式契约（主进程硬编码）                    | 改名 → 窗口以「preload 加载失败」报错，不提示是文件名问题                             |
-| F4  | runes 写在 `.ts` 里不生效且不报错                                 | 只能靠 `.svelte.ts` 目录约定                                                          |
-| F5  | ~~`ui.panel` / `ui.route` 无 builtin 贡献~~ **已解决**            | `plugin-inspector` 贡献 `/plugins` 路由 + 检查器面板                                  |
-| F6  | 插件安装不提供安全沙箱，仅做路径 / 依赖 / 生命周期保护            | 只应安装可信插件，详见 `05-plugin-management.md`                                      |
-| F7  | 管理页多窗口不共享目录变更事件                                    | 启停使用现有状态事件；安装 / 卸载需各窗口主动 Refresh                                 |
-| F8  | 远程安装只接受 HTTPS + 主机 allowlist 内的 ZIP 资产               | 无 registry、无 tar.gz、无签名验证；SHA-256 只证明完整性，不证明发布者身份            |
-| F9  | 更新检查每次按钮点击都会请求发布 API，无缓存与节流                | GitHub 未认证请求有速率限制；多插件同源检查会叠加请求                                 |
+| #   | 限制                                                              | 影响                                                                                       |
+| --- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| F1  | ~~`ui.panel.data` 的数据形状由插件自定，内核不校验~~ **已正式化** | `dto-guards.ts` → `parsePanelData`：table / form / json / empty / invalid 分类 + 32KB 上限 |
+| F2  | `bridge-types.ts` 手写 DTO，内核契约改了前端不会自动报错          | 靠注释标注来源 + 赋值处类型对齐；`ui.*` 的 `impl` 类型来自内核契约                         |
+| F3  | `preload.cjs` 文件名是隐式契约（主进程硬编码）                    | 改名 → 窗口以「preload 加载失败」报错，不提示是文件名问题                                  |
+| F4  | runes 写在 `.ts` 里不生效且不报错                                 | 只能靠 `.svelte.ts` 目录约定                                                               |
+| F5  | ~~`ui.panel` / `ui.route` 无 builtin 贡献~~ **已解决**            | `plugin-inspector` 贡献 `/plugins` 路由 + 检查器面板                                       |
+| F6  | 插件安装不提供安全沙箱，仅做路径 / 依赖 / 生命周期保护            | 只应安装可信插件，详见 `05-plugin-management.md`                                           |
+| F7  | 管理页多窗口不共享目录变更事件                                    | 启停使用现有状态事件；安装 / 卸载需各窗口主动 Refresh                                      |
+| F8  | 远程安装只接受 HTTPS + 主机 allowlist 内的 ZIP 资产               | 无 registry、无 tar.gz、无签名验证；SHA-256 只证明完整性，不证明发布者身份                 |
+| F9  | 更新检查每次按钮点击都会请求发布 API，无缓存与节流                | GitHub 未认证请求有速率限制；多插件同源检查会叠加请求                                      |

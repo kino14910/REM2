@@ -18,8 +18,8 @@
 
 ```mermaid
 graph BT
-    subgraph L1["plugins/ — 7 builtin plugins (discovered and loaded at runtime)"]
-        PA["in-process: config-json / hello-command / logger-console /<br/>health-http / theme-dark / plugin-inspector"]
+    subgraph L1["plugins/ + REM2-plugins — 7 shipped plugins (6 built-in sources + 1 external)"]
+        PA["in-process: config-json / hello-command / logger-console /<br/>health-http / theme-switcher / plugin-inspector"]
         PB["worker: notify-worker"]
     end
 
@@ -40,7 +40,7 @@ graph BT
         KC["di / lifecycle / dependency / discovery / loader / isolation /<br/>security / observability / config / events / scheduler / semver /<br/>bootstrap / registry / extensions / context / util"]
     end
 
-    subgraph L5["tests/ — 50 files / 466 cases"]
+    subgraph L5["tests/ — 50 files / 479 cases"]
         TA["contract/ (5): kernel-deps · plugin-contract · ipc-contract ·<br/>extension-points · build-artifact"]
         TB["unit/ (26) + integration/ (19)"]
     end
@@ -72,7 +72,7 @@ host     → (relative imports) → kernel
 | plugins                 | import only `rem2-kernel` / `node:*` / relative paths; manifest `entry` must be `.js` or `.mjs` | `tests/contract/plugin-contract.test.ts` R4 / R7                                     |
 | `src/shared/**`         | zero imports (pure literals + pure types)                                                       | `tests/contract/ipc-contract.test.ts`                                                |
 
-**One sentence**: the kernel (83 files) only orchestrates and defines contracts; the host (14 files) adapts Electron / CLI / IPC onto those contracts; the frontend (20 files) consumes 14 allowlisted methods and 5 allowlisted events through `window.rem2`; every business and ops capability (command, config, logging, health, theme, notification, inspector UI) is one of the 7 plugins under `plugins/`.
+**One sentence**: the kernel (83 files) only orchestrates and defines contracts; the host (14 files) adapts Electron / CLI / IPC onto those contracts; the frontend (20 files) consumes 14 allowlisted methods and 5 allowlisted events through `window.rem2`; every business and ops capability (command, config, logging, health, theme, notification, inspector UI) is a plugin; the theme source lives in the external `REM2-plugins` repository and is built into `plugins-dist`.
 
 ---
 
@@ -172,9 +172,9 @@ rem2-kernel/
 │   └── shared/
 │       └── ipc-contract.ts            # ★ method/event names shared by host and frontend (one copy, zero imports)
 │
-├── plugins/                           # plugin source units (7, each with 4 files: package.json / tsconfig.json / plugin.json / src)
-├── plugins-dist/                      # plugin build output (goes into extraResource, git-ignored)
-├── scripts/build-plugins.mjs          # esbuild bundling per plugin (build-time code, deliberately outside src/)
+├── plugins/                           # 6 built-in plugin sources; the 7th (theme-switcher) comes from sibling REM2-plugins
+├── plugins-dist/                      # all plugin artifacts (built-in + external; goes into extraResource, git-ignored)
+├── scripts/build-plugins.mjs          # esbuild bundling (honors REM2_EXTERNAL_PLUGINS_DIR; build-time code, outside src/)
 ├── tests/{unit,integration,contract}  # 3 test layers + fixtures/ + helpers/
 ├── examples/config/app.config.json    # sample config for the config-json plugin
 │
@@ -349,6 +349,7 @@ Trust levels: `builtin` = trusted, everything else = sandboxed (`security/trust-
 | `ctx.events` (emit / on / request)                           | ✅         | ✅ RPC (`respond` unavailable)                                        |
 | `ctx.permissions`                                            | ✅         | ✅ real snapshot taken at init                                        |
 | `ctx.resolvePath`                                            | ✅         | ✅                                                                    |
+| `ctx.dataPath`                                               | ✅         | ✅                                                                    |
 | `ctx.services` / `ctx.api` / `ctx.plugins` / `ctx.container` | ✅         | ❌ throws on call                                                     |
 | `ctx.extensions`                                             | ✅         | ⚠️ only the three from §4.4                                           |
 
@@ -471,12 +472,12 @@ unloadPlugin(pluginId)
 
 ### 7.1 Four kinds of data
 
-| Data        | Produced by                                                                                                                                        | Flows through                                                                                                                                          | Consumed by                                                                                                                                        |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Config**  | `config-json` plugin (`JsonConfigProvider`, priority 10) + read-only kernel defaults `{app:{name:'rem2-kernel'}}` + writable `initialConfig` layer | `ConfigService.refresh()` deep-merges by ascending priority into a snapshot; `get()` refreshes lazily                                                  | plugins read `ctx.config.get(…)` in `onConfigure`; worker plugins get the init snapshot plus change pushes. **Config never leaks to the renderer** |
-| **Command** | input in `CommandPrompt.svelte`                                                                                                                    | store → `ipc.request` → preload → `IpcBridge` (allowlist) → `bus.request(Topics.CommandExecute)`                                                       | kernel `CommandDispatcher` reads the `command.provide` slot → command plugin handler → `{ok, output}` back through the same path                   |
-| **Event**   | plugin `bus.emit`                                                                                                                                  | `EventBusImpl` → `EVENT_FORWARD_MAP` (5 allowlisted topics) → `toDto` → `Ipc.Event`                                                                    | renderer `ipc.subscribe`                                                                                                                           |
-| **Theme**   | `theme-dark` plugin contributes `ui.theme` (light / dark token sets)                                                                               | extension slot → (`method-handlers.ts` → `syncThemeFromExtension()` **pull sync**) → host `ThemeRegistryImpl` (catalog + active) → `ui.theme.list/set` | renderer `theme` store → `theme/vars.ts` → CSS variables + `color-scheme`                                                                          |
+| Data        | Produced by                                                                                                                                        | Flows through                                                                                                                                                                         | Consumed by                                                                                                                                        |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Config**  | `config-json` plugin (`JsonConfigProvider`, priority 10) + read-only kernel defaults `{app:{name:'rem2-kernel'}}` + writable `initialConfig` layer | `ConfigService.refresh()` deep-merges by ascending priority into a snapshot; `get()` refreshes lazily                                                                                 | plugins read `ctx.config.get(…)` in `onConfigure`; worker plugins get the init snapshot plus change pushes. **Config never leaks to the renderer** |
+| **Command** | input in `CommandPrompt.svelte`                                                                                                                    | store → `ipc.request` → preload → `IpcBridge` (allowlist) → `bus.request(Topics.CommandExecute)`                                                                                      | kernel `CommandDispatcher` reads the `command.provide` slot → command plugin handler → `{ok, output}` back through the same path                   |
+| **Event**   | plugin `bus.emit`                                                                                                                                  | `EventBusImpl` → `EVENT_FORWARD_MAP` (5 allowlisted topics) → `toDto` → `Ipc.Event`                                                                                                   | renderer `ipc.subscribe`                                                                                                                           |
+| **Theme**   | `theme-switcher` plugin contributes `ui.theme` (light / dark / system token sets)                                                                  | extension slot → (`method-handlers.ts` → `syncThemeFromExtension()` **pull sync + followSystem materialization**) → host `ThemeRegistryImpl` (catalog + active) → `ui.theme.list/set` | renderer `theme` store → `theme/vars.ts` → CSS variables + `color-scheme`                                                                          |
 
 The `initialConfig` memory layer has priority 1000, higher than every plugin provider — a plugin's `set()` always writes the memory layer. That is the intended "host config wins" semantics.
 

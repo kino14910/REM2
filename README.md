@@ -6,7 +6,7 @@
 >
 > The kernel does only 7 things; everything else (logging, config, business logic, ops, UI) is a plugin.
 
-![tests](https://img.shields.io/badge/tests-466%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-478%20passing-brightgreen)
 
 ![kernel deps](https://img.shields.io/badge/kernel%20deps-0-blue)
 
@@ -61,8 +61,8 @@ Expected output:
 
 ```
 ──── rem2-kernel started ────
-loadOrder : com.rem2.config-json -> com.rem2.hello-command -> com.rem2.logger-console -> com.rem2.health-http -> com.rem2.notify-worker -> com.rem2.plugin-inspector -> com.rem2.theme-dark
-started   : com.rem2.config-json, com.rem2.hello-command, com.rem2.logger-console, com.rem2.health-http, com.rem2.notify-worker, com.rem2.plugin-inspector, com.rem2.theme-dark
+loadOrder : com.rem2.config-json -> com.rem2.hello-command -> com.rem2.logger-console -> com.rem2.health-http -> com.rem2.notify-worker -> com.rem2.plugin-inspector -> com.rem2.theme-switcher
+started   : com.rem2.config-json, com.rem2.hello-command, com.rem2.logger-console, com.rem2.health-http, com.rem2.notify-worker, com.rem2.plugin-inspector, com.rem2.theme-switcher
 degraded  : (none)
 failed    : (none)
 health    : healthy
@@ -72,7 +72,7 @@ health    : healthy
   - com.rem2.logger-console [Active] healthy
   - com.rem2.notify-worker [Active] healthy
   - com.rem2.plugin-inspector [Active] healthy
-  - com.rem2.theme-dark [Active] healthy
+  - com.rem2.theme-switcher [Active] healthy
 ─────────────────────────────
 ```
 
@@ -195,7 +195,7 @@ Full API reference: **[docs/02-plugin-api.md](docs/02-plugin-api.md)** (English:
 
 ---
 
-## Example plugins (7 extension points)
+## Example plugins (7 shipped plugins)
 
 | Plugin                                         | Proves what                                                                                     | Depends on              |
 | ---------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------- |
@@ -203,9 +203,13 @@ Full API reference: **[docs/02-plugin-api.md](docs/02-plugin-api.md)** (English:
 | [`config-json`](plugins/config-json)           | **config source is a plugin** — provides `config.provider`                                      | —                       |
 | [`hello-command`](plugins/hello-command)       | **business logic is a plugin** — provides `command.provide`                                     | soft-dep config-json    |
 | [`health-http`](plugins/health-http)           | **ops is a plugin** — exposes a `/health` endpoint                                              | hard-dep logger-console |
-| [`theme-dark`](plugins/theme-dark)             | **UI is a plugin** — degrades gracefully with no UI shell                                       | —                       |
+| `theme-switcher` (external)                    | **UI is a plugin** — light/dark/system themes, accent form, persisted selection                 | —                       |
 | [`plugin-inspector`](plugins/plugin-inspector) | **the inspector is a plugin** — contributes `ui.panel` + `ui.route`, serves a live plugin table | —                       |
 | [`notify-worker`](plugins/notify-worker)       | **worker-thread isolation** — a crash never hits the kernel (fault isolation)                   | —                       |
+
+`theme-switcher` lives in the sibling `REM2-plugins` repository. `pnpm build:plugins`
+builds its own plugin sources directly into `plugins-dist` when that checkout exists;
+set `REM2_EXTERNAL_PLUGINS_DIR` to use another location.
 
 ---
 
@@ -239,7 +243,7 @@ pnpm typecheck:all   # kernel + electron + frontend type checks
 | Unit        | 26                       | semver / topological sort / cycle detection / DI container / container isolation / event bus / lifecycle / manifest validation / permissions / config service / health service / command dispatcher / DTO guards / route→panel resolution / builtin plugins root / plugin state store / integrity / remote download / ZIP extraction / release source / provenance store / version compare |
 | Integration | 19                       | startup order / soft-dep fallback / hard-dep cascade / fault isolation / config plugin / observability / hot reload / unload cascade / security boundary / worker isolation / command chain / theme chain / UI chain / inspector data chain / local plugin manager / remote install, update and rollback                                                                                   |
 | Contract    | 5                        | plugin import boundary / kernel dependency whitelist / extension-point catalog consistency / svelte built as browser bundle / IPC whitelist vs kernel Topics                                                                                                                                                                                                                               |
-| **Total**   | **50 files / 466 cases** |                                                                                                                                                                                                                                                                                                                                                                                            |
+| **Total**   | **50 files / 479 cases** |                                                                                                                                                                                                                                                                                                                                                                                            |
 
 ---
 
@@ -301,8 +305,8 @@ src/
 │   └── lib/              # ipc-client / bridge-types / nav-link / dto-guards / stores / theme
 ├── main.ts               # Electron Forge main-process entry (forwarding shell)
 └── preload.ts            # Forge preload entry (forwarding shell)
-plugins/                  # 7 example plugins (source + plugin.json + standalone tsconfig)
-plugins-dist/             # plugin build artifacts (esbuild ESM bundle, into extraResource)
+plugins/                  # 6 built-in plugins (external theme-switcher comes from REM2-plugins)
+plugins-dist/             # all plugin build artifacts (esbuild ESM bundle, into extraResource)
 dist/                     # kernel artifacts (tsc, includes .d.ts)
 tests/                    # unit / integration / contract tests
 docs/                     # architecture & API docs (entry: docs/INDEX.md; English: docs/en/)

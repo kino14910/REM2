@@ -33,9 +33,9 @@
 
 ```bash
 pnpm install
-pnpm dev                      # start the kernel in terminal form (7 builtin plugins)
+pnpm dev                      # start the kernel in terminal form (7 shipped plugins)
 pnpm start                    # Electron desktop app (renderer is Svelte 5)
-pnpm test:run                 # full suite (50 files / 466 cases)
+pnpm test:run                 # full suite (50 files / 479 cases)
 pnpm typecheck:all            # three tsconfigs
 ```
 

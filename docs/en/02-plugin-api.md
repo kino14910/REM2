@@ -125,22 +125,23 @@ Every `PluginFactoryHooks` hook (all optional):
 
 ## 5. `PluginContext`: what a plugin can reach
 
-| Field         | Purpose                                                                 |
-| ------------- | ----------------------------------------------------------------------- |
-| `pluginId`    | this plugin's id                                                        |
-| `manifest`    | normalized manifest                                                     |
-| `phase`       | current lifecycle phase (read-only)                                     |
-| `container`   | this plugin's DI child container (parent unreachable)                   |
-| `services`    | register / resolve services (resolution goes through `CapabilityGuard`) |
-| `events`      | global event bus: `emit` / `on` / `once` / `request` / `respond`        |
-| `config`      | read-only config access: `get` / `getOrThrow` / `has` / `onDidChange`   |
-| `log`         | plugin-scoped logger: `trace` … `fatal`                                 |
-| `metrics`     | metrics API: `counter` / `gauge` / `histogram`                          |
-| `permissions` | granted permission set (read-only snapshot)                             |
-| `extensions`  | **contribute extension points (see §6)**                                |
-| `api`         | `export` / `unexport` / `useCapability`                                 |
-| `plugins`     | probe other plugins (runtime probing of soft dependencies)              |
-| `resolvePath` | resolve inside the plugin rootDir; escaping throws `EntryEscapeError`   |
+| Field         | Purpose                                                                                                                      |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `pluginId`    | this plugin's id                                                                                                             |
+| `manifest`    | normalized manifest                                                                                                          |
+| `phase`       | current lifecycle phase (read-only)                                                                                          |
+| `container`   | this plugin's DI child container (parent unreachable)                                                                        |
+| `services`    | register / resolve services (resolution goes through `CapabilityGuard`)                                                      |
+| `events`      | global event bus: `emit` / `on` / `once` / `request` / `respond`                                                             |
+| `config`      | read-only config access: `get` / `getOrThrow` / `has` / `onDidChange`                                                        |
+| `log`         | plugin-scoped logger: `trace` … `fatal`                                                                                      |
+| `metrics`     | metrics API: `counter` / `gauge` / `histogram`                                                                               |
+| `permissions` | granted permission set (read-only snapshot)                                                                                  |
+| `extensions`  | **contribute extension points (see §6)**                                                                                     |
+| `api`         | `export` / `unexport` / `useCapability`                                                                                      |
+| `plugins`     | probe other plugins (runtime probing of soft dependencies)                                                                   |
+| `resolvePath` | resolve inside the plugin rootDir; escaping throws `EntryEscapeError`                                                        |
+| `dataPath`    | resolve inside the host-provided writable plugin data root (`pluginDataRoot/<pluginId>`); escaping throws `EntryEscapeError` |
 
 ---
 
@@ -266,7 +267,7 @@ pnpm build:plugins          # esbuild-bundle all plugins → plugins-dist/<id>/d
 | `in-process` (default) | same process and realm as the kernel, highest performance |
 | `worker`               | separate Node worker thread, lifecycle driven over RPC    |
 
-**Available inside a worker**: `log` / `config` (init snapshot + change pushes, read-only) / `events` (`emit` / `on` / `request`) / `metrics` / `permissions` (snapshot) / `resolvePath`.
+**Available inside a worker**: `log` / `config` (init snapshot + change pushes, read-only) / `events` (`emit` / `on` / `request`) / `metrics` / `permissions` (snapshot) / `resolvePath` / `dataPath`.
 **Unavailable inside a worker** (calling throws): `services` / `api` / `plugins` / `container` / `events.respond`. Cross-plugin collaboration only via the event bus.
 
 Worker isolation is **fault isolation** (contains crashes and infinite loops), **not a security sandbox** — worker code still has full Node capability. The security boundary is the kernel-side `CapabilityGuard` gating "which kernel facilities can be reached".

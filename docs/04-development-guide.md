@@ -47,7 +47,7 @@ pnpm install
 
 ```
 pnpm typecheck:all    → 0 错误（3 份 tsconfig）
-pnpm test:run         → 50 文件 / 466 用例全绿（约 15s）
+pnpm test:run         → 50 文件 / 479 用例全绿（约 20s）
 pnpm dev --exit-after-start → started=7 failed=0
 ```
 

@@ -18,8 +18,8 @@
 
 ```mermaid
 graph BT
-    subgraph L1["plugins/ —— 7 个 builtin 插件（运行时发现并加载）"]
-        PA["in-process：config-json / hello-command / logger-console /<br/>health-http / theme-dark / plugin-inspector"]
+    subgraph L1["plugins/ + REM2-plugins —— 7 个随包插件（6 内置源码 + 1 外部源码）"]
+        PA["in-process：config-json / hello-command / logger-console /<br/>health-http / theme-switcher / plugin-inspector"]
         PB["worker：notify-worker"]
     end
 
@@ -40,7 +40,7 @@ graph BT
         KC["di / lifecycle / dependency / discovery / loader / isolation /<br/>security / observability / config / events / scheduler / semver /<br/>bootstrap / registry / extensions / context / util"]
     end
 
-    subgraph L5["tests/ —— 50 文件 / 466 用例"]
+    subgraph L5["tests/ —— 50 文件 / 479 用例"]
         TA["contract/（5）：kernel-deps · plugin-contract · ipc-contract ·<br/>extension-points · build-artifact"]
         TB["unit/（26）+ integration/（19）"]
     end
@@ -72,7 +72,7 @@ host     →（相对路径 import）→ kernel
 | plugins              | 只从 `rem2-kernel` / `node:*` / 相对路径导入；manifest `entry` 必须是 `.js` 或 `.mjs` | `tests/contract/plugin-contract.test.ts` R4 / R7                                 |
 | `src/shared/**`      | 零 import（纯字面量 + 纯类型）                                                        | `tests/contract/ipc-contract.test.ts`                                            |
 
-**一句话**：内核（83 文件）只做编排与契约；宿主（14 文件）把 Electron / CLI / IPC 适配到内核契约；前端（20 文件）经 `window.rem2` 消费 15 个白名单方法与 5 个白名单事件；全部业务与运维能力（命令、配置、日志、健康、主题、通知、检查器 UI）都是 `plugins/` 下的 7 个插件。
+**一句话**：内核（83 文件）只做编排与契约；宿主（14 文件）把 Electron / CLI / IPC 适配到内核契约；前端（20 文件）经 `window.rem2` 消费 15 个白名单方法与 5 个白名单事件；全部业务与运维能力（命令、配置、日志、健康、主题、通知、检查器 UI）都是插件；其中主题源码位于外部 `REM2-plugins` 仓库，构建时进入 `plugins-dist`。
 
 ---
 
@@ -172,9 +172,9 @@ rem2-kernel/
 │   └── shared/
 │       └── ipc-contract.ts            # ★ 宿主与前端共用的方法名 / 事件名（唯一一份字符串，零 import）
 │
-├── plugins/                           # 插件源码单元（7 个，每个 4 件：package.json / tsconfig.json / plugin.json / src）
-├── plugins-dist/                      # 插件构建产物（进 extraResource，git 忽略）
-├── scripts/build-plugins.mjs          # esbuild 逐插件打包（构建期代码，刻意不进 src/）
+├── plugins/                           # 6 个内置插件源码；第 7 个 theme-switcher 来自同级 REM2-plugins
+├── plugins-dist/                      # 全部插件构建产物（内置 + 外部，进 extraResource，git 忽略）
+├── scripts/build-plugins.mjs          # esbuild 逐插件打包（含 REM2_EXTERNAL_PLUGINS_DIR；构建期代码，刻意不进 src/）
 ├── tests/{unit,integration,contract}  # 3 层测试 + fixtures/ + helpers/
 ├── examples/config/app.config.json    # config-json 插件的示例配置
 │
@@ -349,6 +349,7 @@ flowchart LR
 | `ctx.events`（emit / on / request）                          | ✅         | ✅ RPC（`respond` 不可用）                              |
 | `ctx.permissions`                                            | ✅         | ✅ init 时真实快照                                      |
 | `ctx.resolvePath`                                            | ✅         | ✅                                                      |
+| `ctx.dataPath`                                               | ✅         | ✅                                                      |
 | `ctx.services` / `ctx.api` / `ctx.plugins` / `ctx.container` | ✅         | ❌ 调用即抛错                                           |
 | `ctx.extensions`                                             | ✅         | ⚠️ 仅 §4.4 三类                                         |
 
@@ -470,12 +471,12 @@ unloadPlugin(pluginId)
 
 ### 7.1 四类数据
 
-| 数据     | 产生                                                                                                                          | 经过谁                                                                                                                                        | 消费                                                                                                   |
-| -------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| **配置** | `config-json` 插件（`JsonConfigProvider`，priority 10）+ 内核只读默认层 `{app:{name:'rem2-kernel'}}` + `initialConfig` 可写层 | `ConfigService.refresh()` 按 priority 升序 deepMerge 成快照；`get()` 惰性刷新                                                                 | 插件 `onConfigure` 期 `ctx.config.get(…)`；Worker 插件拿 init 快照 + 变更推送。**配置不外泄 renderer** |
-| **命令** | `CommandPrompt.svelte` 输入                                                                                                   | store → `ipc.request` → preload → `IpcBridge`（白名单）→ `bus.request(Topics.CommandExecute)`                                                 | 内核 `CommandDispatcher` 读 `command.provide` 槽 → 命令插件 handler → `{ok, output}` 原路回传          |
-| **事件** | 插件 `bus.emit`                                                                                                               | `EventBusImpl` → `EVENT_FORWARD_MAP`（5 个白名单 topic）→ `toDto` → `Ipc.Event`                                                               | renderer `ipc.subscribe`                                                                               |
-| **主题** | `theme-dark` 插件贡献 `ui.theme`（light / dark 两套 token）                                                                   | 扩展点槽 →（`method-handlers.ts` → `syncThemeFromExtension()` **pull 同步**）→ 宿主 `ThemeRegistryImpl`（目录 + 激活态）→ `ui.theme.list/set` | renderer `theme` store → `theme/vars.ts` → CSS 变量 + `color-scheme`                                   |
+| 数据     | 产生                                                                                                                          | 经过谁                                                                                                                                                            | 消费                                                                                                   |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **配置** | `config-json` 插件（`JsonConfigProvider`，priority 10）+ 内核只读默认层 `{app:{name:'rem2-kernel'}}` + `initialConfig` 可写层 | `ConfigService.refresh()` 按 priority 升序 deepMerge 成快照；`get()` 惰性刷新                                                                                     | 插件 `onConfigure` 期 `ctx.config.get(…)`；Worker 插件拿 init 快照 + 变更推送。**配置不外泄 renderer** |
+| **命令** | `CommandPrompt.svelte` 输入                                                                                                   | store → `ipc.request` → preload → `IpcBridge`（白名单）→ `bus.request(Topics.CommandExecute)`                                                                     | 内核 `CommandDispatcher` 读 `command.provide` 槽 → 命令插件 handler → `{ok, output}` 原路回传          |
+| **事件** | 插件 `bus.emit`                                                                                                               | `EventBusImpl` → `EVENT_FORWARD_MAP`（5 个白名单 topic）→ `toDto` → `Ipc.Event`                                                                                   | renderer `ipc.subscribe`                                                                               |
+| **主题** | `theme-switcher` 插件贡献 `ui.theme`（light / dark / system 三套 token）                                                      | 扩展点槽 →（`method-handlers.ts` → `syncThemeFromExtension()` **pull 同步 + followSystem 物化**）→ 宿主 `ThemeRegistryImpl`（目录 + 激活态）→ `ui.theme.list/set` | renderer `theme` store → `theme/vars.ts` → CSS 变量 + `color-scheme`                                   |
 
 `initialConfig` 内存层 priority = 1000，高于所有插件 provider —— 插件 `set()` 永远写内存层。这是有意的「宿主配置优先」语义。
 

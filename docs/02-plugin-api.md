@@ -125,22 +125,23 @@ plugins/my-plugin/
 
 ## 5. `PluginContext`：插件能拿到什么
 
-| 字段          | 用途                                                         |
-| ------------- | ------------------------------------------------------------ |
-| `pluginId`    | 本插件 id                                                    |
-| `manifest`    | 规范化后的清单                                               |
-| `phase`       | 当前生命周期阶段（只读）                                     |
-| `container`   | 本插件的 DI 子容器（父容器不可达）                           |
-| `services`    | 注册 / 解析服务（解析经 `CapabilityGuard` 校验）             |
-| `events`      | 全局事件总线：`emit` / `on` / `once` / `request` / `respond` |
-| `config`      | 配置只读访问：`get` / `getOrThrow` / `has` / `onDidChange`   |
-| `log`         | 插件作用域日志器：`trace` … `fatal`                          |
-| `metrics`     | 指标 API：`counter` / `gauge` / `histogram`                  |
-| `permissions` | 本插件被授予的权限集（只读快照）                             |
-| `extensions`  | **贡献扩展点（见 §6）**                                      |
-| `api`         | `export` / `unexport` / `useCapability`                      |
-| `plugins`     | 探测其他插件（软依赖的运行期探测）                           |
-| `resolvePath` | 解析到插件 rootDir 内部，越界抛 `EntryEscapeError`           |
+| 字段          | 用途                                                                                       |
+| ------------- | ------------------------------------------------------------------------------------------ |
+| `pluginId`    | 本插件 id                                                                                  |
+| `manifest`    | 规范化后的清单                                                                             |
+| `phase`       | 当前生命周期阶段（只读）                                                                   |
+| `container`   | 本插件的 DI 子容器（父容器不可达）                                                         |
+| `services`    | 注册 / 解析服务（解析经 `CapabilityGuard` 校验）                                           |
+| `events`      | 全局事件总线：`emit` / `on` / `once` / `request` / `respond`                               |
+| `config`      | 配置只读访问：`get` / `getOrThrow` / `has` / `onDidChange`                                 |
+| `log`         | 插件作用域日志器：`trace` … `fatal`                                                        |
+| `metrics`     | 指标 API：`counter` / `gauge` / `histogram`                                                |
+| `permissions` | 本插件被授予的权限集（只读快照）                                                           |
+| `extensions`  | **贡献扩展点（见 §6）**                                                                    |
+| `api`         | `export` / `unexport` / `useCapability`                                                    |
+| `plugins`     | 探测其他插件（软依赖的运行期探测）                                                         |
+| `resolvePath` | 解析到插件 rootDir 内部，越界抛 `EntryEscapeError`                                         |
+| `dataPath`    | 解析到宿主提供的可写插件数据目录（`pluginDataRoot/<pluginId>`），越界抛 `EntryEscapeError` |
 
 ---
 
@@ -265,7 +266,7 @@ pnpm build:plugins          # esbuild bundle 全部插件 → plugins-dist/<id>/
 | `in-process`（默认） | 与内核同进程同 realm，性能最高                 |
 | `worker`             | 独立 Node Worker 线程，内核经 RPC 驱动生命周期 |
 
-**Worker 内可用**：`log` / `config`（init 快照 + 变更推送，只读）/ `events`（`emit` / `on` / `request`）/ `metrics` / `permissions`（快照）/ `resolvePath`。
+**Worker 内可用**：`log` / `config`（init 快照 + 变更推送，只读）/ `events`（`emit` / `on` / `request`）/ `metrics` / `permissions`（快照）/ `resolvePath` / `dataPath`。
 **Worker 内不可用**（调用即抛错）：`services` / `api` / `plugins` / `container` / `events.respond`。跨插件协作只能走事件总线。
 
 Worker 隔离是**故障隔离**（挡住崩溃与死循环），**不是安全沙箱** —— Worker 内代码仍有完整 Node 能力。安全边界由内核侧 `CapabilityGuard` 把守「能触达哪些内核设施」。

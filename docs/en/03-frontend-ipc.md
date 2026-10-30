@@ -73,7 +73,7 @@ src/frontend/
     ├── ipc-client.ts            # the only typed wrapper around window.rem2 (method/event params are allowlist unions)
     ├── bridge-types.ts          # DTOs: Panel / Route / PanelTable / Theme / ThemeCatalog / Health / CommandResult / PluginStateChanged
     ├── nav-link.ts              # pure function: route + panels + panelsReady → active-panel resolution (with notice)
-    ├── dto-guards.ts            # pure functions: runtime validation of panel/route lists + panel data classification (table / json / empty / invalid)
+    ├── dto-guards.ts            # pure functions: runtime validation of panel/route lists + panel data classification (table / form / json / empty / invalid)
     ├── stores/                  # Svelte 5 runes; file names must end with .svelte.ts
     │   └── panels · routes · theme · health · command · plugins (one .svelte.ts each)
     └── theme/vars.ts            # ThemeDto → CSS variables (--rem2-*)
@@ -271,7 +271,7 @@ A DTO is an **explicit projection whitelist**, not a rename of a kernel type. `C
 
 The `command` field is filled in by the frontend store (`command.svelte.ts` → `{...res, command}`); plugins are not required to return it.
 
-**Panel data contract**: `PanelTableDto` is the only structured shape rendered as a table (`dto-guards.ts` → `parsePanelData` classifies and validates at runtime on the renderer side): table contract satisfied → table; `undefined` / `null` → empty; anything else → pretty-printed JSON; serialization over **32KB** → `invalid` with an explicit error (so a rogue plugin cannot freeze the renderer); declared `kind:'table'` with a malformed shape → `invalid` naming the reason. List payloads (`ui.panel.list` / `ui.route.list`) are validated entry by entry as well: bad entries are dropped and counted in `panels.issues`; a non-array payload throws into the store's error state.
+**Panel data contract**: `PanelTableDto` / `PanelFormDto` are the two structured shapes (`dto-guards.ts` → `parsePanelData` classifies and validates at runtime on the renderer side): table → table; form → `select` / `color` fields whose changes go back through `ui.event {kind:'change', payload:{fieldId,value}}`; `undefined` / `null` → empty; anything else → pretty-printed JSON; serialization over **32KB** → `invalid` with an explicit error; declared `kind` with a malformed shape → `invalid` naming the reason. A plugin's `{ok:false,error}` reply reaches `PanelShell` unchanged instead of being rewritten as success. List payloads (`ui.panel.list` / `ui.route.list`) are validated entry by entry as well: bad entries are dropped and counted in `panels.issues`; a non-array payload throws into the store's error state.
 
 ---
 
@@ -331,14 +331,14 @@ The four data sets load **in parallel and each degrades to empty**: no failure b
 
 ```mermaid
 sequenceDiagram
-  participant TD as "theme-dark plugin"
+  participant TD as "theme-switcher plugin"
   participant EP as "ExtensionPointRegistry"
   participant BR as "method-handlers"
   participant TR as "ThemeRegistryImpl (host)"
   participant TH as "ThemeToggle.svelte"
   participant V as "lib/theme/vars.ts"
 
-  TD->>EP: contribute('ui.theme', {contributionId: 'light' | 'dark', impl: themeDef})
+  TD->>EP: contribute('ui.theme', {contributionId: 'light' | 'dark' | 'system', impl: themeDef})
   BR->>BR: syncThemeFromExtension() (pull sync on every read)
   BR->>TR: list() / active()
   TH->>BR: ui.theme.list → ThemeCatalogDto
@@ -349,7 +349,7 @@ sequenceDiagram
 
 Three invariants:
 
-1. **`ui.theme` is a multi slot = a theme catalog**, not "one active theme". `ThemeDefinition` carries `mode: 'light' | 'dark'`; both must be resident for a switch to exist.
+1. **`ui.theme` is a multi slot = a theme catalog**, not "one active theme". `ThemeDefinition` carries `mode: 'light' | 'dark' | 'system'`; a `followSystem` entry is materialized by the host from the current OS palette while `system` remains the active id.
 2. **The active theme belongs to the host** (`ThemeRegistryImpl.active()`). `ui.theme.list` returns `{themes, activeId}` — catalog and selection together, because deriving the selection twice (both sides guessing) makes the applied theme depend on who guessed last.
 3. **`ui.theme.set` emits only on a real change.** Otherwise the frontend `setActive` (apply locally, then request) triggers `set → emit → set` forever.
 
@@ -445,7 +445,7 @@ object-src 'none'; base-uri 'none';
 
 | #   | Limitation                                                                                 | Impact                                                                                                               |
 | --- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| F1  | ~~`ui.panel.data` shape is plugin-defined and unvalidated by the kernel~~ **formalized**   | `dto-guards.ts` → `parsePanelData`: table / json / empty / invalid classification + a 32KB cap                       |
+| F1  | ~~`ui.panel.data` shape is plugin-defined and unvalidated by the kernel~~ **formalized**   | `dto-guards.ts` → `parsePanelData`: table / form / json / empty / invalid classification + a 32KB cap                |
 | F2  | `bridge-types.ts` DTOs are hand-written, so kernel changes do not break the frontend build | mitigated by source comments plus type alignment at assignment sites; `ui.*` `impl` types come from kernel contracts |
 | F3  | `preload.cjs` filename is an implicit contract (hardcoded in main)                         | renaming it fails as "preload script failed to load" with no hint about the filename                                 |
 | F4  | Runes in a plain `.ts` silently do nothing                                                 | only the `.svelte.ts` naming convention catches it                                                                   |
