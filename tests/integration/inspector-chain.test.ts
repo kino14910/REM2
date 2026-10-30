@@ -31,7 +31,7 @@ const BUILTIN_ROOT = path.join(PROJECT_ROOT, 'plugins-dist')
 const DATA_TOPIC = 'com.rem2.plugin-inspector.data'
 const INSPECTOR_PLUGIN_ID = 'com.rem2.plugin-inspector'
 
-/** The 7 builtin plugins plugins-dist ships (inspector rows must cover them). */
+/** The 7 shipped plugins in plugins-dist (6 built-in + external theme-switcher). */
 const BUILTIN_PLUGIN_IDS = [
   'com.rem2.config-json',
   'com.rem2.health-http',
@@ -39,7 +39,7 @@ const BUILTIN_PLUGIN_IDS = [
   'com.rem2.logger-console',
   'com.rem2.notify-worker',
   'com.rem2.plugin-inspector',
-  'com.rem2.theme-dark',
+  'com.rem2.theme-switcher',
 ]
 
 function createKernel(): Kernel {

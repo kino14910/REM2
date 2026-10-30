@@ -2,7 +2,7 @@
  * Integration test: theme chain (extension slot -> host -> renderer data source).
  *
  * Rationale (a link that really broke):
- * `theme-dark` contributes its themes into the `ui.theme` extension slot, but the
+ * `theme-switcher` contributes its themes into the `ui.theme` extension slot, but the
  * host's `ui.theme.list` responder read a separate memory (ThemeRegistryImpl).
  * Nothing connected the two sides - theme data stopped at the extension point:
  * `ui.theme.list` always returned [] and `ui.theme.set` always failed, so the
@@ -23,7 +23,7 @@
 
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { Kernel } from '../../src/kernel/kernel.js'
 import { createDeps } from '../../src/kernel/composition.js'
 import { KernelTokens } from '../../src/kernel/contracts/kernel-tokens.js'
@@ -31,8 +31,15 @@ import { Topics } from '../../src/kernel/topics.js'
 import type { EventBus } from '../../src/kernel/contracts/event-bus.js'
 import type { ThemeDefinition } from '../../src/kernel/contracts/ui.js'
 import { ThemeRegistryImpl } from '../../src/host/electron/theme-registry.js'
-import { createMethodHandlers } from '../../src/host/ipc/method-handlers.js'
+import {
+  createMethodHandlers,
+  createThemeRefreshHandler,
+} from '../../src/host/ipc/method-handlers.js'
 import { channels } from '../../src/shared/ipc-contract.js'
+import {
+  cleanupTestPluginDataRoots,
+  createTestPluginDataRoot,
+} from '../helpers/plugin-data-root.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = path.resolve(HERE, '..', '..')
@@ -44,6 +51,7 @@ function createKernel(): Kernel {
       id: 'rem2-theme-chain',
       roots: [],
       builtinRoot: BUILTIN_ROOT,
+      pluginDataRoot: createTestPluginDataRoot('theme-chain'),
       startTimeoutMs: 8000,
       stopTimeoutMs: 8000,
       legacyFallback: false,
@@ -52,14 +60,20 @@ function createKernel(): Kernel {
   )
 }
 
+afterEach(cleanupTestPluginDataRoots)
+
 describe('integration · theme chain', () => {
-  it('theme-dark contributes both modes into the ui.theme slot', async () => {
+  it('theme-switcher contributes light, dark and system into the ui.theme slot', async () => {
     const kernel = createKernel()
     try {
       await kernel.start()
 
       const contributed = kernel.extensions.listAll<ThemeDefinition>('ui.theme')
-      expect(contributed.map(t => t.id).toSorted()).toEqual(['dark', 'light'])
+      expect(contributed.map(t => t.id).toSorted()).toEqual([
+        'dark',
+        'light',
+        'system',
+      ])
       // `mode` is what the shell pairs into the switch; without it the renderer would
       // have to infer the mode from the id string (the cross-layer string trap).
       for (const theme of contributed) {
@@ -100,6 +114,7 @@ describe('integration · theme chain', () => {
       expect(catalog.themes.map(t => t.id).toSorted()).toEqual([
         'dark',
         'light',
+        'system',
       ])
       // Dark default: the shell's CSS fallbacks are dark, so first paint does not flash.
       expect(catalog.activeId).toBe('dark')
@@ -154,7 +169,68 @@ describe('integration · theme chain', () => {
     }
   })
 
-  it('after unloading theme-dark the catalog expires automatically (pull model, no unload listener needed)', async () => {
+  it('restores the plugin preference when host responders are registered before startup', async () => {
+    const kernel = createKernel()
+    try {
+      const bus = kernel.root.resolve<EventBus>(KernelTokens.EventBus)
+      const registry = new ThemeRegistryImpl()
+      const handlers = createMethodHandlers({
+        kernel,
+        bus,
+        themeRegistry: registry,
+      })
+      bus.respond(channels.themeList, handlers[channels.themeList]!)
+      bus.respond(channels.themeSet, handlers[channels.themeSet]!)
+
+      await kernel.start()
+      // The external plugin defaults to system and applies it during onStart.
+      expect(registry.active()).toBe('system')
+    } finally {
+      await kernel.shutdown()
+    }
+  })
+
+  it('materializes system for the OS and refreshes replaced token values', async () => {
+    const kernel = createKernel()
+    try {
+      await kernel.start()
+      const bus = kernel.root.resolve<EventBus>(KernelTokens.EventBus)
+      const registry = new ThemeRegistryImpl()
+      let systemDark = false
+      const ctx = {
+        kernel,
+        bus,
+        themeRegistry: registry,
+        isSystemDark: () => systemDark,
+      }
+      const handlers = createMethodHandlers(ctx)
+      await handlers[channels.themeSet]!({ themeId: 'system' })
+      expect(registry.get('system')).toMatchObject({
+        id: 'system',
+        mode: 'light',
+        colors: { background: '#f5f6f8' },
+      })
+
+      systemDark = true
+      const refresh = createThemeRefreshHandler(ctx)
+      expect(await refresh(undefined)).toMatchObject({
+        id: 'system',
+        mode: 'dark',
+        colors: { background: '#0f1115' },
+      })
+
+      const light = kernel.extensions
+        .listAll<ThemeDefinition>('ui.theme')
+        .find(theme => theme.id === 'light')!
+      ;(light.colors as Record<string, string>).accent = '#123456'
+      await refresh(undefined)
+      expect(registry.get('light')?.colors.accent).toBe('#123456')
+    } finally {
+      await kernel.shutdown()
+    }
+  })
+
+  it('after unloading theme-switcher the catalog expires automatically (pull model, no unload listener needed)', async () => {
     const kernel = createKernel()
     try {
       await kernel.start()
@@ -172,9 +248,9 @@ describe('integration · theme chain', () => {
         undefined,
         { themes: ThemeDefinition[]; activeId?: string }
       >(channels.themeList, undefined, { timeoutMs: 5000 })
-      expect(before.themes.length).toBe(2)
+      expect(before.themes.length).toBe(3)
 
-      await kernel.unloadPlugin('com.rem2.theme-dark')
+      await kernel.unloadPlugin('com.rem2.theme-switcher')
 
       const after = await bus.request<
         undefined,

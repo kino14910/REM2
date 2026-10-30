@@ -10,6 +10,8 @@ interface Probe {
   resolveError?: Error | null
   bus?: unknown
   resolvePathEscaped?: boolean
+  dataPath?: string
+  dataPathEscaped?: boolean
 }
 
 function probe(): Probe {
@@ -180,6 +182,44 @@ export default function factory(ctx) {
     expect(result.started).toContain('com.rem2.public-probe')
     expect(probe().bus).not.toBeNull()
 
+    await kernel.shutdown()
+  })
+
+  it('dataPath stays in the host-provided writable root and rejects escapes', async () => {
+    await writePlugin(
+      root,
+      'com.rem2.data-probe',
+      `
+const P = (globalThis.__rem2Probe = globalThis.__rem2Probe || {});
+export default function factory(ctx) {
+  return {
+    async onStart() {
+      P.dataPath = ctx.dataPath('data/preferences.json');
+      try {
+        ctx.dataPath('../../outside.json');
+        P.dataPathEscaped = false;
+      } catch (e) {
+        P.dataPathEscaped = e && e.code === 'E_ENTRY_ESCAPE';
+      }
+    },
+  };
+}
+`,
+    )
+
+    const pluginDataRoot = path.join(root, 'writable')
+    const kernel = new Kernel({ roots: [root], pluginDataRoot })
+    const result = await kernel.start()
+    expect(result.started).toContain('com.rem2.data-probe')
+    expect(probe().dataPath).toBe(
+      path.join(
+        pluginDataRoot,
+        'com.rem2.data-probe',
+        'data',
+        'preferences.json',
+      ),
+    )
+    expect(probe().dataPathEscaped).toBe(true)
     await kernel.shutdown()
   })
 

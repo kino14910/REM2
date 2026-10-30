@@ -43,6 +43,7 @@ function stubContext(pluginId: string): import('rem2-kernel').PluginContext {
       byState: () => [],
     },
     resolvePath: (p: string) => p,
+    dataPath: (p: string) => p,
   }
 }
 

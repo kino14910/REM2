@@ -14,7 +14,7 @@
 
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { Kernel } from '../../src/kernel/kernel.js'
 import { createDeps } from '../../src/kernel/composition.js'
 import { KernelTokens } from '../../src/kernel/contracts/kernel-tokens.js'
@@ -24,6 +24,10 @@ import type { HealthReport } from '../../src/kernel/contracts/health.js'
 import { ThemeRegistryImpl } from '../../src/host/electron/theme-registry.js'
 import { createMethodHandlers } from '../../src/host/ipc/method-handlers.js'
 import { ALLOWED_METHODS, channels } from '../../src/shared/ipc-contract.js'
+import {
+  cleanupTestPluginDataRoots,
+  createTestPluginDataRoot,
+} from '../helpers/plugin-data-root.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = path.resolve(HERE, '..', '..')
@@ -35,6 +39,7 @@ function createKernel(): Kernel {
       id: 'rem2-ipc-method-handlers',
       roots: [],
       builtinRoot: BUILTIN_ROOT,
+      pluginDataRoot: createTestPluginDataRoot('ipc-handlers'),
       startTimeoutMs: 8000,
       stopTimeoutMs: 8000,
       legacyFallback: false,
@@ -42,6 +47,8 @@ function createKernel(): Kernel {
     }),
   )
 }
+
+afterEach(cleanupTestPluginDataRoots)
 
 describe('integration · allowlisted method implementation table', () => {
   it('the key set matches the allowlist exactly; command.execute is null (the host does not implement it)', async () => {
@@ -96,19 +103,38 @@ describe('integration · allowlisted method implementation table', () => {
       const routes = (await routeList(undefined)) as Array<
         Record<string, unknown>
       >
-      expect(panels).toHaveLength(1)
-      expect(panels).toMatchObject([
-        {
-          panelId: 'plugin-inspector',
-          command: 'com.rem2.plugin-inspector.data',
-          region: 'main',
-          order: 10,
-        },
-      ])
-      expect(routes).toHaveLength(1)
-      expect(routes).toMatchObject([
-        { path: '/plugins', panelId: 'plugin-inspector', order: 10 },
-      ])
+      expect(panels).toHaveLength(2)
+      expect(panels).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            panelId: 'plugin-inspector',
+            command: 'com.rem2.plugin-inspector.data',
+            region: 'main',
+            order: 10,
+          }),
+          expect.objectContaining({
+            panelId: 'theme-switcher',
+            command: 'com.rem2.theme-switcher.data',
+            region: 'main',
+            order: 20,
+          }),
+        ]),
+      )
+      expect(routes).toHaveLength(2)
+      expect(routes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: '/plugins',
+            panelId: 'plugin-inspector',
+            order: 10,
+          }),
+          expect.objectContaining({
+            path: '/theme',
+            panelId: 'theme-switcher',
+            order: 20,
+          }),
+        ]),
+      )
     } finally {
       await kernel.shutdown()
     }
@@ -136,6 +162,7 @@ describe('integration · allowlisted method implementation table', () => {
       expect(catalog.themes.map(t => t.id).toSorted()).toEqual([
         'dark',
         'light',
+        'system',
       ])
       expect(catalog.activeId).toBe('dark')
       expect(registry.active()).toBe('dark')
@@ -167,6 +194,28 @@ describe('integration · allowlisted method implementation table', () => {
       await expect(panelData({ panelId: 'nope' })).rejects.toThrow(
         /panel not found/,
       )
+    } finally {
+      await kernel.shutdown()
+    }
+  })
+
+  it('ui.event preserves an explicit plugin rejection and its error message', async () => {
+    const kernel = createKernel()
+    try {
+      await kernel.start()
+      const bus = kernel.root.resolve<EventBus>(KernelTokens.EventBus)
+      const handlers = createMethodHandlers({
+        kernel,
+        bus,
+        themeRegistry: new ThemeRegistryImpl(),
+      })
+      const result = await handlers[channels.uiEvent]!({
+        panelId: 'theme-switcher',
+        kind: 'change',
+        payload: { fieldId: 'mode', value: 'sepia' },
+      })
+      expect(result).toMatchObject({ ok: false })
+      expect((result as { error: string }).error).toMatch(/invalid mode/)
     } finally {
       await kernel.shutdown()
     }

@@ -213,6 +213,107 @@ describe('unit · dto guards · parsePanelData', () => {
       reason: 'panel data exceeds 32KB limit',
     })
   })
+
+  it('classifies a valid form and preserves select options plus color value', () => {
+    const form = {
+      kind: 'form',
+      fields: [
+        {
+          id: 'mode',
+          label: 'Mode',
+          type: 'select',
+          value: 'dark',
+          options: [
+            { value: 'light', label: 'Light' },
+            { value: 'dark', label: 'Dark' },
+          ],
+        },
+        {
+          id: 'accent',
+          label: 'Accent',
+          type: 'color',
+          value: '#4f9cf9',
+        },
+      ],
+    }
+    expect(parsePanelData(form)).toEqual({
+      kind: 'form',
+      fields: form.fields,
+    })
+  })
+
+  it.each([
+    ['empty fields', { kind: 'form', fields: [] }],
+    [
+      'duplicate ids',
+      {
+        kind: 'form',
+        fields: [
+          { id: 'a', label: 'A', type: 'color', value: '#000000' },
+          { id: 'a', label: 'B', type: 'color', value: '#ffffff' },
+        ],
+      },
+    ],
+    [
+      'unsupported type',
+      {
+        kind: 'form',
+        fields: [{ id: 'a', label: 'A', type: 'range', value: '1' }],
+      },
+    ],
+    [
+      'select without options',
+      {
+        kind: 'form',
+        fields: [{ id: 'a', label: 'A', type: 'select', value: 'x' }],
+      },
+    ],
+    [
+      'selected value outside options',
+      {
+        kind: 'form',
+        fields: [
+          {
+            id: 'a',
+            label: 'A',
+            type: 'select',
+            value: 'x',
+            options: [{ value: 'y', label: 'Y' }],
+          },
+        ],
+      },
+    ],
+    [
+      'duplicate options',
+      {
+        kind: 'form',
+        fields: [
+          {
+            id: 'a',
+            label: 'A',
+            type: 'select',
+            value: 'x',
+            options: [
+              { value: 'x', label: 'X' },
+              { value: 'x', label: 'Again' },
+            ],
+          },
+        ],
+      },
+    ],
+    [
+      'invalid color',
+      {
+        kind: 'form',
+        fields: [{ id: 'a', label: 'A', type: 'color', value: 'red' }],
+      },
+    ],
+    ['field is not an object', { kind: 'form', fields: [null] }],
+  ])('a malformed form (%s) is invalid, never JSON', (_label, value) => {
+    const parsed = parsePanelData(value)
+    expect(parsed.kind).toBe('invalid')
+    expect((parsed as { reason: string }).reason).toMatch(/invalid form/)
+  })
 })
 
 describe('unit · dto guards · plugin management', () => {

@@ -19,7 +19,7 @@
 
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { Kernel } from '../../src/kernel/kernel.js'
 import { createDeps } from '../../src/kernel/composition.js'
 import { KernelTokens } from '../../src/kernel/contracts/kernel-tokens.js'
@@ -35,6 +35,10 @@ import {
   type IpcResponse,
 } from '../../src/shared/ipc-contract.js'
 import { createTmpPluginsDir } from '../helpers/tmp-plugins-dir.js'
+import {
+  cleanupTestPluginDataRoots,
+  createTestPluginDataRoot,
+} from '../helpers/plugin-data-root.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = path.resolve(HERE, '..', '..')
@@ -45,7 +49,7 @@ const INSPECTOR_PANEL_ID = 'plugin-inspector'
 const INSPECTOR_PLUGIN_ID = 'com.rem2.plugin-inspector'
 const DATA_TOPIC = 'com.rem2.plugin-inspector.data'
 
-/** The 7 builtin plugins plugins-dist ships (inspector rows must cover them). */
+/** The 7 shipped plugins in plugins-dist (6 built-in + external theme-switcher). */
 const BUILTIN_PLUGIN_IDS = [
   'com.rem2.config-json',
   'com.rem2.health-http',
@@ -53,7 +57,7 @@ const BUILTIN_PLUGIN_IDS = [
   'com.rem2.logger-console',
   'com.rem2.notify-worker',
   'com.rem2.plugin-inspector',
-  'com.rem2.theme-dark',
+  'com.rem2.theme-switcher',
 ]
 
 function createKernel(): Kernel {
@@ -62,6 +66,7 @@ function createKernel(): Kernel {
       id: 'rem2-ui-chain',
       roots: [],
       builtinRoot: BUILTIN_ROOT,
+      pluginDataRoot: createTestPluginDataRoot('ui-chain'),
       startTimeoutMs: 8000,
       stopTimeoutMs: 8000,
       legacyFallback: false,
@@ -136,6 +141,8 @@ function registerHandlers(
   }
 }
 
+afterEach(cleanupTestPluginDataRoots)
+
 describe('integration · ui chain', () => {
   it('① plugin-inspector starts and contributes exactly one panel + one route', async () => {
     const kernel = createKernel()
@@ -143,8 +150,8 @@ describe('integration · ui chain', () => {
       await kernel.start()
 
       const panels = kernel.extensions.listAll<PanelContribution>('ui.panel')
-      expect(panels).toHaveLength(1)
-      expect(panels[0]).toMatchObject({
+      const inspector = panels.find(p => p.panelId === INSPECTOR_PANEL_ID)
+      expect(inspector).toMatchObject({
         panelId: INSPECTOR_PANEL_ID,
         title: 'Plugin Inspector',
         icon: '🔍',
@@ -153,9 +160,9 @@ describe('integration · ui chain', () => {
         command: DATA_TOPIC,
       })
 
-      const routes = kernel.extensions.listAll('ui.route')
-      expect(routes).toHaveLength(1)
-      expect(routes[0]).toMatchObject({
+      const routes = kernel.extensions.listAll<{ path: string }>('ui.route')
+      const inspectorRoute = routes.find(r => r.path === '/plugins')
+      expect(inspectorRoute).toMatchObject({
         path: '/plugins',
         title: 'Plugins',
         panelId: INSPECTOR_PANEL_ID,
@@ -176,20 +183,28 @@ describe('integration · ui chain', () => {
 
       const panelRes = await client.invoke(channels.panelList)
       expect(panelRes.ok).toBe(true)
-      expect(panelRes.result).toMatchObject([
-        {
-          panelId: INSPECTOR_PANEL_ID,
-          command: DATA_TOPIC,
-          region: 'main',
-          order: 10,
-        },
-      ])
+      expect(panelRes.result).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            panelId: INSPECTOR_PANEL_ID,
+            command: DATA_TOPIC,
+            region: 'main',
+            order: 10,
+          }),
+        ]),
+      )
 
       const routeRes = await client.invoke(channels.routeList)
       expect(routeRes.ok).toBe(true)
-      expect(routeRes.result).toMatchObject([
-        { path: '/plugins', panelId: INSPECTOR_PANEL_ID, order: 10 },
-      ])
+      expect(routeRes.result).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: '/plugins',
+            panelId: INSPECTOR_PANEL_ID,
+            order: 10,
+          }),
+        ]),
+      )
 
       client.bridge.unbind()
     } finally {
@@ -365,16 +380,16 @@ export default function factory(ctx) {
 
       const before = await client.invoke(channels.panelList)
       expect(before.ok).toBe(true)
-      expect(before.result).toHaveLength(1)
+      expect(before.result).toHaveLength(2)
 
       await kernel.unloadPlugin(INSPECTOR_PLUGIN_ID)
 
       const panels = await client.invoke(channels.panelList)
       expect(panels.ok).toBe(true)
-      expect(panels.result).toEqual([])
+      expect(panels.result).toMatchObject([{ panelId: 'theme-switcher' }])
       const routes = await client.invoke(channels.routeList)
       expect(routes.ok).toBe(true)
-      expect(routes.result).toEqual([])
+      expect(routes.result).toMatchObject([{ path: '/theme' }])
 
       const data = await client.invoke(channels.panelData, {
         panelId: INSPECTOR_PANEL_ID,
@@ -431,7 +446,7 @@ export default function factory(ctx) {
         {
           pluginId: INSPECTOR_PLUGIN_ID,
           state: 'Stopped',
-          panelsAtEvent: [],
+          panelsAtEvent: ['theme-switcher'],
         },
       ])
     } finally {
