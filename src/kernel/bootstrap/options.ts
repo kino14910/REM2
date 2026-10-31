@@ -17,6 +17,12 @@ export interface KernelOptions {
   pluginDataRoot?: string
   /** Global trust-level override (defaults to source-based detection). */
   trustLevel?: TrustLevel
+  /**
+   * Explicit capability grants per plugin, applied after the trust-policy
+   * decision. Only capabilities declared in `requires` can be granted; a
+   * sandboxed plugin without a grant stays denied.
+   */
+  grantedCapabilities?: (pluginId: string) => readonly string[]
   /** Start timeout (single plugin Start phase). */
   startTimeoutMs: number
   /** Stop timeout (single plugin Stop/Unload/Dispose phases). */
@@ -53,6 +59,9 @@ export function defaultKernelOptions(
       : {}),
     ...(partial.trustLevel !== undefined
       ? { trustLevel: partial.trustLevel }
+      : {}),
+    ...(partial.grantedCapabilities !== undefined
+      ? { grantedCapabilities: partial.grantedCapabilities }
       : {}),
     startTimeoutMs: partial.startTimeoutMs ?? 5000,
     stopTimeoutMs: partial.stopTimeoutMs ?? 5000,

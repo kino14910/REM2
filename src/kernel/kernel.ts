@@ -79,6 +79,19 @@ export class Kernel {
     return this.deps.resolveIssues()
   }
 
+  /**
+   * Current authorization decision for a plugin, or `undefined` when it has
+   * never been started. Snapshot only: mutating it does not grant anything.
+   */
+  permissionsOf(pluginId: string):
+    | { granted: readonly string[]; denied: readonly string[] }
+    | undefined {
+    const set = this.deps.permissions.get(pluginId)
+    return set
+      ? { granted: set.granted.slice(), denied: set.denied.slice() }
+      : undefined
+  }
+
   isStarted(): boolean {
     return this.started
   }
@@ -565,6 +578,16 @@ export class Kernel {
       )
       for (const w of decision.warnings) {
         log.warn(`permission warning: ${w.capability} - ${w.reason}`)
+      }
+      // Explicit grants (user decision recorded by the host) are applied only
+      // for capabilities the manifest actually declares: a grant file cannot
+      // escalate a plugin beyond its own `requires`.
+      const declared = new Set(candidate.manifest.requires ?? [])
+      for (const capability of this.options.grantedCapabilities?.(
+        pluginId,
+      ) ?? []) {
+        if (!declared.has(capability)) continue
+        this.deps.permissions.grant(pluginId, capability)
       }
 
       const loaded = await this.deps.loader.load(

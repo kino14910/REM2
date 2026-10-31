@@ -343,6 +343,13 @@ function pluginIssue(entry: unknown, index: number): string | undefined {
       return `plugin[${index}]: field "${field}" must be a string array`
     }
   }
+  if (
+    !isRecord(plugin.permissions) ||
+    !isStringArray(plugin.permissions.granted) ||
+    !isStringArray(plugin.permissions.denied)
+  ) {
+    return `plugin[${index}]: permissions must be { granted: string[], denied: string[] }`
+  }
   for (const field of ['dependencies', 'optionalDependencies'] as const) {
     if (!isStringMap(plugin[field])) {
       return `plugin[${index}]: field "${field}" must be a string map`

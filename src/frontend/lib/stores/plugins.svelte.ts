@@ -22,6 +22,7 @@ type PluginAction =
   | 'restart'
   | 'enable'
   | 'disable'
+  | 'grant'
   | 'uninstall'
 
 export type RemotePending =
@@ -54,6 +55,8 @@ const PLUGIN_ERROR_TEXT: Record<string, string> = {
     'This plugin id is already installed; use Check updates instead.',
   E_PROVENANCE_MISSING:
     'This plugin has no recorded remote source, so it cannot be updated.',
+  E_CAPABILITY_INVALID:
+    'The plugin does not declare one of the requested capabilities.',
   E_DEPENDENCY: 'The plugin has an unsatisfied hard dependency.',
   E_INCOMPATIBLE: 'The plugin is not compatible with this kernel.',
   E_UPDATE_FAILED: 'The update failed; the previous version was restored.',
@@ -139,6 +142,16 @@ class PluginsStore {
 
   enable(pluginId: string): Promise<void> {
     return this.run('enable', pluginId)
+  }
+
+  /** Grant the capabilities the trust policy denied (explicit user approval). */
+  grant(pluginId: string, capabilities: string[]): Promise<void> {
+    return this.invoke(
+      'grant',
+      channels.pluginPermissionGrant,
+      { pluginId, capabilities },
+      pluginId,
+    )
   }
 
   disable(pluginId: string): Promise<void> {

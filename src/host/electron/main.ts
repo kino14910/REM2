@@ -19,6 +19,7 @@ import { ThemeRegistryImpl } from './theme-registry.js'
 import { LocalPluginManager } from '../plugins/local-plugin-manager.js'
 import { PluginStateStore } from '../plugins/state-store.js'
 import { PluginProvenanceStore } from '../plugins/provenance-store.js'
+import { PluginGrantStore } from '../plugins/grant-store.js'
 
 let kernel: Kernel | null = null
 let bridge: IpcBridge | null = null
@@ -118,6 +119,11 @@ async function startKernel(): Promise<void> {
     path.join(userData, 'plugin-provenance.json'),
   )
   await provenance.load()
+  // Explicit capability grants for user plugins: the kernel applies them after
+  // the trust-policy decision, so a sandboxed plugin only gets what the user
+  // approved in the plugin manager.
+  const grants = new PluginGrantStore(path.join(userData, 'plugin-grants.json'))
+  await grants.load()
 
   kernel = new Kernel(
     createDeps({
@@ -125,6 +131,7 @@ async function startKernel(): Promise<void> {
       roots: [userRoot],
       disabledPlugins: state.ids(),
       builtinRoot,
+      grantedCapabilities: pluginId => grants.get(pluginId),
       pluginDataRoot: path.join(userData, 'plugin-data'),
       startTimeoutMs: 5000,
       stopTimeoutMs: 5000,
@@ -144,6 +151,7 @@ async function startKernel(): Promise<void> {
     state,
     builtinRoot,
     provenance,
+    grants,
     packagesRoot: path.join(userData, 'plugin-packages'),
   })
   registerWhitelistedMethods(kernel, pluginManager)

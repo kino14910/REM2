@@ -70,6 +70,41 @@ export function pluginIdOf(args: unknown): string {
   return pluginId
 }
 
+/** Capability names follow the manifest grammar; max 64 per request. */
+const CAPABILITY_RE = /^[a-z][a-z0-9-]*(\.[a-z0-9-]+)*$/
+const MAX_GRANTED_CAPABILITIES = 64
+
+/** Validates `{ pluginId, capabilities: string[] }` for `plugin.permission.grant`. */
+export function permissionGrantArgsOf(args: unknown): {
+  pluginId: string
+  capabilities: string[]
+} {
+  const obj = asObject(args)
+  const pluginId = pluginIdOf(obj)
+  if (!Array.isArray(obj.capabilities) || obj.capabilities.length === 0) {
+    throw new Error(
+      'invalid args: expected { capabilities: non-empty string[] }',
+    )
+  }
+  if (obj.capabilities.length > MAX_GRANTED_CAPABILITIES) {
+    throw new Error(
+      `invalid args: capabilities must contain at most ${MAX_GRANTED_CAPABILITIES} entries`,
+    )
+  }
+  const capabilities = obj.capabilities.map(capability => {
+    if (typeof capability !== 'string' || !CAPABILITY_RE.test(capability)) {
+      throw new Error(
+        'invalid args: capabilities must be valid capability names',
+      )
+    }
+    return capability
+  })
+  if (new Set(capabilities).size !== capabilities.length) {
+    throw new Error('invalid args: duplicate capability')
+  }
+  return { pluginId, capabilities }
+}
+
 export function noArgsOf(args: unknown): void {
   if (args !== undefined) throw new Error('invalid args: expected no arguments')
 }

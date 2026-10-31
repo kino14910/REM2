@@ -49,6 +49,7 @@ import {
   noArgsOf,
   operationIdOf,
   panelIdOf,
+  permissionGrantArgsOf,
   pluginIdOf,
   themeIdOf,
   uiEventArgsOf,
@@ -295,6 +296,13 @@ export const METHOD_FACTORIES = {
 
   [channels.pluginEnable]: (ctx): MethodHandler => {
     return args => pluginManagerOf(ctx).enable(pluginIdOf(args))
+  },
+
+  [channels.pluginPermissionGrant]: (ctx): MethodHandler => {
+    return args => {
+      const { pluginId, capabilities } = permissionGrantArgsOf(args)
+      return pluginManagerOf(ctx).grantPermissions(pluginId, capabilities)
+    }
   },
 
   [channels.pluginDisable]: (ctx): MethodHandler => {

@@ -62,6 +62,12 @@ export const channels = {
    */
   pluginInstallFromDirectory: 'plugin.install.directory',
   pluginEnable: 'plugin.enable',
+  /**
+   * Grant declared capabilities to a user-installed plugin. Sandboxed plugins
+   * are denied sensitive capabilities by default; the grant is persisted and
+   * applies on the next start.
+   */
+  pluginPermissionGrant: 'plugin.permission.grant',
   pluginDisable: 'plugin.disable',
   pluginUninstall: 'plugin.uninstall',
   /** Restart every plugin in place; the kernel, host process and window stay alive. */
@@ -159,6 +165,8 @@ export interface PluginDetailDto extends PluginSummaryDto {
   dependencies: Record<string, string>
   optionalDependencies: Record<string, string>
   requires: string[]
+  /** Effective capability decision: denied entries need an explicit grant. */
+  permissions: PluginPermissionDto
   compatibility: {
     minKernel: string
     maxKernel?: string
@@ -169,6 +177,11 @@ export interface PluginDetailDto extends PluginSummaryDto {
   restartRequired: boolean
   /** Where this plugin came from; remote installs keep their release URL and digest. */
   origin?: PluginOriginDto
+}
+
+export interface PluginPermissionDto {
+  granted: string[]
+  denied: string[]
 }
 
 export interface PluginOriginDto {
