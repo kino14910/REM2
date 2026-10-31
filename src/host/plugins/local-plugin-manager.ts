@@ -31,7 +31,10 @@ import { downloadPackage } from './remote-download.js'
 import { extractZipSafe } from './zip-extract.js'
 import { resolveRemoteRelease, type RemoteRelease } from './release-source.js'
 import { PluginProvenanceStore } from './provenance-store.js'
+import { PluginGrantStore } from './grant-store.js'
 import { isNewerVersion } from './update-compare.js'
+import { PermissionManager } from '../../kernel/security/permission-manager.js'
+import { trustLevelFor } from '../../kernel/security/trust-policy.js'
 import {
   assertInside,
   assertRealDirectoryInside,
@@ -59,6 +62,8 @@ export interface LocalPluginManagerOptions {
   copyDirectory?: typeof copyDirectorySafe
   /** Remote installs keep their source URL/digest here; absent = remote operations unavailable. */
   provenance?: PluginProvenanceStore
+  /** Explicit capability grants for user-installed plugins; absent = no grant management. */
+  grants?: PluginGrantStore
   /** Download cache directory; defaults to `<userData>/plugin-packages`. */
   packagesRoot?: string
   /** Injected for tests; production uses global fetch. */
@@ -74,6 +79,7 @@ export class LocalPluginManager {
   private readonly builtinRoot?: string
   private readonly copyDirectory: typeof copyDirectorySafe
   private readonly provenance?: PluginProvenanceStore
+  private readonly grants?: PluginGrantStore
   private readonly packagesRoot: string
   private readonly fetchImpl?: typeof fetch
   private ready = false
@@ -91,6 +97,7 @@ export class LocalPluginManager {
     this.builtinRoot = options.builtinRoot
     this.copyDirectory = options.copyDirectory ?? copyDirectorySafe
     this.provenance = options.provenance
+    this.grants = options.grants
     this.packagesRoot = path.resolve(
       options.packagesRoot ??
         path.join(path.dirname(this.userRoot), 'plugin-packages'),
@@ -684,6 +691,54 @@ export class LocalPluginManager {
     })
   }
 
+  /**
+   * Record explicit capability grants for a user-installed plugin.
+   *
+   * Grants are additive, persisted, and limited to capabilities the manifest
+   * declares. They take effect on the next start of the plugin; built-ins are
+   * trusted and cannot be granted.
+   */
+  grantPermissions(
+    pluginId: string,
+    capabilities: readonly string[],
+  ): Promise<PluginOperationResultDto> {
+    return this.serialize(async () => {
+      await this.ensureReady()
+      const scan = await this.scan()
+      const candidate = scan.candidates.find(c => c.manifest.id === pluginId)
+      if (!candidate) {
+        throw new PluginManagementError(
+          'E_NOT_FOUND',
+          `plugin not found: ${pluginId}`,
+        )
+      }
+      if (candidate.source !== 'user') {
+        throw new PluginManagementError(
+          'E_BUILTIN_PROTECTED',
+          'built-in plugins are trusted and cannot be granted capabilities',
+        )
+      }
+      const declared = new Set(candidate.manifest.requires ?? [])
+      const unknown = capabilities.filter(capability => !declared.has(capability))
+      if (unknown.length > 0) {
+        throw new PluginManagementError(
+          'E_CAPABILITY_INVALID',
+          `plugin ${pluginId} does not declare: ${unknown.join(', ')}`,
+        )
+      }
+      const grants = this.requireGrants()
+      await grants.set(pluginId, capabilities)
+      return {
+        ok: true,
+        changed: true,
+        restartRequired: false,
+        plugin: await this.detailUnlocked(pluginId),
+        message:
+          'Capabilities granted. Enable or restart the plugin to apply them.',
+      }
+    })
+  }
+
   restart(): Promise<PluginOperationResultDto> {
     return this.serialize(async () => {
       await this.ensureReady()
@@ -731,6 +786,8 @@ export class LocalPluginManager {
       await rm(candidate.rootDir, { recursive: true, force: false })
       // A stale remote origin would offer updates for a plugin that is gone.
       await this.provenance?.remove(pluginId).catch(() => undefined)
+      // Grants are per installation: a reinstall must ask for them again.
+      await this.grants?.remove(pluginId).catch(() => undefined)
       return {
         ok: true,
         changed: true,
@@ -836,6 +893,7 @@ export class LocalPluginManager {
       dependencies: { ...manifest.dependencies },
       optionalDependencies: { ...manifest.optionalDependencies },
       requires: [...(manifest.requires ?? [])],
+      permissions: this.permissionsFor(candidate),
       compatibility: { ...manifest.compatibility },
       canUninstall: candidate.source === 'user',
       restartRequired: !enabled && this.isRuntimeLive(manifest.id),
@@ -871,6 +929,7 @@ export class LocalPluginManager {
     if (this.ready) return
     await this.state.load()
     if (this.provenance) await this.provenance.load()
+    if (this.grants) await this.grants.load()
     await mkdir(this.userRoot, { recursive: true })
     await mkdir(this.dataRoot, { recursive: true })
     const stat = await lstat(this.userRoot)
@@ -1002,6 +1061,54 @@ export class LocalPluginManager {
         skipExisting: true,
       })
     }
+  }
+
+  /**
+   * Project the current authorization decision for the management UI.
+   *
+   * The live snapshot is authoritative once the plugin has started; for a
+   * never-started plugin the trust-policy decision is recomputed from a scratch
+   * manager. Persisted grants are overlaid in both cases because they apply on
+   * the next start.
+   */
+  private permissionsFor(candidate: Candidate): {
+    granted: string[]
+    denied: string[]
+  } {
+    const declared = candidate.manifest.requires ?? []
+    if (declared.length === 0) return { granted: [], denied: [] }
+    const live = this.kernel.permissionsOf(candidate.manifest.id)
+    const base =
+      live ??
+      new PermissionManager().check(
+        candidate.manifest,
+        this.kernel.options.trustLevel ?? trustLevelFor(candidate.source),
+      )
+    const granted = new Set(base.granted)
+    const denied = new Set(base.denied)
+    if (!candidate.builtin) {
+      for (const capability of this.grants?.get(candidate.manifest.id) ?? []) {
+        if (!declared.includes(capability)) continue
+        granted.add(capability)
+        denied.delete(capability)
+      }
+    }
+    const byName = (left: string, right: string): number =>
+      left.localeCompare(right, 'en')
+    return {
+      granted: [...granted].toSorted(byName),
+      denied: [...denied].toSorted(byName),
+    }
+  }
+
+  private requireGrants(): PluginGrantStore {
+    if (!this.grants) {
+      throw new PluginManagementError(
+        'E_MANAGER_UNAVAILABLE',
+        'plugin grant store is unavailable',
+      )
+    }
+    return this.grants
   }
 
   private requireProvenance(): PluginProvenanceStore {

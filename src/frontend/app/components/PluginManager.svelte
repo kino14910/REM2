@@ -686,8 +686,44 @@
             <section>
               <h4>Required capabilities</h4>
               {#each selected.requires as capability}
-                <p><code>{capability}</code></p>
+                <p>
+                  <code>{capability}</code>
+                  {#if !selected.builtin}
+                    <span
+                      class:denied={selected.permissions.denied.includes(
+                        capability,
+                      )}
+                      class:granted={selected.permissions.granted.includes(
+                        capability,
+                      )}
+                    >
+                      {selected.permissions.denied.includes(capability)
+                        ? 'denied'
+                        : 'granted'}
+                    </span>
+                  {/if}
+                </p>
               {:else}<p class="muted">None</p>{/each}
+              {#if !selected.builtin && selected.permissions.denied.length > 0}
+                <button
+                  type="button"
+                  onclick={() =>
+                    void plugins.grant(
+                      selected.id,
+                      selected.permissions.denied,
+                    )}
+                  disabled={!!plugins.pending}
+                >
+                  {plugins.pending?.action === 'grant' &&
+                  plugins.pending.pluginId === selected.id
+                    ? 'Granting…'
+                    : 'Grant denied capabilities'}
+                </button>
+                <p class="muted">
+                  The sandbox denies sensitive capabilities by default. Grants
+                  apply on the next start.
+                </p>
+              {/if}
             </section>
           </div>
 
@@ -771,6 +807,8 @@
   .requirements { display: grid; grid-template-columns: 1fr 1fr; gap: var(--rem2-space-md); }
   .requirements p { margin-bottom: var(--rem2-space-xs); font-size: 12px; }
   .requirements p span { color: var(--rem2-color-text-muted); }
+  .requirements .granted { color: #98c379; }
+  .requirements .denied { color: #e5c07b; }
   .muted { color: var(--rem2-color-text-muted); }
   button.link { padding: 0; border: none; background: none; color: var(--rem2-color-accent); text-decoration: underline; font: inherit; }
   .backdrop { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.55); }

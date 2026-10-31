@@ -303,7 +303,7 @@ describe('integration · remote plugin inspect and install', () => {
 
     // Nothing in the DTO may leak host paths or internals.
     const serialized = JSON.stringify(inspection)
-    expect(serialized).not.toMatch(/rootDir|container|permissions/)
+    expect(serialized).not.toMatch(/rootDir|container/)
     expect(serialized).not.toContain(env.root)
   })
 
@@ -357,7 +357,7 @@ describe('integration · remote plugin inspect and install', () => {
     expect(await listEntries(env.packagesRoot)).toHaveLength(1)
 
     const detail = await env.manager.detail(PLUGIN_ID)
-    expect(JSON.stringify(detail)).not.toMatch(/rootDir|container|permissions/)
+    expect(JSON.stringify(detail)).not.toMatch(/rootDir|container/)
     expect(JSON.stringify(detail)).not.toContain(env.userRoot)
   })
 

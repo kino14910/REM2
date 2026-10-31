@@ -15,6 +15,7 @@ import { KernelTokens } from '../../src/kernel/contracts/kernel-tokens.js'
 import type { EventBus } from '../../src/kernel/contracts/event-bus.js'
 import { LocalPluginManager } from '../../src/host/plugins/local-plugin-manager.js'
 import { PluginStateStore } from '../../src/host/plugins/state-store.js'
+import { PluginGrantStore } from '../../src/host/plugins/grant-store.js'
 import { ThemeRegistryImpl } from '../../src/host/electron/theme-registry.js'
 import { createMethodHandlers } from '../../src/host/ipc/method-handlers.js'
 import { IpcBridge } from '../../src/host/ipc/bridge.js'
@@ -36,6 +37,7 @@ interface Env {
   dataRoot: string
   sourceRoot: string
   stateFile: string
+  grantsFile: string
   state: PluginStateStore
   kernel: Kernel
   manager: LocalPluginManager
@@ -115,10 +117,14 @@ async function createEnv(
   const stateFile = path.join(root, 'plugin-manager.json')
   const state = new PluginStateStore(stateFile)
   await state.load()
+  const grantsFile = path.join(root, 'plugin-grants.json')
+  const grants = new PluginGrantStore(grantsFile)
+  await grants.load()
   const kernel = new Kernel({
     id: 'rem2-plugin-manager-test',
     roots: [userRoot],
     builtinRoot,
+    grantedCapabilities: id => grants.get(id),
     disabledPlugins: state.ids(),
     startTimeoutMs: 5000,
     stopTimeoutMs: 5000,
@@ -132,6 +138,7 @@ async function createEnv(
     dataRoot,
     state,
     builtinRoot,
+    grants,
     ...(options.copyDirectory ? { copyDirectory: options.copyDirectory } : {}),
   })
   const env: Env = {
@@ -141,6 +148,7 @@ async function createEnv(
     dataRoot,
     sourceRoot,
     stateFile,
+    grantsFile,
     state,
     kernel,
     manager,
@@ -558,12 +566,81 @@ describe('integration · local plugin manager lifecycle', () => {
     ).rejects.toMatchObject({
       code: 'E_BUILTIN_PROTECTED',
     })
+    await expect(
+      env.manager.grantPermissions('com.example.builtin', ['log.sink']),
+    ).rejects.toMatchObject({
+      code: 'E_BUILTIN_PROTECTED',
+    })
     expect(
       (await env.manager.disable('com.example.builtin')).plugin?.state,
     ).toBe('Disabled')
     expect(
       (await env.manager.enable('com.example.builtin')).plugin?.state,
     ).toBe('Active')
+  })
+
+  it('denies UI capabilities to a sandboxed plugin until the user grants them', async () => {
+    const env = await createEnv({
+      user: [
+        {
+          manifest: {
+            id: 'com.example.granted',
+            requires: ['ui.panel'],
+          },
+          source: `
+export default function factory(ctx) {
+  return {
+    async onStart() {
+      ctx.extensions.contribute('ui.panel', {
+        contributionId: 'qa-granted',
+        impl: {
+          panelId: 'qa-granted',
+          title: 'Granted Panel',
+          icon: '🔓',
+          region: 'main',
+          order: 20,
+          command: 'test.none',
+        },
+      })
+    },
+  }
+}
+`,
+        },
+      ],
+    })
+
+    const before = await env.manager.detail('com.example.granted')
+    expect(before.permissions).toEqual({ granted: [], denied: ['ui.panel'] })
+    expect(before.state).toBe('Failed')
+
+    const granted = await env.manager.grantPermissions('com.example.granted', [
+      'ui.panel',
+    ])
+    expect(granted.plugin?.permissions).toEqual({
+      granted: ['ui.panel'],
+      denied: [],
+    })
+
+    const persisted = JSON.parse(
+      await readFile(env.grantsFile, 'utf8'),
+    ) as { version: number; entries: Record<string, string[]> }
+    expect(persisted).toEqual({
+      version: 1,
+      entries: { 'com.example.granted': ['ui.panel'] },
+    })
+
+    const enabled = await env.manager.enable('com.example.granted')
+    expect(enabled.plugin?.state).toBe('Active')
+    expect(
+      env.kernel.extensions
+        .listAll<{ panelId: string }>('ui.panel')
+        .some(panel => panel.panelId === 'qa-granted'),
+    ).toBe(true)
+
+    await expect(
+      env.manager.grantPermissions('com.example.granted', ['ui.theme']),
+    ).rejects.toMatchObject({ code: 'E_CAPABILITY_INVALID' })
   })
 })
 
@@ -592,9 +669,7 @@ describe('integration · plugin management IPC boundary', () => {
       source: 'builtin',
     })
     const serialized = JSON.stringify(result)
-    expect(serialized).not.toMatch(
-      /rootDir|container|permissions|builtin-plugins|[A-Z]:\\/,
-    )
+    expect(serialized).not.toMatch(/rootDir|container|builtin-plugins|[A-Z]:\\/)
     expect(result.plugins[0]).not.toHaveProperty('manifest')
 
     expect(() => list({})).toThrow(/no arguments/)
