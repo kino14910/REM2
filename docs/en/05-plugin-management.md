@@ -13,6 +13,7 @@
 | Installed catalog    | `plugin.json` scans under `builtinRoot` and `userRoot`                             |
 | Runtime state        | `Kernel.pluginRegistry` + `Kernel.lastStartResult`                                 |
 | Disabled intent      | `<userData>/plugin-manager.json`                                                   |
+| Explicit grants      | `<userData>/plugin-grants.json` (capabilities approved for user plugins)           |
 | Plugin config / data | Plugin `config/` and `data/`, moved to `<userData>/plugin-data/<id>/` on uninstall |
 | Remote provenance    | `<userData>/plugin-provenance.json` (URL + publisher digest + install time)        |
 | Remote package cache | `<userData>/plugin-packages/<sha256(url)>.zip` (10-minute TTL)                     |
@@ -26,12 +27,13 @@ Electron layout:
 <userData>/
 ├── plugins/<plugin-id>/          # writable user install root
 ├── plugin-manager.json           # { version: 1, disabled: string[] }
+├── plugin-grants.json            # { version: 1, entries: { <id>: capability[] } }
 ├── plugin-provenance.json        # { version: 1, entries: { <id>: { kind, url, sha256, … } } }
 ├── plugin-packages/<hash>.zip    # remote download cache (reused for 10 minutes)
 └── plugin-data/<plugin-id>/      # preserved config/ and data/
 ```
 
-Built-ins come from `builtinPluginsRoot()`; in a packaged app this is the read-only sibling `resources/plugins-dist`. Built-ins cannot be uninstalled. `<userData>` is resolved with `app.getPath('userData')`.
+Built-ins come from `builtinPluginsRoot()`; in a packaged app this is the read-only sibling `resources/plugins-dist` (6 built-in samples only). External plugins (such as `theme-switcher`) build into `plugins-external-dist` and install from a GitHub release into `<userData>/plugins`. Built-ins cannot be uninstalled. `<userData>` is resolved with `app.getPath('userData')`.
 
 ---
 
@@ -214,7 +216,21 @@ Concurrency: every management operation is serialized; one `operationId` cannot 
 
 ---
 
-## 9. Enable and disable
+## 9. Capability grants (sandboxed plugins)
+
+`source === 'builtin'` plugins are `trusted` and receive their declared capabilities by policy. User-installed plugins are `sandboxed`: only `log.sink` is granted by default, and everything else (including `ui.theme` / `ui.panel` / `ui.route`) is denied. Contributing to a UI extension point then throws `CapabilityDeniedError` and the plugin starts as `Failed`.
+
+Explicit grant flow:
+
+1. The detail DTO exposes the current `permissions` `{ granted, denied }`; persisted grants override policy denials.
+2. `plugin.permission.grant` (`{ pluginId, capabilities }`) accepts only capabilities declared in the manifest `requires`; undeclared → `E_CAPABILITY_INVALID`; built-ins → `E_BUILTIN_PROTECTED`.
+3. Grants persist atomically to `<userData>/plugin-grants.json`. On startup the kernel applies them after the trust-policy decision, and only for declared capabilities — a grant file cannot escalate a plugin beyond its own manifest.
+4. Grants apply on the next start: a freshly installed plugin stays `Disabled`, so grant and then Enable; a `Failed` plugin is unloaded and restarted by Enable.
+5. Uninstall removes the plugin's grants, so a reinstall asks again.
+
+---
+
+## 10. Enable and disable
 
 Enable writes `disabled: false` and **also enables the installed hard-dependency closure** before calling `Kernel.enablePlugin(id, disabledIds)`. A prerequisite that is merely disabled is not a broken install, so no `missing hard dependency` error is raised for it; only a dependency that is genuinely absent reaches the resolver and fails with `E_MISSING_DEPENDENCY`. The kernel then rediscovers the catalog, starts the target and required hard dependencies in topological order, skips already active/degraded dependencies, and unloads a previously failed target before retrying. Failure keeps `enabled: true` with `Failed`; kernel rollback and forced reclamation still run.
 
@@ -237,7 +253,7 @@ So "restart" never recreates the main process or the window — only plugin code
 
 ---
 
-## 10. Uninstall
+## 11. Uninstall
 
 1. Only `source === 'user'` is accepted; built-ins return `E_BUILTIN_PROTECTED`.
 2. Any installed hard dependent, enabled or not, blocks with `E_DEPENDENTS`.
@@ -250,9 +266,9 @@ Deletion never touches built-ins, the state file or `plugin-data/`, and renderer
 
 ---
 
-## 11. IPC and UI
+## 12. IPC and UI
 
-Twelve exact allowlisted methods cover plugin management: `plugin.list`, `plugin.detail`, `plugin.install.directory`, `plugin.install.remote`, `plugin.remote.inspect`, `plugin.download.cancel`, `plugin.update.check`, `plugin.update.install`, `plugin.enable`, `plugin.disable`, `plugin.uninstall`, `plugin.restart`.
+Thirteen exact allowlisted methods cover plugin management: `plugin.list`, `plugin.detail`, `plugin.install.directory`, `plugin.install.remote`, `plugin.remote.inspect`, `plugin.download.cancel`, `plugin.update.check`, `plugin.update.install`, `plugin.enable`, `plugin.permission.grant`, `plugin.disable`, `plugin.uninstall`, `plugin.restart`.
 
 - `plugin.list` / `plugin.install.directory` / `plugin.restart` accept no arguments.
 - Detail and lifecycle methods accept `{ pluginId }` and validate its format at runtime.
@@ -271,11 +287,12 @@ Remote flow:
 
 - **Install from URL…**: enter a URL → Inspect → the preview shows the source URL, id / name / version, publish time, release notes, declared capabilities, dependencies and SHA-256 (labelled as release metadata) → Confirm install. A progress bar with a Cancel button is shown while downloading; the result or error code is reported afterwards.
 - **Check updates**: the list shows current → latest, publish time and a notes summary. Each "Update" opens a confirmation dialog (version / source / digest / capabilities) and only that confirmation executes the update — never a silent install.
+- **Capability grants**: the detail page lists each declared capability as granted / denied. When anything is denied, "Grant denied capabilities" calls `plugin.permission.grant` and notes that the grant applies on the next start. Installation still defaults to `Disabled`, so granting and enabling are two explicit steps.
 - Error mapping: `Error.code` → readable text; `E_DIGEST_MISSING` explicitly says the publisher provided no digest and the install was blocked.
 
 ---
 
-## 12. Security boundaries
+## 13. Security boundaries
 
 - The renderer has no Node or filesystem access and can only use allowlisted IPC; all file operations happen in the main process.
 - Path containment uses both lexical checks and `realpath`; installation rejects symlinks, special files, absolute/`../` entries and overlapping managed roots.
@@ -288,7 +305,7 @@ Remote flow:
 
 ---
 
-## 13. Known limitations
+## 14. Known limitations
 
 | #   | Limitation                                                                                     | Impact                                                                    |
 | --- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |

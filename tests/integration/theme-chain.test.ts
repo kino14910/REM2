@@ -44,13 +44,24 @@ import {
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = path.resolve(HERE, '..', '..')
 const BUILTIN_ROOT = path.join(PROJECT_ROOT, 'plugins-dist')
+/**
+ * Theme Switcher lives in the sibling plugin repository and is built into
+ * `plugins-external-dist` (never bundled as builtin). In tests it is mounted as
+ * a user root, so the sandbox policy denies its UI capabilities until the
+ * explicit grant below is applied.
+ */
+const EXTERNAL_ROOT = path.join(PROJECT_ROOT, 'plugins-external-dist')
+const THEME_ID = 'com.rem2.theme-switcher'
+const THEME_CAPABILITIES = ['ui.theme', 'ui.panel', 'ui.route']
 
 function createKernel(): Kernel {
   return new Kernel(
     createDeps({
       id: 'rem2-theme-chain',
-      roots: [],
+      roots: [EXTERNAL_ROOT],
       builtinRoot: BUILTIN_ROOT,
+      grantedCapabilities: id =>
+        id === THEME_ID ? THEME_CAPABILITIES : [],
       pluginDataRoot: createTestPluginDataRoot('theme-chain'),
       startTimeoutMs: 8000,
       stopTimeoutMs: 8000,
@@ -250,7 +261,7 @@ describe('integration · theme chain', () => {
       >(channels.themeList, undefined, { timeoutMs: 5000 })
       expect(before.themes.length).toBe(3)
 
-      await kernel.unloadPlugin('com.rem2.theme-switcher')
+      await kernel.unloadPlugin(THEME_ID)
 
       const after = await bus.request<
         undefined,

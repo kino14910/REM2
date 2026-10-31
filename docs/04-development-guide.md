@@ -29,9 +29,10 @@ pnpm install
 | `pnpm dev --exit-after-start` | 启动后立刻退出，打印 loadOrder / started / degraded / failed       | 冒烟                     |
 | `pnpm dev --log-level debug`  | 调日志级别                                                         | 排查加载 / 生命周期问题  |
 | `pnpm start`                  | Electron 桌面应用（`electron-forge start`）                        | 宿主 / 前端 / IPC 开发   |
-| `pnpm build`                  | `build:kernel` + `build:plugins`                                   | 改内核或插件后           |
+| `pnpm build`                  | `build:kernel` + `build:plugins` + `build:external`                | 改内核或插件后           |
 | `pnpm build:kernel`           | `tsc -p tsconfig.build.json` → `dist/kernel/**`                    | 只要 `.d.ts` 或内核产物  |
-| `pnpm build:plugins`          | esbuild 逐插件 → `plugins-dist/<id>/dist/index.js`                 | 改插件源码后（**必须**） |
+| `pnpm build:plugins`          | esbuild 逐插件 → `plugins-dist/<id>/dist/index.js`                 | 改内置插件源码后         |
+| `pnpm build:external`         | 构建同级 `REM2-plugins` → `plugins-external-dist/`                 | 改外部插件 / 打发布包时  |
 | `pnpm build:renderer`         | 单独构建 renderer                                                  | 调试前端产物             |
 | `pnpm typecheck:all`          | `typecheck` + `typecheck:electron` + `typecheck:frontend`          | 提交前                   |
 | `pnpm test:run`               | 全量测试（一次）                                                   | 提交前                   |

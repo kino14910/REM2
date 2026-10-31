@@ -250,7 +250,8 @@ ctx.extensions.contribute('command.provide', {
 ## 9. 构建
 
 ```bash
-pnpm build:plugins          # esbuild bundle 全部插件 → plugins-dist/<id>/dist/index.js
+pnpm build:plugins          # esbuild bundle 内置插件 → plugins-dist/<id>/dist/index.js
+pnpm build:external         # 外部插件 → plugins-external-dist/<id>/dist/index.js
 ```
 
 - `plugins/*/package.json` 是 pnpm workspace 成员（`@rem2/plugin-<id>`，private）。

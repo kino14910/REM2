@@ -2,7 +2,7 @@
 
 This directory holds rem2-kernel's **built-in sample plugins**. During discovery they are marked `source: 'builtin'`, which grants them the `trusted` trust level.
 
-The theme UI lives in the sibling [`REM2-plugins/theme-switcher`](../../REM2-plugins/theme-switcher) repository (light/dark/system, accent form, persisted preference). `scripts/build-plugins.mjs` builds that source into `plugins-dist` alongside these plugins; no theme source remains here.
+The theme UI lives in the sibling [`REM2-plugins/theme-switcher`](../../REM2-plugins/theme-switcher) repository (light/dark/system, accent form, persisted preference). It is **not** a built-in plugin: `pnpm build:external` builds it into `plugins-external-dist` for release packaging and tests, and users install it from its GitHub release (source=user, sandboxed, explicit capability grant required).
 
 | Plugin             | Provides                                                         | Depends on                       | Architecture point demonstrated                                                       |
 | ------------------ | ---------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------- |
@@ -41,7 +41,7 @@ pnpm cli scaffold com.example.my-plugin --name "My Plugin"
 
 本目录包含 rem2-kernel 的**内建示例插件**，在发现阶段被标记为 `source: 'builtin'`，据此获得 `trusted` 信任级别。
 
-主题 UI 已迁到同级 [`REM2-plugins/theme-switcher`](../../REM2-plugins/theme-switcher) 仓库（亮/暗/跟随系统、强调色表单、偏好持久化）。`scripts/build-plugins.mjs` 会把该源码与这里的插件一起构建进 `plugins-dist`，本目录不再保留主题源码。
+主题 UI 已迁到同级 [`REM2-plugins/theme-switcher`](../../REM2-plugins/theme-switcher) 仓库（亮/暗/跟随系统、强调色表单、偏好持久化）。它**不是**内置插件：`pnpm build:external` 把它构建到 `plugins-external-dist`，用于发布打包与测试；用户从它的 GitHub Release 安装（source=user，沙箱策略，需要显式授权能力）。本目录不再保留主题源码。
 
 | 插件               | 提供能力                                               | 依赖                    | 演示的架构点                                           |
 | ------------------ | ------------------------------------------------------ | ----------------------- | ------------------------------------------------------ |

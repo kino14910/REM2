@@ -29,9 +29,10 @@ pnpm install
 | `pnpm dev --exit-after-start` | start then exit immediately, printing loadOrder / started / degraded / failed        | smoke test                                        |
 | `pnpm dev --log-level debug`  | raise the log level                                                                  | debugging load / lifecycle issues                 |
 | `pnpm start`                  | Electron desktop app (`electron-forge start`)                                        | host / frontend / IPC work                        |
-| `pnpm build`                  | `build:kernel` + `build:plugins`                                                     | after kernel or plugin edits                      |
+| `pnpm build`                  | `build:kernel` + `build:plugins` + `build:external`                                  | after kernel or plugin edits                      |
 | `pnpm build:kernel`           | `tsc -p tsconfig.build.json` → `dist/kernel/**`                                      | only when you need `.d.ts` or the kernel artifact |
-| `pnpm build:plugins`          | esbuild per plugin → `plugins-dist/<id>/dist/index.js`                               | after editing plugin source (**required**)        |
+| `pnpm build:plugins`          | esbuild per built-in plugin → `plugins-dist/<id>/dist/index.js`                      | after editing built-in plugin source              |
+| `pnpm build:external`         | build sibling `REM2-plugins` → `plugins-external-dist/`                              | external plugin work / release packaging          |
 | `pnpm build:renderer`         | build the renderer alone                                                             | debugging frontend output                         |
 | `pnpm typecheck:all`          | `typecheck` + `typecheck:electron` + `typecheck:frontend`                            | before committing                                 |
 | `pnpm test:run`               | full test suite (single run)                                                         | before committing                                 |

@@ -61,8 +61,8 @@ Expected output:
 
 ```
 ──── rem2-kernel started ────
-loadOrder : com.rem2.config-json -> com.rem2.hello-command -> com.rem2.logger-console -> com.rem2.health-http -> com.rem2.notify-worker -> com.rem2.plugin-inspector -> com.rem2.theme-switcher
-started   : com.rem2.config-json, com.rem2.hello-command, com.rem2.logger-console, com.rem2.health-http, com.rem2.notify-worker, com.rem2.plugin-inspector, com.rem2.theme-switcher
+loadOrder : com.rem2.config-json -> com.rem2.hello-command -> com.rem2.logger-console -> com.rem2.health-http -> com.rem2.notify-worker -> com.rem2.plugin-inspector
+started   : com.rem2.config-json, com.rem2.hello-command, com.rem2.logger-console, com.rem2.health-http, com.rem2.notify-worker, com.rem2.plugin-inspector
 degraded  : (none)
 failed    : (none)
 health    : healthy
@@ -72,7 +72,6 @@ health    : healthy
   - com.rem2.logger-console [Active] healthy
   - com.rem2.notify-worker [Active] healthy
   - com.rem2.plugin-inspector [Active] healthy
-  - com.rem2.theme-switcher [Active] healthy
 ─────────────────────────────
 ```
 
@@ -195,7 +194,7 @@ Full API reference: **[docs/02-plugin-api.md](docs/02-plugin-api.md)** (English:
 
 ---
 
-## Example plugins (7 shipped plugins)
+## Example plugins (6 built-in + 1 installable)
 
 | Plugin                                         | Proves what                                                                                     | Depends on              |
 | ---------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------- |
@@ -207,9 +206,13 @@ Full API reference: **[docs/02-plugin-api.md](docs/02-plugin-api.md)** (English:
 | [`plugin-inspector`](plugins/plugin-inspector) | **the inspector is a plugin** — contributes `ui.panel` + `ui.route`, serves a live plugin table | —                       |
 | [`notify-worker`](plugins/notify-worker)       | **worker-thread isolation** — a crash never hits the kernel (fault isolation)                   | —                       |
 
-`theme-switcher` lives in the sibling `REM2-plugins` repository. `pnpm build:plugins`
-builds its own plugin sources directly into `plugins-dist` when that checkout exists;
-set `REM2_EXTERNAL_PLUGINS_DIR` to use another location.
+`theme-switcher` lives in the sibling `REM2-plugins` repository and is **not**
+bundled as a built-in: `pnpm build:external` builds it into
+`plugins-external-dist` (git-ignored, not part of `resources/plugins-dist`).
+Install it from its GitHub release with **Plugins → Install from URL…**, then
+grant its declared UI capabilities in the plugin detail before enabling it —
+user plugins are sandboxed and sensitive capabilities are denied by default.
+Set `REM2_EXTERNAL_PLUGINS_DIR` to use another checkout location.
 
 ---
 
@@ -305,8 +308,9 @@ src/
 │   └── lib/              # ipc-client / bridge-types / nav-link / dto-guards / stores / theme
 ├── main.ts               # Electron Forge main-process entry (forwarding shell)
 └── preload.ts            # Forge preload entry (forwarding shell)
-plugins/                  # 6 built-in plugins (external theme-switcher comes from REM2-plugins)
-plugins-dist/             # all plugin build artifacts (esbuild ESM bundle, into extraResource)
+plugins/                  # 6 built-in plugins (theme-switcher is installed from REM2-plugins releases)
+plugins-dist/             # built-in plugin artifacts only (esbuild ESM bundle, into extraResource)
+plugins-external-dist/    # external plugin artifacts for release packaging/tests (not bundled)
 dist/                     # kernel artifacts (tsc, includes .d.ts)
 tests/                    # unit / integration / contract tests
 docs/                     # architecture & API docs (entry: docs/INDEX.md; English: docs/en/)

@@ -101,7 +101,7 @@ export const Ipc = {
 
 Responses and events live on separate channels so the frontend `subscribe` only listens to one. Request/response pairing still uses ids (done inside preload) rather than relying on `ipcRenderer.invoke` pairing.
 
-### 3.2 Method allowlist (20, exhaustive)
+### 3.2 Method allowlist (21, exhaustive)
 
 | #   | method (`channels.*`)      | payload                         | Response                                  | Host implementation                                                                                                                                          |
 | --- | -------------------------- | ------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -117,14 +117,15 @@ Responses and events live on separate channels so the frontend `subscribe` only 
 | 10  | `plugin.detail`            | `{ pluginId }`                  | `PluginDetailDto`                         | `LocalPluginManager.detail()` (includes `origin`)                                                                                                            |
 | 11  | `plugin.install.directory` | —                               | `PluginOperationResultDto`                | native directory chooser → validate → staging copy → atomic commit; disabled by default                                                                      |
 | 12  | `plugin.enable`            | `{ pluginId }`                  | `PluginOperationResultDto`                | persist intent, including the installed hard-dependency closure → `Kernel.enablePlugin()` with dependency ordering                                           |
-| 13  | `plugin.disable`           | `{ pluginId }`                  | `PluginOperationResultDto`                | cascade-disable loaded dependents → persist disabled intent; a live plugin stops on the next plugin-service restart                                          |
-| 14  | `plugin.uninstall`         | `{ pluginId }`                  | `PluginOperationResultDto`                | user source only; stop, preserve config/data, exact-directory delete                                                                                         |
-| 15  | `plugin.restart`           | —                               | `PluginOperationResultDto`                | `Kernel.restartPlugins()`: stop all plugins, rediscover/resolve/start with the disabled set; kernel and host stay alive                                      |
-| 16  | `plugin.remote.inspect`    | `{ url, operationId? }`         | `PluginRemoteInspectionDto`               | resolve release metadata → download (cancellable + progress) → digest check → temp extract → manifest/dependency preflight; **never writes the plugin root** |
-| 17  | `plugin.install.remote`    | `{ operationId, url, sha256? }` | `PluginOperationResultDto`                | reuse the inspected package → trusted digest → staging → atomic rename → disabled intent + provenance                                                        |
-| 18  | `plugin.download.cancel`   | `{ operationId }`               | `{ ok: true, cancelled }`                 | aborts the matching `AbortController`; repeated cancels are idempotent                                                                                       |
-| 19  | `plugin.update.check`      | `{ pluginId? }`                 | `PluginUpdateCheckDto`                    | resolves the latest release from the recorded provenance and compares versions; `hasUpdate: false` means up to date                                          |
-| 20  | `plugin.update.install`    | `{ operationId, pluginId }`     | `PluginOperationResultDto`                | download/verify/extract → dependency preflight → backup → install → preserve config/data → optional restart; rolls back on failure                           |
+| 13  | `plugin.permission.grant`  | `{ pluginId, capabilities }`    | `PluginOperationResultDto`                | user source only; capabilities must exist in the manifest `requires` → atomic write to `plugin-grants.json`; applies on the next start                        |
+| 14  | `plugin.disable`           | `{ pluginId }`                  | `PluginOperationResultDto`                | cascade-disable loaded dependents → persist disabled intent; a live plugin stops on the next plugin-service restart                                          |
+| 15  | `plugin.uninstall`         | `{ pluginId }`                  | `PluginOperationResultDto`                | user source only; stop, preserve config/data, exact-directory delete                                                                                         |
+| 16  | `plugin.restart`           | —                               | `PluginOperationResultDto`                | `Kernel.restartPlugins()`: stop all plugins, rediscover/resolve/start with the disabled set; kernel and host stay alive                                      |
+| 17  | `plugin.remote.inspect`    | `{ url, operationId? }`         | `PluginRemoteInspectionDto`               | resolve release metadata → download (cancellable + progress) → digest check → temp extract → manifest/dependency preflight; **never writes the plugin root** |
+| 18  | `plugin.install.remote`    | `{ operationId, url, sha256? }` | `PluginOperationResultDto`                | reuse the inspected package → trusted digest → staging → atomic rename → disabled intent + provenance                                                        |
+| 19  | `plugin.download.cancel`   | `{ operationId }`               | `{ ok: true, cancelled }`                 | aborts the matching `AbortController`; repeated cancels are idempotent                                                                                       |
+| 20  | `plugin.update.check`      | `{ pluginId? }`                 | `PluginUpdateCheckDto`                    | resolves the latest release from the recorded provenance and compares versions; `hasUpdate: false` means up to date                                          |
+| 21  | `plugin.update.install`    | `{ operationId, pluginId }`     | `PluginOperationResultDto`                | download/verify/extract → dependency preflight → backup → install → preserve config/data → optional restart; rolls back on failure                           |
 
 ### 3.3 Event allowlist (6)
 

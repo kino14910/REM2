@@ -1,7 +1,16 @@
 #!/usr/bin/env node
 /**
- * Plugin build: walk every plugin under plugins/, call the esbuild API one by one,
- * aggregate artifacts into plugins-dist/<plugin-name>/.
+ * Plugin build: walk every plugin under a source root, call the esbuild API one
+ * by one, aggregate artifacts into an output directory.
+ *
+ * Two separate products:
+ * - default: built-in sample plugins from `plugins/` -> `plugins-dist/`, which
+ *   forge ships as `resources/plugins-dist` (source=builtin, trusted);
+ * - `--external`: plugins from the sibling plugin repository
+ *   (`REM2_EXTERNAL_PLUGINS_DIR`, default `../REM2-plugins`) ->
+ *   `plugins-external-dist/`. These are NOT bundled into the app: they are
+ *   release artifacts users install from GitHub (source=user, sandboxed).
+ *   Keeping them out of `plugins-dist` is what makes them remote plugins.
  *
  * This is build-time code (never enters src/), so it does not violate the
  * kernel-zero-third-party-dependency red line.
@@ -11,7 +20,7 @@
  * source dirs, tsconfig.json and package.json, which would bloat the package and
  * leak sources into the installer.
  *
- * Usage: node scripts/build-plugins.mjs [--out-dir <dir>]
+ * Usage: node scripts/build-plugins.mjs [--external] [--out-dir <dir>]
  */
 
 import { build } from 'esbuild'
@@ -22,8 +31,8 @@ import { fileURLToPath } from 'node:url'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = path.resolve(HERE, '..')
-const PLUGINS_DIR = path.join(PROJECT_ROOT, 'plugins')
-/** External sources stay in their own repository; only built artifacts enter plugins-dist. */
+const BUILTIN_PLUGINS_DIR = path.join(PROJECT_ROOT, 'plugins')
+/** External sources stay in their own repository; only built artifacts enter plugins-external-dist. */
 const EXTERNAL_PLUGINS_DIR =
   process.env.REM2_EXTERNAL_PLUGINS_DIR ??
   path.resolve(PROJECT_ROOT, '..', 'REM2-plugins')
@@ -31,12 +40,20 @@ const EXTERNAL_PLUGINS_DIR =
 /** esbuild target: Node 20 (aligned with `engines.node: '>=20'`). */
 const ESBUILD_TARGET = 'node20'
 
-/** Take `--out-dir` from argv, defaulting to plugins-dist. */
-function parseOutDir(argv) {
+/** `--external` selects the plugin repository instead of the built-in samples. */
+function isExternalBuild(argv) {
+  return argv.includes('--external')
+}
+
+/** Take `--out-dir` from argv, defaulting per product. */
+function parseOutDir(argv, external) {
   const i = argv.indexOf('--out-dir')
   return i >= 0 && argv[i + 1]
     ? path.resolve(PROJECT_ROOT, argv[i + 1])
-    : path.join(PROJECT_ROOT, 'plugins-dist')
+    : path.join(
+        PROJECT_ROOT,
+        external ? 'plugins-external-dist' : 'plugins-dist',
+      )
 }
 
 /** Locate a plugin's entry source: prefer plugin.json's entry, fall back to src/index.ts / src/index.mjs. */
@@ -64,13 +81,16 @@ async function resolveEntrySource(pluginDir) {
 }
 
 async function main() {
-  const outDir = parseOutDir(process.argv.slice(2))
+  const argv = process.argv.slice(2)
+  const external = isExternalBuild(argv)
+  const pluginsDir = external ? EXTERNAL_PLUGINS_DIR : BUILTIN_PLUGINS_DIR
+  const outDir = parseOutDir(argv, external)
   await rm(outDir, { recursive: true, force: true })
   await mkdir(outDir, { recursive: true })
 
   let entries
   try {
-    entries = (await readdir(PLUGINS_DIR, { withFileTypes: true }))
+    entries = (await readdir(pluginsDir, { withFileTypes: true }))
       .filter(
         e =>
           e.isDirectory() &&
@@ -80,37 +100,23 @@ async function main() {
       .map(e => e.name)
       .sort()
   } catch {
-    process.stderr.write(`Plugin directory not found: ${PLUGINS_DIR}\n`)
+    // The external repository is optional for a standalone kernel checkout:
+    // no repository means no release artifacts, not a failed build.
+    if (external) {
+      process.stdout.write(
+        `External plugins not found at ${pluginsDir}; skipping.\n`,
+      )
+      await rm(outDir, { recursive: true, force: true })
+      return
+    }
+    process.stderr.write(`Plugin directory not found: ${pluginsDir}\n`)
     process.exitCode = 1
     return
   }
 
-  const pluginSources = entries.map(name => ({
-    name,
-    pluginDir: path.join(PLUGINS_DIR, name),
-  }))
-  if (EXTERNAL_PLUGINS_DIR) {
-    try {
-      const external = await readdir(EXTERNAL_PLUGINS_DIR, {
-        withFileTypes: true,
-      })
-      for (const entry of external) {
-        if (
-          !entry.isDirectory() ||
-          entry.name.startsWith('.') ||
-          entry.name === 'node_modules'
-        ) {
-          continue
-        }
-        const pluginDir = path.join(EXTERNAL_PLUGINS_DIR, entry.name)
-        if (existsSync(path.join(pluginDir, 'plugin.json'))) {
-          pluginSources.push({ name: entry.name, pluginDir })
-        }
-      }
-    } catch {
-      // The external repository is optional for standalone kernel checkouts.
-    }
-  }
+  const pluginSources = entries
+    .map(name => ({ name, pluginDir: path.join(pluginsDir, name) }))
+    .filter(({ pluginDir }) => existsSync(path.join(pluginDir, 'plugin.json')))
 
   let built = 0
   const failures = []
@@ -165,7 +171,7 @@ async function main() {
   }
 
   process.stdout.write(
-    `Plugin build complete: ${built}/${pluginSources.length}\n`,
+    `Plugin build complete (${external ? 'external' : 'builtin'}): ${built}/${pluginSources.length}\n`,
   )
   if (failures.length > 0) {
     for (const f of failures) process.stderr.write(`  ✗ ${f}\n`)

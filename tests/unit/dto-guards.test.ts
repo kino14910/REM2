@@ -50,6 +50,7 @@ function validPlugin(): PluginDetailDto {
     dependencies: {},
     optionalDependencies: {},
     requires: [],
+    permissions: { granted: [], denied: [] },
     compatibility: { minKernel: '^1.0.0', contractVersion: '1' },
     canUninstall: true,
     restartRequired: false,
@@ -350,11 +351,15 @@ describe('unit · dto guards · plugin management', () => {
         { ...validPlugin(), state: 'Running' },
         { ...validPlugin(), enabled: 'yes' },
         { ...validPlugin(), dependencies: { x: 1 } },
+        {
+          ...validPlugin(),
+          permissions: { granted: 'ui.panel', denied: [] },
+        },
       ],
       issues: [],
     })
     expect(result.items).toEqual([validPlugin()])
-    expect(result.issues).toHaveLength(4)
+    expect(result.issues).toHaveLength(5)
     expect(result.issues[0]).toContain('plugin[1]')
     expect(result.issues[3]).toContain('plugin[4]')
   })

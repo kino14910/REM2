@@ -33,6 +33,8 @@ out/
 
 # 插件构建产物聚合目录（scripts/build-plugins.mjs 生成，forge extraResource 的输入）
 plugins-dist/
+# 外部插件构建产物（不随应用打包，仅用于发布包与测试）
+plugins-external-dist/
 
 # Dependency directories
 node_modules/

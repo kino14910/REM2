@@ -251,7 +251,8 @@ Why not "plugins respond the topic directly": when a host responder shares the t
 ## 9. Build
 
 ```bash
-pnpm build:plugins          # esbuild-bundle all plugins → plugins-dist/<id>/dist/index.js
+pnpm build:plugins          # esbuild-bundle built-in plugins → plugins-dist/<id>/dist/index.js
+pnpm build:external         # external plugins → plugins-external-dist/<id>/dist/index.js
 ```
 
 - `plugins/*/package.json` are pnpm workspace members (`@rem2/plugin-<id>`, private).

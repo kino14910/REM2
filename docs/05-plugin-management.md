@@ -13,6 +13,7 @@
 | 已安装清单      | 扫描 `builtinRoot` 与 `userRoot` 下的 `plugin.json`                      |
 | 运行态          | `Kernel.pluginRegistry` + `Kernel.lastStartResult`                       |
 | 禁用意图        | `<userData>/plugin-manager.json`                                         |
+| 显式能力授权    | `<userData>/plugin-grants.json`（用户插件声明能力的授权集合）           |
 | 插件配置 / 数据 | 插件目录的 `config/`、`data/`，卸载时迁入 `<userData>/plugin-data/<id>/` |
 | 远程来源记录    | `<userData>/plugin-provenance.json`（URL + 发布方摘要 + 安装时间）       |
 | 远程包缓存      | `<userData>/plugin-packages/<sha256(url)>.zip`（TTL 10 分钟）            |
@@ -26,12 +27,13 @@ Electron 下目录固定为：
 <userData>/
 ├── plugins/<plugin-id>/          # 用户安装目录（可写）
 ├── plugin-manager.json           # { version: 1, disabled: string[] }
+├── plugin-grants.json            # { version: 1, entries: { <id>: capability[] } }
 ├── plugin-provenance.json        # { version: 1, entries: { <id>: { kind, url, sha256, … } } }
 ├── plugin-packages/<hash>.zip    # 远程下载缓存（10 分钟内复用）
 └── plugin-data/<plugin-id>/      # 卸载后保留的 config/ 与 data/
 ```
 
-内置插件来自 `builtinPluginsRoot()`，打包后是 `resources/plugins-dist`，只读且不可卸载。`<userData>` 由 `app.getPath('userData')` 决定，不在仓库内。
+内置插件来自 `builtinPluginsRoot()`，打包后是 `resources/plugins-dist`（仅 6 个内置示例插件），只读且不可卸载。外部插件（如 `theme-switcher`）构建到 `plugins-external-dist`，通过 GitHub Release 安装到 `<userData>/plugins`。`<userData>` 由 `app.getPath('userData')` 决定，不在仓库内。
 
 ---
 
@@ -216,7 +218,21 @@ Electron 下目录固定为：
 
 ---
 
-## 9. 启用与禁用
+## 9. 能力授权（沙箱插件）
+
+`source === 'builtin'` 的插件是 `trusted`，声明能力按策略授予；用户安装的插件是 `sandboxed`，默认只授予 `log.sink`，其余能力（包括 `ui.theme` / `ui.panel` / `ui.route`）在策略层被拒绝，贡献扩展点时抛 `CapabilityDeniedError`，插件启动为 `Failed`。
+
+显式授权流程：
+
+1. 详情 DTO 的 `permissions` 给出当前 `{ granted, denied }`（已持久化授权会覆盖策略拒绝）。
+2. `plugin.permission.grant`（`{ pluginId, capabilities }`）只接受 manifest `requires` 中声明过的能力；未声明 → `E_CAPABILITY_INVALID`；内置插件 → `E_BUILTIN_PROTECTED`。
+3. 授权写入 `<userData>/plugin-grants.json`（原子写，键为插件 id，值为能力数组），启动时由内核在信任策略判定后逐个应用，且只应用 manifest 声明过的能力，授权文件不能放大插件权限。
+4. 授权在下一次启动生效：新装插件保持 `Disabled`，授权后点 Enable；已 `Failed` 的插件授权后 Enable 会先卸载再重启。
+5. 卸载会删除该插件的授权条目，重装后必须重新授权。
+
+---
+
+## 10. 启用与禁用
 
 ### 启用
 
@@ -248,7 +264,7 @@ Electron 下目录固定为：
 
 ---
 
-## 10. 卸载
+## 11. 卸载
 
 1. 仅允许 `source === 'user'`；内置插件返回 `E_BUILTIN_PROTECTED`。
 2. 任意已安装插件（无论启用与否）硬依赖目标时返回 `E_DEPENDENTS`。
@@ -261,9 +277,9 @@ Electron 下目录固定为：
 
 ---
 
-## 11. IPC 与 UI
+## 12. IPC 与 UI
 
-插件管理共 12 个精确白名单方法：
+插件管理共 13 个精确白名单方法：
 
 | method                     | 参数                            | 说明                                             |
 | -------------------------- | ------------------------------- | ------------------------------------------------ |
@@ -276,6 +292,7 @@ Electron 下目录固定为：
 | `plugin.update.check`      | `{ pluginId? }`                 | 检查单个或全部远程插件的更新                     |
 | `plugin.update.install`    | `{ operationId, pluginId }`     | 执行更新；失败自动回滚                           |
 | `plugin.enable`            | `{ pluginId }`                  | 启用并等待生命周期完成                           |
+| `plugin.permission.grant`  | `{ pluginId, capabilities }`    | 为用户插件授予其声明的能力（下次启动生效）       |
 | `plugin.disable`           | `{ pluginId }`                  | 持久禁用意图，运行中的实例等重启才停止           |
 | `plugin.uninstall`         | `{ pluginId }`                  | 卸载并保留用户数据                               |
 | `plugin.restart`           | —                               | 仅重启插件服务，内核与主进程不动                 |
@@ -289,12 +306,13 @@ Electron 下目录固定为：
 - **禁用不需要二次确认**，点击即写意图；只有卸载保留确认框（会删除安装目录）。
 - 当列表或操作结果显示 `restartRequired` 时，顶部出现重启提示与 “Restart plugins” 按钮，调用 `plugin.restart`；提示里的 “pending changes” 可点击，弹出对话框列出仍处于运行态但已写入禁用意图的插件（名称、id、当前状态），确认后再重启。
 - **远程安装**：工具栏 “Install from URL…”，输入 → Inspect → 展示来源 URL、id / name / version、发布时间、更新说明、权限声明、依赖与 SHA-256（并标注是否来自发布元数据）→ Confirm install；下载中显示进度条与 Cancel，结束后展示结果或错误码。
+- **能力授权**：详情页 “Required capabilities” 逐项显示 granted / denied；存在 denied 时出现 “Grant denied capabilities”，调用 `plugin.permission.grant` 后提示下次启动生效。安装默认仍是 `Disabled`，授权与启用是两步。
 - **更新**：工具栏 “Check updates”，列表展示 current → latest、发布时间与 notes 摘要；每条 “Update” 打开确认弹窗（版本 / 来源 / 摘要 / 权限），确认后才执行，**绝不静默安装**。
 - 错误统一映射：`Error.code` → 可读文案；`E_DIGEST_MISSING` 明确提示“发布方未提供摘要，已阻止安装”。
 
 ---
 
-## 12. 安全边界
+## 13. 安全边界
 
 - renderer 无 Node / 文件系统能力，只能调用白名单 IPC；管理操作全部在主进程执行。
 - 路径 containment 同时做词法检查和 `realpath` 检查；安装拒绝符号链接、特殊文件、绝对/`../` entry 与受管目录互含。
@@ -307,7 +325,7 @@ Electron 下目录固定为：
 
 ---
 
-## 13. 已知限制
+## 14. 已知限制
 
 | #   | 限制                                                                     | 影响 / 后续                                      |
 | --- | ------------------------------------------------------------------------ | ------------------------------------------------ |

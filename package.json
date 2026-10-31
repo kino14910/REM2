@@ -34,9 +34,10 @@
   },
   "scripts": {
     "dev": "tsx src/host/cli/run.ts",
-    "build": "pnpm build:kernel && pnpm build:plugins",
+    "build": "pnpm build:kernel && pnpm build:plugins && pnpm build:external",
     "build:kernel": "tsc -p tsconfig.build.json",
     "build:plugins": "node scripts/build-plugins.mjs",
+    "build:external": "node scripts/build-plugins.mjs --external",
     "build:renderer": "vite build --config vite.renderer.config.mts",
     "predev": "pnpm build",
     "premake": "pnpm build",

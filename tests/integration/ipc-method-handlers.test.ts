@@ -32,13 +32,19 @@ import {
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = path.resolve(HERE, '..', '..')
 const BUILTIN_ROOT = path.join(PROJECT_ROOT, 'plugins-dist')
+/** Theme Switcher is external: built into plugins-external-dist, installed as a user plugin. */
+const EXTERNAL_ROOT = path.join(PROJECT_ROOT, 'plugins-external-dist')
+const THEME_ID = 'com.rem2.theme-switcher'
+const THEME_CAPABILITIES = ['ui.theme', 'ui.panel', 'ui.route']
 
 function createKernel(): Kernel {
   return new Kernel(
     createDeps({
       id: 'rem2-ipc-method-handlers',
-      roots: [],
+      roots: [EXTERNAL_ROOT],
       builtinRoot: BUILTIN_ROOT,
+      grantedCapabilities: id =>
+        id === THEME_ID ? THEME_CAPABILITIES : [],
       pluginDataRoot: createTestPluginDataRoot('ipc-handlers'),
       startTimeoutMs: 8000,
       stopTimeoutMs: 8000,

@@ -18,7 +18,7 @@
 
 ```mermaid
 graph BT
-    subgraph L1["plugins/ + REM2-plugins — 7 shipped plugins (6 built-in sources + 1 external)"]
+    subgraph L1["plugins/ — 6 built-in plugins; REM2-plugins — 1 external installable plugin"]
         PA["in-process: config-json / hello-command / logger-console /<br/>health-http / theme-switcher / plugin-inspector"]
         PB["worker: notify-worker"]
     end
@@ -72,7 +72,7 @@ host     → (relative imports) → kernel
 | plugins                 | import only `rem2-kernel` / `node:*` / relative paths; manifest `entry` must be `.js` or `.mjs` | `tests/contract/plugin-contract.test.ts` R4 / R7                                     |
 | `src/shared/**`         | zero imports (pure literals + pure types)                                                       | `tests/contract/ipc-contract.test.ts`                                                |
 
-**One sentence**: the kernel (83 files) only orchestrates and defines contracts; the host (14 files) adapts Electron / CLI / IPC onto those contracts; the frontend (20 files) consumes 14 allowlisted methods and 5 allowlisted events through `window.rem2`; every business and ops capability (command, config, logging, health, theme, notification, inspector UI) is a plugin; the theme source lives in the external `REM2-plugins` repository and is built into `plugins-dist`.
+**One sentence**: the kernel (83 files) only orchestrates and defines contracts; the host (14 files) adapts Electron / CLI / IPC onto those contracts; the frontend (20 files) consumes 21 allowlisted methods and 6 allowlisted events through `window.rem2`; every business and ops capability (command, config, logging, health, theme, notification, inspector UI) is a plugin; the theme source lives in the external `REM2-plugins` repository, is built into `plugins-external-dist`, and is installed from its GitHub release (source=user, not builtin).
 
 ---
 
@@ -172,8 +172,9 @@ rem2-kernel/
 │   └── shared/
 │       └── ipc-contract.ts            # ★ method/event names shared by host and frontend (one copy, zero imports)
 │
-├── plugins/                           # 6 built-in plugin sources; the 7th (theme-switcher) comes from sibling REM2-plugins
-├── plugins-dist/                      # all plugin artifacts (built-in + external; goes into extraResource, git-ignored)
+├── plugins/                           # 6 built-in plugin sources
+├── plugins-dist/                      # built-in plugin artifacts (goes into extraResource, git-ignored)
+├── plugins-external-dist/             # external plugin artifacts for releases/tests (not packaged, git-ignored)
 ├── scripts/build-plugins.mjs          # esbuild bundling (honors REM2_EXTERNAL_PLUGINS_DIR; build-time code, outside src/)
 ├── tests/{unit,integration,contract}  # 3 test layers + fixtures/ + helpers/
 ├── examples/config/app.config.json    # sample config for the config-json plugin
@@ -515,10 +516,11 @@ src/shared/ipc-contract.ts        ← the only copy of the strings (channels / e
 | Line    | Input                                                             | Command                                    | Output                                                                                     |
 | ------- | ----------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------ |
 | Kernel  | `src/kernel/**`                                                   | `tsc -p tsconfig.build.json`               | `dist/kernel/**` (`.js` + `.d.ts` + `.map`); `exports["."]` points here                    |
-| Plugins | `plugins/<id>/src/index.ts`                                       | `node scripts/build-plugins.mjs` (esbuild) | `plugins-dist/<id>/dist/index.js` (ESM bundle, node20) + `plugin.json` + `package.json`    |
+| Built-in plugins | `plugins/<id>/src/index.ts`                             | `node scripts/build-plugins.mjs` (esbuild) | `plugins-dist/<id>/dist/index.js` (ESM bundle, node20) + `plugin.json` + `package.json` |
+| External plugins | `REM2_EXTERNAL_PLUGINS_DIR/<id>/src` (default: sibling `REM2-plugins`) | `node scripts/build-plugins.mjs --external` | `plugins-external-dist/<id>/` (not packaged; used for release ZIPs and tests)          |
 | Shell   | `src/main.ts` / `src/preload.ts` / `src/frontend/entry-client.ts` | `electron-forge` (VitePlugin)              | `.vite/build/main.cjs`, `.vite/build/preload.cjs`, `.vite/renderer/main_window/index.html` |
 
-`pnpm build` = `build:kernel` + `build:plugins`; both `predev` and `premake` run it.
+`pnpm build` = `build:kernel` + `build:plugins` + `build:external` (skipped when the external repository is absent); both `predev` and `premake` run it. The installer only ships `plugins-dist/` (6 built-in plugins).
 
 ### 8.2 How plugins enter the package and are located at runtime
 

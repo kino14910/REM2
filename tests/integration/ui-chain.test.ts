@@ -43,13 +43,17 @@ import {
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = path.resolve(HERE, '..', '..')
 const BUILTIN_ROOT = path.join(PROJECT_ROOT, 'plugins-dist')
+/** Theme Switcher is an external (user-installed) plugin, never bundled as builtin. */
+const EXTERNAL_ROOT = path.join(PROJECT_ROOT, 'plugins-external-dist')
+const THEME_ID = 'com.rem2.theme-switcher'
+const THEME_CAPABILITIES = ['ui.theme', 'ui.panel', 'ui.route']
 const EMPTY_ROOT = path.join(PROJECT_ROOT, 'tests', 'fixtures', 'empty-plugins')
 
 const INSPECTOR_PANEL_ID = 'plugin-inspector'
 const INSPECTOR_PLUGIN_ID = 'com.rem2.plugin-inspector'
 const DATA_TOPIC = 'com.rem2.plugin-inspector.data'
 
-/** The 7 shipped plugins in plugins-dist (6 built-in + external theme-switcher). */
+/** The 7 plugins loaded by these suites (6 built-in + external theme-switcher). */
 const BUILTIN_PLUGIN_IDS = [
   'com.rem2.config-json',
   'com.rem2.health-http',
@@ -64,8 +68,10 @@ function createKernel(): Kernel {
   return new Kernel(
     createDeps({
       id: 'rem2-ui-chain',
-      roots: [],
+      roots: [EXTERNAL_ROOT],
       builtinRoot: BUILTIN_ROOT,
+      grantedCapabilities: id =>
+        id === THEME_ID ? THEME_CAPABILITIES : [],
       pluginDataRoot: createTestPluginDataRoot('ui-chain'),
       startTimeoutMs: 8000,
       stopTimeoutMs: 8000,

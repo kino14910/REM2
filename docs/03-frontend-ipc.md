@@ -101,7 +101,7 @@ export const Ipc = {
 
 响应与事件拆成两个通道，前端 `subscribe` 只需监听一个 channel。请求 / 响应配对沿用 id 匹配（preload 内完成），不依赖 `ipcRenderer.invoke` 的自动配对。
 
-### 3.2 方法白名单（20 个，穷举）
+### 3.2 方法白名单（21 个，穷举）
 
 | #   | method（`channels.*`）     | payload                         | 响应                                       | 宿主落点                                                                                          |
 | --- | -------------------------- | ------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------- |
@@ -117,14 +117,15 @@ export const Ipc = {
 | 10  | `plugin.detail`            | `{ pluginId }`                  | `PluginDetailDto`                          | `LocalPluginManager.detail()`（含 `origin`）                                                      |
 | 11  | `plugin.install.directory` | —                               | `PluginOperationResultDto`                 | 主进程原生目录选择 → 校验 → 暂存复制 → 原子提交；默认禁用                                         |
 | 12  | `plugin.enable`            | `{ pluginId }`                  | `PluginOperationResultDto`                 | 持久启用意图（含已安装的硬依赖闭包）→ `Kernel.enablePlugin()`（含依赖拓扑）                       |
-| 13  | `plugin.disable`           | `{ pluginId }`                  | `PluginOperationResultDto`                 | 级联禁用已加载依赖者 → 持久禁用意图；运行中的插件需重启插件服务才停止                             |
-| 14  | `plugin.uninstall`         | `{ pluginId }`                  | `PluginOperationResultDto`                 | 仅 user 来源；停止、保留 config/data、精确删除                                                    |
-| 15  | `plugin.restart`           | —                               | `PluginOperationResultDto`                 | `Kernel.restartPlugins()`：停全部插件 → 按禁用集重新发现/解析/启动；内核与主进程不动              |
-| 16  | `plugin.remote.inspect`    | `{ url, operationId? }`         | `PluginRemoteInspectionDto`                | 解析发布元数据 → 下载（可取消/带进度）→ 摘要校验 → 临时解压 → manifest/依赖预检；**不写插件目录** |
-| 17  | `plugin.install.remote`    | `{ operationId, url, sha256? }` | `PluginOperationResultDto`                 | 复用 inspect 缓存 → 可信摘要校验 → 暂存 → 原子 rename → 写禁用意图 + provenance                   |
-| 18  | `plugin.download.cancel`   | `{ operationId }`               | `{ ok: true, cancelled }`                  | `LocalPluginManager.cancelDownload()`：按 operationId 中止 `AbortController`；重复取消幂等        |
-| 19  | `plugin.update.check`      | `{ pluginId? }`                 | `PluginUpdateCheckDto`                     | 按 provenance 的发布源解析最新 release，与已安装版本比较；`hasUpdate` 为假表示无更新              |
-| 20  | `plugin.update.install`    | `{ operationId, pluginId }`     | `PluginOperationResultDto`                 | 下载/校验/解压 → 依赖预检 → 备份旧目录 → 安装新版本 → 保留 config/data → 必要时重启；失败回滚     |
+| 13  | `plugin.permission.grant` | `{ pluginId, capabilities }`    | `PluginOperationResultDto`                 | 仅 user 来源且能力必须在 manifest `requires` 内 → 原子写 `plugin-grants.json`；下次启动生效       |
+| 14  | `plugin.disable`           | `{ pluginId }`                  | `PluginOperationResultDto`                 | 级联禁用已加载依赖者 → 持久禁用意图；运行中的插件需重启插件服务才停止                             |
+| 15  | `plugin.uninstall`         | `{ pluginId }`                  | `PluginOperationResultDto`                 | 仅 user 来源；停止、保留 config/data、精确删除                                                    |
+| 16  | `plugin.restart`           | —                               | `PluginOperationResultDto`                 | `Kernel.restartPlugins()`：停全部插件 → 按禁用集重新发现/解析/启动；内核与主进程不动              |
+| 17  | `plugin.remote.inspect`    | `{ url, operationId? }`         | `PluginRemoteInspectionDto`                | 解析发布元数据 → 下载（可取消/带进度）→ 摘要校验 → 临时解压 → manifest/依赖预检；**不写插件目录** |
+| 18  | `plugin.install.remote`    | `{ operationId, url, sha256? }` | `PluginOperationResultDto`                 | 复用 inspect 缓存 → 可信摘要校验 → 暂存 → 原子 rename → 写禁用意图 + provenance                   |
+| 19  | `plugin.download.cancel`   | `{ operationId }`               | `{ ok: true, cancelled }`                  | `LocalPluginManager.cancelDownload()`：按 operationId 中止 `AbortController`；重复取消幂等        |
+| 20  | `plugin.update.check`      | `{ pluginId? }`                 | `PluginUpdateCheckDto`                     | 按 provenance 的发布源解析最新 release，与已安装版本比较；`hasUpdate` 为假表示无更新              |
+| 21  | `plugin.update.install`    | `{ operationId, pluginId }`     | `PluginOperationResultDto`                 | 下载/校验/解压 → 依赖预检 → 备份旧目录 → 安装新版本 → 保留 config/data → 必要时重启；失败回滚     |
 
 ### 3.3 事件白名单（6 个）
 

@@ -18,7 +18,7 @@
 
 ```mermaid
 graph BT
-    subgraph L1["plugins/ + REM2-plugins —— 7 个随包插件（6 内置源码 + 1 外部源码）"]
+    subgraph L1["plugins/ —— 6 个内置插件；REM2-plugins —— 1 个外部可安装插件"]
         PA["in-process：config-json / hello-command / logger-console /<br/>health-http / theme-switcher / plugin-inspector"]
         PB["worker：notify-worker"]
     end
@@ -72,7 +72,7 @@ host     →（相对路径 import）→ kernel
 | plugins              | 只从 `rem2-kernel` / `node:*` / 相对路径导入；manifest `entry` 必须是 `.js` 或 `.mjs` | `tests/contract/plugin-contract.test.ts` R4 / R7                                 |
 | `src/shared/**`      | 零 import（纯字面量 + 纯类型）                                                        | `tests/contract/ipc-contract.test.ts`                                            |
 
-**一句话**：内核（83 文件）只做编排与契约；宿主（14 文件）把 Electron / CLI / IPC 适配到内核契约；前端（20 文件）经 `window.rem2` 消费 15 个白名单方法与 5 个白名单事件；全部业务与运维能力（命令、配置、日志、健康、主题、通知、检查器 UI）都是插件；其中主题源码位于外部 `REM2-plugins` 仓库，构建时进入 `plugins-dist`。
+**一句话**：内核（83 文件）只做编排与契约；宿主（14 文件）把 Electron / CLI / IPC 适配到内核契约；前端（20 文件）经 `window.rem2` 消费 21 个白名单方法与 6 个白名单事件；全部业务与运维能力（命令、配置、日志、健康、主题、通知、检查器 UI）都是插件；其中主题源码位于外部 `REM2-plugins` 仓库，构建到 `plugins-external-dist`，通过 GitHub Release 安装（source=user，非内置）。
 
 ---
 
@@ -172,8 +172,9 @@ rem2-kernel/
 │   └── shared/
 │       └── ipc-contract.ts            # ★ 宿主与前端共用的方法名 / 事件名（唯一一份字符串，零 import）
 │
-├── plugins/                           # 6 个内置插件源码；第 7 个 theme-switcher 来自同级 REM2-plugins
-├── plugins-dist/                      # 全部插件构建产物（内置 + 外部，进 extraResource，git 忽略）
+├── plugins/                           # 6 个内置插件源码
+├── plugins-dist/                      # 内置插件构建产物（进 extraResource，git 忽略）
+├── plugins-external-dist/             # 外部插件构建产物（发布包/测试用，不进安装包，git 忽略）
 ├── scripts/build-plugins.mjs          # esbuild 逐插件打包（含 REM2_EXTERNAL_PLUGINS_DIR；构建期代码，刻意不进 src/）
 ├── tests/{unit,integration,contract}  # 3 层测试 + fixtures/ + helpers/
 ├── examples/config/app.config.json    # config-json 插件的示例配置
@@ -514,10 +515,11 @@ src/shared/ipc-contract.ts        ← 唯一一份字符串（channels / events�
 | 产线   | 输入                                                              | 执行                                        | 输出                                                                                       |
 | ------ | ----------------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | 内核库 | `src/kernel/**`                                                   | `tsc -p tsconfig.build.json`                | `dist/kernel/**`（`.js` + `.d.ts` + `.map`）；`exports["."]` 指向此处                      |
-| 插件   | `plugins/<id>/src/index.ts`                                       | `node scripts/build-plugins.mjs`（esbuild） | `plugins-dist/<id>/dist/index.js`（ESM bundle，node20）+ `plugin.json` + `package.json`    |
+| 内置插件 | `plugins/<id>/src/index.ts`                                       | `node scripts/build-plugins.mjs`（esbuild） | `plugins-dist/<id>/dist/index.js`（ESM bundle，node20）+ `plugin.json` + `package.json`    |
+| 外部插件 | `REM2_EXTERNAL_PLUGINS_DIR/<id>/src`（默认同级 `REM2-plugins`）   | `node scripts/build-plugins.mjs --external` | `plugins-external-dist/<id>/`（不进安装包；用于 Release zip 与测试）                        |
 | 外壳   | `src/main.ts` / `src/preload.ts` / `src/frontend/entry-client.ts` | `electron-forge`（VitePlugin）              | `.vite/build/main.cjs`、`.vite/build/preload.cjs`、`.vite/renderer/main_window/index.html` |
 
-`pnpm build` = `build:kernel` + `build:plugins`；`predev` / `premake` 都挂了 `build`。
+`pnpm build` = `build:kernel` + `build:plugins` + `build:external`（外部仓库不存在时跳过）；`predev` / `premake` 都挂了 `build`。安装包只带 `plugins-dist/`（6 个内置插件）。
 
 ### 8.2 插件进包与运行时定位
 

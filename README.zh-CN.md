@@ -52,8 +52,8 @@ pnpm dev --log-level debug
 
 ```
 ──── rem2-kernel started ────
-loadOrder : com.rem2.config-json -> com.rem2.hello-command -> com.rem2.logger-console -> com.rem2.health-http -> com.rem2.notify-worker -> com.rem2.plugin-inspector -> com.rem2.theme-switcher
-started   : com.rem2.config-json, com.rem2.hello-command, com.rem2.logger-console, com.rem2.health-http, com.rem2.notify-worker, com.rem2.plugin-inspector, com.rem2.theme-switcher
+loadOrder : com.rem2.config-json -> com.rem2.hello-command -> com.rem2.logger-console -> com.rem2.health-http -> com.rem2.notify-worker -> com.rem2.plugin-inspector
+started   : com.rem2.config-json, com.rem2.hello-command, com.rem2.logger-console, com.rem2.health-http, com.rem2.notify-worker, com.rem2.plugin-inspector
 degraded  : (none)
 failed    : (none)
 health    : healthy
@@ -63,7 +63,6 @@ health    : healthy
   - com.rem2.logger-console [Active] healthy
   - com.rem2.notify-worker [Active] healthy
   - com.rem2.plugin-inspector [Active] healthy
-  - com.rem2.theme-switcher [Active] healthy
 ─────────────────────────────
 ```
 
@@ -158,7 +157,7 @@ export default definePlugin(
 
 ---
 
-## 示例插件（共 7 个随包插件）
+## 示例插件（6 个内置 + 1 个可安装）
 
 | 插件                                           | 证明什么                                                                | 依赖                  |
 | ---------------------------------------------- | ----------------------------------------------------------------------- | --------------------- |
@@ -170,9 +169,11 @@ export default definePlugin(
 | [`plugin-inspector`](plugins/plugin-inspector) | **检查器自身也是插件** — 贡献 `ui.panel` + `ui.route`，提供实时插件表格 | —                     |
 | [`notify-worker`](plugins/notify-worker)       | **Worker 线程隔离** — 崩溃不影响内核（故障隔离）                        | —                     |
 
-`theme-switcher` 的源码位于同级 `REM2-plugins` 仓库。存在该 checkout 时，
-`pnpm build:plugins` 会直接把它构建进 `plugins-dist`；可用
-`REM2_EXTERNAL_PLUGINS_DIR` 指向其他位置。
+`theme-switcher` 的源码位于同级 `REM2-plugins` 仓库，**不再作为内置插件打包**：
+`pnpm build:external` 把它构建到 `plugins-external-dist`（git 忽略，不进
+`resources/plugins-dist`）。请从它的 GitHub Release 通过 **插件 → Install from
+URL…** 安装，然后在插件详情里授予其声明的 UI 能力，再启用——用户插件默认处于
+沙箱策略下，敏感能力会被拒绝。可用 `REM2_EXTERNAL_PLUGINS_DIR` 指向其他位置。
 
 ---
 
@@ -262,8 +263,9 @@ src/
 │   └── lib/              # ipc-client / bridge-types / nav-link / dto-guards / stores / theme
 ├── main.ts               # Electron Forge 主进程入口（转发壳）
 └── preload.ts            # Forge preload 入口（转发壳）
-plugins/                  # 6 个内置插件（外部 theme-switcher 来自 REM2-plugins）
-plugins-dist/             # 全部插件构建产物（esbuild ESM bundle，进 extraResource）
+plugins/                  # 6 个内置插件（theme-switcher 从 REM2-plugins Release 安装）
+plugins-dist/             # 仅内置插件构建产物（esbuild ESM bundle，进 extraResource）
+plugins-external-dist/    # 外部插件构建产物（用于发布打包与测试，不随应用分发）
 dist/                     # 内核产物（tsc，含 .d.ts）
 tests/                    # 单元 / 集成 / 契约测试
 docs/                     # 架构与 API 文档（入口见 docs/INDEX.md；英文见 docs/en/）

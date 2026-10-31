@@ -33,9 +33,9 @@
 
 ```bash
 pnpm install
-pnpm dev                      # 终端形态启动内核（7 个随包插件）
+pnpm dev                      # 终端形态启动内核（6 个内置插件）
 pnpm start                    # Electron 桌面应用（renderer 是 Svelte 5）
-pnpm test:run                 # 全量测试（50 文件 / 479 用例）
+pnpm test:run                 # 全量测试（51 文件 / 489 用例）
 pnpm typecheck:all            # 三份 tsconfig 类型检查
 ```
 
