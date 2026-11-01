@@ -80,9 +80,15 @@ export const channels = {
    */
   pluginRemoteInspect: 'plugin.remote.inspect',
   pluginInstallFromRemote: 'plugin.install.remote',
+  /** Install a previously uninstalled plugin again from its recorded source. */
+  pluginReinstall: 'plugin.reinstall',
   pluginDownloadCancel: 'plugin.download.cancel',
   pluginUpdateCheck: 'plugin.update.check',
   pluginUpdateInstall: 'plugin.update.install',
+  /** Read the host-owned proxy settings and the proxy Chromium actually resolves. */
+  settingsProxyGet: 'settings.proxy.get',
+  /** Replace proxy settings; applied to the default session immediately. */
+  settingsProxySet: 'settings.proxy.set',
   /** Execute a command (responded directly by a command plugin; the host does not implement it). */
   commandExecute: 'command.execute',
   /** Fetch the health report. */
@@ -130,6 +136,22 @@ export const ALLOWED_EVENT_SET: ReadonlySet<string> = new Set(ALLOWED_EVENTS)
 
 export type PluginSourceDto = 'builtin' | 'user' | 'workspace'
 
+/** Host-wide network proxy mode (defaults to the OS settings). */
+export type ProxyModeDto = 'system' | 'direct' | 'manual'
+
+export interface ProxySettingsDto {
+  mode: ProxyModeDto
+  /** Manual mode only: normalized `http://host:port` or `https://host:port`. */
+  address?: string
+  /** Manual mode only: comma-separated Chromium bypass rules. */
+  bypass?: string
+  /**
+   * Runtime diagnostic from `session.resolveProxy`, e.g. `PROXY 127.0.0.1:7890`.
+   * Never persisted and may be absent on platforms that cannot resolve it.
+   */
+  resolved?: string
+}
+
 export type PluginRuntimeStateDto =
   | 'Registered'
   | 'Resolved'
@@ -144,6 +166,8 @@ export type PluginRuntimeStateDto =
   | 'Unloaded'
   | 'Disposed'
   | 'Disabled'
+  /** Uninstalled but still listed; it can be installed again from its source. */
+  | 'NotInstalled'
 
 export interface PluginSummaryDto {
   id: string
@@ -173,6 +197,8 @@ export interface PluginDetailDto extends PluginSummaryDto {
     contractVersion: string
   }
   canUninstall: boolean
+  /** Uninstalled but records remain, so the Install action can restore it. */
+  canInstall: boolean
   /** Disabled on disk but still loaded in the running plugin service. */
   restartRequired: boolean
   /** Where this plugin came from; remote installs keep their release URL and digest. */
@@ -228,6 +254,8 @@ export interface PluginUpdateDto {
 
 export interface PluginUpdateCheckDto {
   updates: PluginUpdateDto[]
+  /** Per-plugin source failures and updates that cannot be applied as-is. */
+  issues: string[]
 }
 
 export type PluginDownloadPhase =

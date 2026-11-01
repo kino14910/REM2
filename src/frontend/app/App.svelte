@@ -13,6 +13,7 @@
   import CommandPrompt from './components/CommandPrompt.svelte'
   import ThemeToggle from './components/ThemeToggle.svelte'
   import PluginManager from './components/PluginManager.svelte'
+  import SettingsView from './components/SettingsView.svelte'
   import { ipc } from '../lib/ipc-client'
   import { events } from '../../shared/ipc-contract'
   import { panels } from '../lib/stores/panels.svelte'
@@ -22,7 +23,9 @@
   import { resolveActivePanel } from '../lib/nav-link'
   import type { ThemeDto } from '../lib/bridge-types'
 
-  let managingPlugins = $state(false)
+  type View = 'main' | 'plugins' | 'settings'
+
+  let view = $state<View>('main')
 
   // Route drives which panel is active. The four loads start in parallel, so
   // neither store is guaranteed to arrive first: this effect re-resolves
@@ -76,16 +79,26 @@
     <CommandPrompt />
     <button
       type="button"
-      class:active={managingPlugins}
-      aria-pressed={managingPlugins}
-      onclick={() => (managingPlugins = !managingPlugins)}
+      class:active={view === 'plugins'}
+      aria-pressed={view === 'plugins'}
+      onclick={() => (view = view === 'plugins' ? 'main' : 'plugins')}
     >
       Plugins
     </button>
+    <button
+      type="button"
+      class:active={view === 'settings'}
+      aria-pressed={view === 'settings'}
+      onclick={() => (view = view === 'settings' ? 'main' : 'settings')}
+    >
+      Settings
+    </button>
     <ThemeToggle />
   </header>
-  {#if managingPlugins}
+  {#if view === 'plugins'}
     <PluginManager />
+  {:else if view === 'settings'}
+    <SettingsView />
   {:else}
     <Shell />
   {/if}

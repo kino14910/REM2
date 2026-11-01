@@ -1,4 +1,11 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  nativeTheme,
+  session,
+} from 'electron'
 import process from 'node:process'
 import path from 'node:path'
 import { Kernel } from '../../kernel/kernel.js'
@@ -20,6 +27,11 @@ import { LocalPluginManager } from '../plugins/local-plugin-manager.js'
 import { PluginStateStore } from '../plugins/state-store.js'
 import { PluginProvenanceStore } from '../plugins/provenance-store.js'
 import { PluginGrantStore } from '../plugins/grant-store.js'
+import { PluginRemovedStore } from '../plugins/removed-plugin-store.js'
+import { ProxySettingsStore } from '../settings/proxy-settings-store.js'
+import { ElectronProxySettingsService } from './proxy-settings-service.js'
+import { createSessionFetch } from './session-fetch.js'
+import type { ProxySettingsService } from '../settings/proxy-settings-service.js'
 
 let kernel: Kernel | null = null
 let bridge: IpcBridge | null = null
@@ -81,6 +93,7 @@ const themeRegistry = new ThemeRegistryImpl()
 function registerWhitelistedMethods(
   kernelRef: Kernel,
   pluginManager: LocalPluginManager,
+  proxySettings: ProxySettingsService,
 ): void {
   const bus = kernelRef.root.resolve<EventBus>(KernelTokens.EventBus)
   const methodContext = {
@@ -89,6 +102,23 @@ function registerWhitelistedMethods(
     themeRegistry,
     isSystemDark: () => nativeTheme.shouldUseDarkColors,
     pluginManager,
+    proxySettings,
+    // Renderer dialogs are not a sufficient trust boundary: compromised renderer
+    // code could invoke these methods directly. The main process asks the user
+    // again using values it has validated.
+    confirmPluginAction: async request => {
+      const result = await dialog.showMessageBox({
+        type: 'warning',
+        buttons: ['Cancel', 'Continue'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+        title: request.title,
+        message: request.message,
+        detail: request.detail,
+      })
+      return result.response === 1
+    },
     choosePluginDirectory: async () => {
       const result = await dialog.showOpenDialog({
         title: 'Install a built plugin directory',
@@ -109,6 +139,24 @@ function registerWhitelistedMethods(
 
 async function startKernel(): Promise<void> {
   const userData = app.getPath('userData')
+  // Apply the proxy before any plugin starts: kernel startup itself may not
+  // touch the network, but plugins and the window are created right after.
+  const proxyStore = new ProxySettingsStore(
+    path.join(userData, 'proxy-settings.json'),
+  )
+  const proxySettings = new ElectronProxySettingsService(
+    session.defaultSession,
+    proxyStore,
+  )
+  await proxySettings.initialize()
+  /**
+   * Host downloads and release metadata use Chromium's network stack (and thus
+   * the configured proxy). `ClientRequest` is used instead of `net.fetch` so
+   * manual redirects work and every hop can be validated against the allowlist.
+   * Resolved here, after `app` is ready: `session.defaultSession` throws
+   * before that.
+   */
+  const netFetch = createSessionFetch(session.defaultSession)
   const userRoot = path.join(userData, 'plugins')
   const builtinRoot = builtinPluginsRoot()
   const state = new PluginStateStore(path.join(userData, 'plugin-manager.json'))
@@ -124,12 +172,21 @@ async function startKernel(): Promise<void> {
   // approved in the plugin manager.
   const grants = new PluginGrantStore(path.join(userData, 'plugin-grants.json'))
   await grants.load()
+  // Uninstalled plugins keep a manifest + source record so the manager can list
+  // them as NotInstalled and offer an Install action instead of dropping them.
+  const removed = new PluginRemovedStore(
+    path.join(userData, 'plugin-removed.json'),
+  )
+  await removed.load()
+  // The kernel keeps this array by reference. Startup recovery may change the
+  // disabled intent, so it is refreshed in place before kernel.start().
+  const disabledPlugins = state.ids()
 
   kernel = new Kernel(
     createDeps({
       id: 'rem2-kernel-electron',
       roots: [userRoot],
-      disabledPlugins: state.ids(),
+      disabledPlugins,
       builtinRoot,
       grantedCapabilities: pluginId => grants.get(pluginId),
       pluginDataRoot: path.join(userData, 'plugin-data'),
@@ -152,9 +209,16 @@ async function startKernel(): Promise<void> {
     builtinRoot,
     provenance,
     grants,
+    removed,
     packagesRoot: path.join(userData, 'plugin-packages'),
+    fetchImpl: netFetch,
+    downloadRedirectMode: 'manual',
   })
-  registerWhitelistedMethods(kernel, pluginManager)
+  // Recover interrupted updates and stale staging before the kernel discovers
+  // plugins; otherwise it could start a half-installed or missing version.
+  await pluginManager.prepare()
+  disabledPlugins.splice(0, disabledPlugins.length, ...state.ids())
+  registerWhitelistedMethods(kernel, pluginManager, proxySettings)
   await kernel.start()
 
   const bus = kernel.root.resolve<EventBus>(KernelTokens.EventBus)
