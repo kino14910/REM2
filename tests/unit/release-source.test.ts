@@ -33,6 +33,36 @@ function zipAsset(
   }
 }
 
+function streamedResponse(
+  chunks: Uint8Array[],
+  headers = new Headers(),
+): Response {
+  const body = (async function* () {
+    for (const chunk of chunks) yield chunk
+  })()
+  return { ok: true, status: 200, headers, body } as unknown as Response
+}
+
+function fetchReleaseAndSidecar(
+  sidecar: () => Response | Promise<Response>,
+): typeof fetch {
+  return vi.fn<typeof fetch>(async input => {
+    if (String(input).startsWith('https://api.github.com/')) {
+      return jsonResponse(
+        releaseWith([
+          zipAsset(),
+          {
+            name: 'plugin.zip.sha256',
+            browser_download_url:
+              'https://github.com/example/plugin/releases/download/v1.2.3/plugin.zip.sha256',
+          },
+        ]),
+      )
+    }
+    return sidecar()
+  })
+}
+
 describe('unit · remote release source', () => {
   it('resolves a download URL and reads its sidecar digest', async () => {
     const source =
@@ -153,8 +183,59 @@ describe('unit · remote release source', () => {
     expect(release.downloadUrl).toBe(zipAsset().browser_download_url)
   })
 
-  it('accepts a non-GitHub HTTPS zip and infers its version', async () => {
-    const source = 'https://cdn.example.com/plugin-v3.4.5.zip'
+  it('rejects a release metadata redirect outside the HTTPS allowlist', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => {
+      return new Response(null, {
+        status: 302,
+        headers: { location: 'https://evil.test/releases/latest' },
+      })
+    })
+    await expect(
+      resolveRemoteRelease(
+        'https://github.com/example/plugin/releases/latest',
+        { fetchImpl },
+      ),
+    ).rejects.toMatchObject({ code: 'E_SOURCE_INVALID' })
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it('follows an allowlisted metadata redirect and validates the hop', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async input => {
+      if (String(input).includes('/releases/latest')) {
+        return new Response(null, {
+          status: 302,
+          headers: {
+            location:
+              'https://objects.githubusercontent.com/release-metadata.json',
+          },
+        })
+      }
+      return jsonResponse(
+        releaseWith([zipAsset({ digest: `sha256:${digest}` })]),
+      )
+    })
+
+    const release = await resolveRemoteRelease(
+      'https://github.com/example/plugin/releases/latest',
+      { fetchImpl },
+    )
+    expect(release.sha256).toBe(digest)
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(fetchImpl.mock.calls[1]?.[1]).toMatchObject({ redirect: 'manual' })
+  })
+
+  it('rejects a non-GitHub HTTPS zip before fetching', async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+    await expect(
+      resolveRemoteRelease('https://cdn.example.com/plugin-v3.4.5.zip', {
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ code: 'E_SOURCE_INVALID' })
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('accepts an allowlisted direct asset and infers its version', async () => {
+    const source = 'https://objects.githubusercontent.com/plugin-v3.4.5.zip'
     const fetchImpl = vi.fn<typeof fetch>()
     await expect(resolveRemoteRelease(source, { fetchImpl })).resolves.toEqual({
       sourceUrl: source,
@@ -166,7 +247,7 @@ describe('unit · remote release source', () => {
 
   it('returns an empty version when a direct filename has no semver', async () => {
     const release = await resolveRemoteRelease(
-      'https://cdn.example.com/plugin.zip',
+      'https://objects.githubusercontent.com/plugin.zip',
     )
     expect(release.version).toBe('')
     expect(release.sha256).toBeUndefined()
@@ -207,27 +288,96 @@ describe('unit · remote release source', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 
-  it('treats sidecar failures as missing digests', async () => {
-    const fetchImpl = vi.fn<typeof fetch>(async input => {
-      if (String(input).startsWith('https://api.github.com/')) {
-        return jsonResponse(
-          releaseWith([
-            zipAsset(),
-            {
-              name: 'plugin.zip.sha256',
-              browser_download_url:
-                'https://github.com/example/plugin/releases/download/v1.2.3/plugin.zip.sha256',
-            },
-          ]),
-        )
-      }
-      return jsonResponse({}, 500)
+  it('rejects release metadata with an oversized Content-Length', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      streamedResponse(
+        [new Uint8Array(1)],
+        new Headers({ 'content-length': String(1024 * 1024 + 1) }),
+      ),
+    )
+    await expect(
+      resolveRemoteRelease(
+        'https://github.com/example/plugin/releases/latest',
+        { fetchImpl },
+      ),
+    ).rejects.toMatchObject({
+      code: 'E_DOWNLOAD',
+      message: expect.stringContaining('byte limit'),
     })
+  })
+
+  it('rejects release metadata that exceeds the limit while streaming', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      streamedResponse([new Uint8Array(1024 * 1024 + 1)]),
+    )
+    await expect(
+      resolveRemoteRelease(
+        'https://github.com/example/plugin/releases/latest',
+        { fetchImpl },
+      ),
+    ).rejects.toMatchObject({
+      code: 'E_DOWNLOAD',
+      message: expect.stringContaining('while streaming'),
+    })
+  })
+
+  it('propagates sidecar HTTP errors instead of omitting the digest', async () => {
+    const fetchImpl = fetchReleaseAndSidecar(() => jsonResponse({}, 500))
+    await expect(
+      resolveRemoteRelease(
+        'https://github.com/example/plugin/releases/tag/v1.2.3',
+        { fetchImpl },
+      ),
+    ).rejects.toMatchObject({ code: 'E_DOWNLOAD' })
+  })
+
+  it('propagates sidecar network errors instead of omitting the digest', async () => {
+    const fetchImpl = fetchReleaseAndSidecar(async () => {
+      throw new Error('connection lost')
+    })
+    await expect(
+      resolveRemoteRelease(
+        'https://github.com/example/plugin/releases/tag/v1.2.3',
+        { fetchImpl },
+      ),
+    ).rejects.toMatchObject({
+      code: 'E_DOWNLOAD',
+      cause: expect.objectContaining({ message: 'connection lost' }),
+    })
+  })
+
+  it('leaves sha256 undefined when the sidecar digest is invalid', async () => {
+    const fetchImpl = fetchReleaseAndSidecar(
+      () => new Response('not a sha256 digest', { status: 200 }),
+    )
     const release = await resolveRemoteRelease(
       'https://github.com/example/plugin/releases/tag/v1.2.3',
       { fetchImpl },
     )
     expect(release.sha256).toBeUndefined()
+  })
+
+  it.each([
+    [
+      'Content-Length',
+      () =>
+        streamedResponse(
+          [new Uint8Array(1)],
+          new Headers({ 'content-length': String(16 * 1024 + 1) }),
+        ),
+    ],
+    ['streamed body', () => streamedResponse([new Uint8Array(16 * 1024 + 1)])],
+  ])('rejects an oversized sidecar %s', async (_label, sidecar) => {
+    const fetchImpl = fetchReleaseAndSidecar(sidecar)
+    await expect(
+      resolveRemoteRelease(
+        'https://github.com/example/plugin/releases/tag/v1.2.3',
+        { fetchImpl },
+      ),
+    ).rejects.toMatchObject({
+      code: 'E_DOWNLOAD',
+      message: expect.stringContaining('byte limit'),
+    })
   })
 
   it('falls back to URL metadata when a download release API is unreachable', async () => {

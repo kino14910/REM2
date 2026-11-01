@@ -25,6 +25,13 @@ function cand(
   }
 }
 
+const run = (list: Candidate[]) => {
+  const graph = buildGraph(list)
+  return topoSortedLoadOrder(graph.nodes, graph.hardEdges, {
+    priorityRank: c => sourcePriorityRank(c.source),
+  })
+}
+
 describe('dependency · deterministic topological sort', () => {
   it('dependencies dequeue before dependents', () => {
     const candidates = [cand('a', ['b']), cand('b', ['c']), cand('c')]
@@ -48,12 +55,6 @@ describe('dependency · deterministic topological sort', () => {
   })
 
   it('the output is completely identical after shuffling the input order (determinism)', () => {
-    const run = (list: Candidate[]) => {
-      const graph = buildGraph(list)
-      return topoSortedLoadOrder(graph.nodes, graph.hardEdges, {
-        priorityRank: c => sourcePriorityRank(c.source),
-      })
-    }
     const base = [
       cand('a', ['c']),
       cand('b', ['c']),

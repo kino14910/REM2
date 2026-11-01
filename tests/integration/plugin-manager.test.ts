@@ -9,13 +9,14 @@ import {
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Kernel } from '../../src/kernel/kernel.js'
 import { KernelTokens } from '../../src/kernel/contracts/kernel-tokens.js'
 import type { EventBus } from '../../src/kernel/contracts/event-bus.js'
 import { LocalPluginManager } from '../../src/host/plugins/local-plugin-manager.js'
 import { PluginStateStore } from '../../src/host/plugins/state-store.js'
 import { PluginGrantStore } from '../../src/host/plugins/grant-store.js'
+import { PluginRemovedStore } from '../../src/host/plugins/removed-plugin-store.js'
 import { ThemeRegistryImpl } from '../../src/host/electron/theme-registry.js'
 import { createMethodHandlers } from '../../src/host/ipc/method-handlers.js'
 import { IpcBridge } from '../../src/host/ipc/bridge.js'
@@ -38,7 +39,10 @@ interface Env {
   sourceRoot: string
   stateFile: string
   grantsFile: string
+  removedFile: string
   state: PluginStateStore
+  grants: PluginGrantStore
+  removed: PluginRemovedStore
   kernel: Kernel
   manager: LocalPluginManager
   dispose(): Promise<void>
@@ -120,6 +124,9 @@ async function createEnv(
   const grantsFile = path.join(root, 'plugin-grants.json')
   const grants = new PluginGrantStore(grantsFile)
   await grants.load()
+  const removedFile = path.join(root, 'plugin-removed.json')
+  const removed = new PluginRemovedStore(removedFile)
+  await removed.load()
   const kernel = new Kernel({
     id: 'rem2-plugin-manager-test',
     roots: [userRoot],
@@ -139,6 +146,7 @@ async function createEnv(
     state,
     builtinRoot,
     grants,
+    removed,
     ...(options.copyDirectory ? { copyDirectory: options.copyDirectory } : {}),
   })
   const env: Env = {
@@ -149,7 +157,10 @@ async function createEnv(
     sourceRoot,
     stateFile,
     grantsFile,
+    removedFile,
     state,
+    grants,
+    removed,
     kernel,
     manager,
     dispose: async () => {
@@ -172,7 +183,7 @@ export default function factory() {
 }
 
 describe('integration · local plugin manager lifecycle', () => {
-  it('installs disabled without executing code, then enables and disables it', async () => {
+  it('installs enabled, then disables and re-enables it', async () => {
     const env = await createEnv()
     const marker = path.join(env.root, 'executed.marker')
     await writePlugin(
@@ -187,18 +198,15 @@ describe('integration · local plugin manager lifecycle', () => {
     expect(installed.plugin).toMatchObject({
       id: 'com.example.installed',
       source: 'user',
-      state: 'Disabled',
-      enabled: false,
+      state: 'Active',
+      enabled: true,
       canUninstall: true,
     })
-    await expect(access(marker)).rejects.toThrow()
+    expect(installed.message).toContain('enabled')
+    expect(await readFile(marker, 'utf8')).toBe('executed')
     await access(
       path.join(env.userRoot, 'com.example.installed', 'plugin.json'),
     )
-
-    const enabled = await env.manager.enable('com.example.installed')
-    expect(enabled.plugin?.state).toBe('Active')
-    expect(await readFile(marker, 'utf8')).toBe('executed')
 
     const disabled = await env.manager.disable('com.example.installed')
     expect(disabled.plugin).toMatchObject({
@@ -228,6 +236,10 @@ describe('integration · local plugin manager lifecycle', () => {
       changed: false,
       restartRequired: false,
     })
+
+    // Re-enabling starts the same installed plugin again.
+    const enabled = await env.manager.enable('com.example.installed')
+    expect(enabled.plugin?.state).toBe('Active')
   })
 
   it('restarts only the plugin service and keeps kernel infrastructure alive', async () => {
@@ -470,6 +482,84 @@ describe('integration · local plugin manager lifecycle', () => {
     await env.manager.uninstall('com.example.dep')
   })
 
+  it('keeps an uninstalled plugin listed as NotInstalled and installable', async () => {
+    const env = await createEnv()
+    const source = await writePlugin(env.sourceRoot, {
+      id: 'com.example.removed',
+    })
+    await env.manager.installFromDirectory(source)
+    expect((await env.manager.detail('com.example.removed')).state).toBe(
+      'Active',
+    )
+
+    await env.manager.uninstall('com.example.removed')
+
+    expect(
+      (await env.manager.list()).plugins.find(
+        plugin => plugin.id === 'com.example.removed',
+      ),
+    ).toMatchObject({
+      state: 'NotInstalled',
+      enabled: false,
+      canUninstall: false,
+      canInstall: true,
+      origin: { kind: 'directory' },
+    })
+    expect(await env.manager.detail('com.example.removed')).toMatchObject({
+      state: 'NotInstalled',
+      canInstall: true,
+    })
+    // A directory record has no replayable path; the UI falls back to the chooser.
+    await expect(
+      env.manager.reinstall('com.example.removed'),
+    ).rejects.toMatchObject({ code: 'E_SOURCE_INVALID' })
+
+    // Installing the same id again replaces the removed entry in the list.
+    await env.manager.installFromDirectory(source)
+    const matching = (await env.manager.list()).plugins.filter(
+      plugin => plugin.id === 'com.example.removed',
+    )
+    expect(matching).toHaveLength(1)
+    expect(matching[0]).toMatchObject({ state: 'Active', canInstall: false })
+  })
+
+  it('preserves the newest config when the same plugin is uninstalled twice', async () => {
+    const env = await createEnv()
+    const source = await writePlugin(env.sourceRoot, {
+      id: 'com.example.reinstall',
+    })
+    await env.manager.installFromDirectory(source)
+    const installed = path.join(env.userRoot, 'com.example.reinstall')
+    await mkdir(path.join(installed, 'config'), { recursive: true })
+    await writeFile(
+      path.join(installed, 'config', 'settings.json'),
+      '{"value":"first"}',
+      'utf8',
+    )
+    await env.manager.uninstall('com.example.reinstall')
+
+    await env.manager.installFromDirectory(source)
+    await mkdir(path.join(installed, 'config'), { recursive: true })
+    await writeFile(
+      path.join(installed, 'config', 'settings.json'),
+      '{"value":"second"}',
+      'utf8',
+    )
+    await env.manager.uninstall('com.example.reinstall')
+
+    expect(
+      await readFile(
+        path.join(
+          env.dataRoot,
+          'com.example.reinstall',
+          'config',
+          'settings.json',
+        ),
+        'utf8',
+      ),
+    ).toBe('{"value":"second"}')
+  })
+
   it('persists disabled intent across a kernel restart', async () => {
     const env = await createEnv({
       user: [{ manifest: { id: 'com.example.persist' } }],
@@ -622,9 +712,10 @@ export default function factory(ctx) {
       denied: [],
     })
 
-    const persisted = JSON.parse(
-      await readFile(env.grantsFile, 'utf8'),
-    ) as { version: number; entries: Record<string, string[]> }
+    const persisted = JSON.parse(await readFile(env.grantsFile, 'utf8')) as {
+      version: number
+      entries: Record<string, string[]>
+    }
     expect(persisted).toEqual({
       version: 1,
       entries: { 'com.example.granted': ['ui.panel'] },
@@ -641,6 +732,79 @@ export default function factory(ctx) {
     await expect(
       env.manager.grantPermissions('com.example.granted', ['ui.theme']),
     ).rejects.toMatchObject({ code: 'E_CAPABILITY_INVALID' })
+  })
+
+  it('rejects enable when the plugin changed after confirmation', async () => {
+    const env = await createEnv({
+      user: [{ manifest: { id: 'com.example.toctou' } }],
+    })
+    await env.manager.disable('com.example.toctou')
+    await writeFile(
+      path.join(env.userRoot, 'com.example.toctou', 'plugin.json'),
+      JSON.stringify(
+        makeManifest({
+          id: 'com.example.toctou',
+          version: '2.0.0',
+          entry: 'index.js',
+        }),
+      ),
+      'utf8',
+    )
+
+    await expect(
+      env.manager.enable('com.example.toctou', { version: '1.0.0' }),
+    ).rejects.toMatchObject({ code: 'E_TARGET_CHANGED' })
+    expect((await env.manager.detail('com.example.toctou')).enabled).toBe(false)
+  })
+
+  it('refuses uninstall when config is a special file and leaves the plugin intact', async () => {
+    const env = await createEnv({
+      user: [{ manifest: { id: 'com.example.unsafe-config' } }],
+    })
+    const pluginDir = path.join(env.userRoot, 'com.example.unsafe-config')
+    await writeFile(path.join(pluginDir, 'config'), 'not a directory', 'utf8')
+
+    await expect(
+      env.manager.uninstall('com.example.unsafe-config'),
+    ).rejects.toMatchObject({ code: 'E_UNSAFE_TREE' })
+
+    await access(path.join(pluginDir, 'plugin.json'))
+    expect(
+      (await env.manager.detail('com.example.unsafe-config')).enabled,
+    ).toBe(true)
+  })
+
+  it('keeps the plugin when grant cleanup fails during uninstall, then retries safely', async () => {
+    const env = await createEnv({
+      user: [
+        {
+          manifest: { id: 'com.example.grant-cleanup', requires: ['ui.panel'] },
+        },
+      ],
+    })
+    await env.manager.grantPermissions('com.example.grant-cleanup', [
+      'ui.panel',
+    ])
+    const pluginDir = path.join(env.userRoot, 'com.example.grant-cleanup')
+    const remove = vi
+      .spyOn(env.grants, 'remove')
+      .mockRejectedValueOnce(new Error('grant store locked'))
+
+    await expect(
+      env.manager.uninstall('com.example.grant-cleanup'),
+    ).rejects.toThrow(/grant store locked/)
+
+    // No code is deleted and the plugin cannot restart while cleanup is retried.
+    await access(path.join(pluginDir, 'plugin.json'))
+    expect(
+      (await env.manager.detail('com.example.grant-cleanup')).enabled,
+    ).toBe(false)
+    expect(env.grants.get('com.example.grant-cleanup')).toEqual(['ui.panel'])
+
+    remove.mockRestore()
+    await env.manager.uninstall('com.example.grant-cleanup')
+    await expect(access(pluginDir)).rejects.toThrow()
+    expect(env.grants.get('com.example.grant-cleanup')).toEqual([])
   })
 })
 
@@ -693,6 +857,101 @@ describe('integration · plugin management IPC boundary', () => {
     })
   })
 
+  it('uninstalls without confirmation but still confirms enable', async () => {
+    const env = await createEnv({
+      user: [
+        { manifest: { id: 'com.example.uninstall' } },
+        { manifest: { id: 'com.example.enable-confirm' } },
+      ],
+    })
+    const bus = env.kernel.root.resolve<EventBus>(KernelTokens.EventBus)
+    const confirmPluginAction = vi.fn(async () => false)
+    const handlers = createMethodHandlers({
+      kernel: env.kernel,
+      bus,
+      themeRegistry: new ThemeRegistryImpl(),
+      pluginManager: env.manager,
+      confirmPluginAction,
+    })
+
+    const removed = (await handlers[channels.pluginUninstall]!({
+      pluginId: 'com.example.uninstall',
+    })) as { ok: boolean; changed: boolean }
+    expect(removed).toMatchObject({ ok: true, changed: true })
+    // No banner and no dialog are part of the uninstall path any more.
+    expect(confirmPluginAction).not.toHaveBeenCalled()
+    await expect(
+      access(path.join(env.userRoot, 'com.example.uninstall', 'plugin.json')),
+    ).rejects.toThrow()
+
+    await env.manager.disable('com.example.enable-confirm')
+    await expect(
+      handlers[channels.pluginEnable]!({
+        pluginId: 'com.example.enable-confirm',
+      }),
+    ).rejects.toMatchObject({ code: 'E_CONFIRMATION_DENIED' })
+    expect(
+      (await env.manager.detail('com.example.enable-confirm')).enabled,
+    ).toBe(false)
+  })
+
+  it('fails closed when the host cannot present a confirmation dialog', async () => {
+    const env = await createEnv({
+      user: [{ manifest: { id: 'com.example.no-confirm' } }],
+    })
+    await env.manager.disable('com.example.no-confirm')
+    const bus = env.kernel.root.resolve<EventBus>(KernelTokens.EventBus)
+    const handlers = createMethodHandlers({
+      kernel: env.kernel,
+      bus,
+      themeRegistry: new ThemeRegistryImpl(),
+      pluginManager: env.manager,
+    })
+
+    await expect(
+      handlers[channels.pluginEnable]!({ pluginId: 'com.example.no-confirm' }),
+    ).rejects.toMatchObject({ code: 'E_CONFIRMATION_UNAVAILABLE' })
+    expect((await env.manager.detail('com.example.no-confirm')).enabled).toBe(
+      false,
+    )
+  })
+
+  it('grants and enables through one confirmed IPC call', async () => {
+    const env = await createEnv({
+      user: [
+        { manifest: { id: 'com.example.consent', requires: ['ui.panel'] } },
+      ],
+    })
+    const bus = env.kernel.root.resolve<EventBus>(KernelTokens.EventBus)
+    const confirmPluginAction = vi.fn(async () => true)
+    const handlers = createMethodHandlers({
+      kernel: env.kernel,
+      bus,
+      themeRegistry: new ThemeRegistryImpl(),
+      pluginManager: env.manager,
+      confirmPluginAction,
+    })
+
+    const result = (await handlers[channels.pluginEnable]!({
+      pluginId: 'com.example.consent',
+      capabilities: ['ui.panel'],
+    })) as { plugin?: { state: string; permissions: unknown } }
+
+    expect(result.plugin?.state).toBe('Active')
+    expect(result.plugin?.permissions).toEqual({
+      granted: ['ui.panel'],
+      denied: [],
+    })
+    expect(env.grants.get('com.example.consent')).toEqual(['ui.panel'])
+    expect(confirmPluginAction).toHaveBeenCalledTimes(1)
+    expect(confirmPluginAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'enable',
+        detail: expect.stringContaining('ui.panel'),
+      }),
+    )
+  })
+
   it('returns changed:false when the native directory chooser is cancelled', async () => {
     const env = await createEnv()
     const bus = env.kernel.root.resolve<EventBus>(KernelTokens.EventBus)
@@ -711,6 +970,43 @@ describe('integration · plugin management IPC boundary', () => {
       restartRequired: false,
       message: 'Installation cancelled.',
     })
+  })
+
+  it('approves directory capabilities before installing and enables the plugin', async () => {
+    const env = await createEnv()
+    const source = await writePlugin(env.sourceRoot, {
+      id: 'com.example.approved',
+      requires: ['ui.panel'],
+    })
+    const bus = env.kernel.root.resolve<EventBus>(KernelTokens.EventBus)
+    const confirmPluginAction = vi.fn(async () => true)
+    const handlers = createMethodHandlers({
+      kernel: env.kernel,
+      bus,
+      themeRegistry: new ThemeRegistryImpl(),
+      pluginManager: env.manager,
+      choosePluginDirectory: async () => source,
+      confirmPluginAction,
+    })
+
+    const result = (await handlers[channels.pluginInstallFromDirectory]!(
+      undefined,
+    )) as {
+      plugin?: { state: string; enabled: boolean; permissions: unknown }
+    }
+
+    expect(result.plugin).toMatchObject({ state: 'Active', enabled: true })
+    expect(result.plugin?.permissions).toEqual({
+      granted: ['ui.panel'],
+      denied: [],
+    })
+    expect(env.grants.get('com.example.approved')).toEqual(['ui.panel'])
+    expect(confirmPluginAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'directory-install',
+        detail: expect.stringContaining('ui.panel'),
+      }),
+    )
   })
 
   it('forwards stable management error codes through the IPC bridge', async () => {

@@ -5,6 +5,13 @@ import {
   hasCycle,
 } from '../../src/kernel/dependency/cycles.js'
 
+const make = (): Map<string, string[]> =>
+  new Map<string, string[]>([
+    ['a', ['b']],
+    ['b', ['c']],
+    ['c', ['a']],
+  ])
+
 describe('dependency · cycle detection (DFS three-color)', () => {
   it('an acyclic graph returns empty', () => {
     const graph = new Map<string, string[]>([
@@ -74,12 +81,6 @@ describe('dependency · cycle detection (DFS three-color)', () => {
   })
 
   it('deterministic: repeated detection on the same graph agrees', () => {
-    const make = () =>
-      new Map<string, string[]>([
-        ['a', ['b']],
-        ['b', ['c']],
-        ['c', ['a']],
-      ])
     expect(findCycles(make())).toEqual(findCycles(make()))
   })
 })

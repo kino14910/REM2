@@ -23,6 +23,18 @@ function responseWithBody(
   return { status: 200, headers, body } as unknown as Response
 }
 
+function responseWithUrl(payload: Uint8Array, url: string): Response {
+  const body = (async function* () {
+    yield payload
+  })()
+  return {
+    status: 200,
+    headers: new Headers(),
+    body,
+    url,
+  } as unknown as Response
+}
+
 describe('unit · remote package download', () => {
   let root: string
   let destination: string
@@ -282,5 +294,57 @@ describe('unit · remote package download', () => {
     expect(await readdir(path.dirname(nestedDestination))).toEqual([
       'plugin.zip',
     ])
+  })
+
+  it('follow mode accepts a redirect when the reported final URL is allowlisted', async () => {
+    const payload = new TextEncoder().encode('followed package')
+    const seenInits: RequestInit[] = []
+    const result = await downloadPackage({
+      url: 'https://example.test/releases/latest',
+      destination,
+      allowedHosts: ['example.test', 'cdn.example.test'],
+      redirectMode: 'follow',
+      fetchImpl: fetchStub(async (_input, init) => {
+        seenInits.push(init ?? {})
+        return responseWithUrl(payload, 'https://cdn.example.test/package.zip')
+      }),
+    })
+    expect(seenInits[0]?.redirect).toBe('follow')
+    expect(result.finalUrl).toBe('https://cdn.example.test/package.zip')
+    expect(result.sha256).toBe(
+      createHash('sha256').update(payload).digest('hex'),
+    )
+  })
+
+  it('follow mode rejects a redirect to a host outside the allowlist', async () => {
+    await expect(
+      downloadPackage({
+        url: 'https://example.test/package.zip',
+        destination,
+        allowedHosts: ['example.test'],
+        redirectMode: 'follow',
+        fetchImpl: fetchStub(async () =>
+          responseWithUrl(
+            new TextEncoder().encode('escaped'),
+            'https://evil.test/package.zip',
+          ),
+        ),
+      }),
+    ).rejects.toMatchObject({ code: 'E_SOURCE_INVALID' })
+    expect(await readdir(root)).toEqual([])
+  })
+
+  it('follow mode keeps the source URL when the implementation hides the final URL', async () => {
+    // Electron's net.fetch leaves response.url empty even after redirects.
+    const payload = new TextEncoder().encode('unknown final url')
+    const result = await downloadPackage({
+      url: 'https://example.test/package.zip',
+      destination,
+      allowedHosts: ['example.test'],
+      redirectMode: 'follow',
+      fetchImpl: fetchStub(async () => responseWithUrl(payload, '')),
+    })
+    expect(result.finalUrl).toBe('https://example.test/package.zip')
+    expect(await readFile(destination)).toEqual(Buffer.from(payload))
   })
 })

@@ -52,8 +52,7 @@ function createKernel(): Kernel {
       id: 'rem2-inspector-chain',
       roots: [EXTERNAL_ROOT],
       builtinRoot: BUILTIN_ROOT,
-      grantedCapabilities: id =>
-        id === THEME_ID ? THEME_CAPABILITIES : [],
+      grantedCapabilities: id => (id === THEME_ID ? THEME_CAPABILITIES : []),
       startTimeoutMs: 8000,
       stopTimeoutMs: 8000,
       legacyFallback: false,

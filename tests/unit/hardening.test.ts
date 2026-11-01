@@ -14,17 +14,17 @@ import { makeCandidate, makeManifest } from '../helpers/make-manifest.js'
 
 // ─────────────────────────── 1. Config provider failures must be observable ───────────────────────────
 
-describe('hardening · ConfigService provider failures are not silent', () => {
-  function failingProvider(name: string, priority = 10): ConfigProvider {
-    return {
-      name,
-      priority,
-      async load(): Promise<Record<string, unknown>> {
-        throw new Error(`failed to read ${name}`)
-      },
-    }
+function failingProvider(name: string, priority = 10): ConfigProvider {
+  return {
+    name,
+    priority,
+    async load(): Promise<Record<string, unknown>> {
+      throw new Error(`failed to read ${name}`)
+    },
   }
+}
 
+describe('hardening · ConfigService provider failures are not silent', () => {
   it('a failing provider is recorded in loadFailures, not silently swallowed', async () => {
     const svc = new ConfigService()
     svc.registerProvider(failingProvider('broken'))
@@ -143,12 +143,12 @@ describe('hardening · all-hard-edge cycle nodes must be registered as dropped',
 
 // ─────────────────────────── 3. id validation rejects consecutive separators ───────────────────────────
 
-describe('hardening · plugin id rejects consecutive separators', () => {
-  function idValid(id: string): boolean {
-    const r = validateManifest(makeManifest({ id }))
-    return r.ok
-  }
+function idValid(id: string): boolean {
+  const r = validateManifest(makeManifest({ id }))
+  return r.ok
+}
 
+describe('hardening · plugin id rejects consecutive separators', () => {
   it('rejects ids containing consecutive separators', () => {
     expect(idValid('bad..id')).toBe(false)
     expect(idValid('bad--id')).toBe(false)

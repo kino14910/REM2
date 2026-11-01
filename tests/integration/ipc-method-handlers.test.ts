@@ -14,7 +14,7 @@
 
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Kernel } from '../../src/kernel/kernel.js'
 import { createDeps } from '../../src/kernel/composition.js'
 import { KernelTokens } from '../../src/kernel/contracts/kernel-tokens.js'
@@ -24,6 +24,7 @@ import type { HealthReport } from '../../src/kernel/contracts/health.js'
 import { ThemeRegistryImpl } from '../../src/host/electron/theme-registry.js'
 import { createMethodHandlers } from '../../src/host/ipc/method-handlers.js'
 import { ALLOWED_METHODS, channels } from '../../src/shared/ipc-contract.js'
+import type { ProxySettingsService } from '../../src/host/settings/proxy-settings-service.js'
 import {
   cleanupTestPluginDataRoots,
   createTestPluginDataRoot,
@@ -43,8 +44,7 @@ function createKernel(): Kernel {
       id: 'rem2-ipc-method-handlers',
       roots: [EXTERNAL_ROOT],
       builtinRoot: BUILTIN_ROOT,
-      grantedCapabilities: id =>
-        id === THEME_ID ? THEME_CAPABILITIES : [],
+      grantedCapabilities: id => (id === THEME_ID ? THEME_CAPABILITIES : []),
       pluginDataRoot: createTestPluginDataRoot('ipc-handlers'),
       startTimeoutMs: 8000,
       stopTimeoutMs: 8000,
@@ -249,6 +249,71 @@ describe('integration · allowlisted method implementation table', () => {
           expect(allowed.has(key), `health DTO leaks field: ${key}`).toBe(true)
         }
       }
+    } finally {
+      await kernel.shutdown()
+    }
+  })
+
+  it('settings.proxy.get / set delegate to the host proxy service and validate args', async () => {
+    const kernel = createKernel()
+    try {
+      await kernel.start()
+      const bus = kernel.root.resolve<EventBus>(KernelTokens.EventBus)
+      const seen: unknown[] = []
+      const proxySettings: ProxySettingsService = {
+        get: async () => ({
+          mode: 'system',
+          resolved: 'PROXY 127.0.0.1:7890',
+        }),
+        set: async settings => {
+          seen.push(settings)
+          return {
+            ...settings,
+            resolved: 'PROXY 127.0.0.1:7890',
+          }
+        },
+      }
+      const confirmPluginAction = vi.fn(async () => true)
+      const handlers = createMethodHandlers({
+        kernel,
+        bus,
+        themeRegistry: new ThemeRegistryImpl(),
+        proxySettings,
+        confirmPluginAction,
+      })
+
+      expect(await handlers[channels.settingsProxyGet]!(undefined)).toEqual({
+        mode: 'system',
+        resolved: 'PROXY 127.0.0.1:7890',
+      })
+      expect(
+        await handlers[channels.settingsProxySet]!({
+          mode: 'manual',
+          address: 'http://127.0.0.1:7890',
+          bypass: 'localhost',
+        }),
+      ).toEqual({
+        mode: 'manual',
+        address: 'http://127.0.0.1:7890',
+        bypass: 'localhost',
+        resolved: 'PROXY 127.0.0.1:7890',
+      })
+      expect(seen).toEqual([
+        {
+          mode: 'manual',
+          address: 'http://127.0.0.1:7890',
+          bypass: 'localhost',
+        },
+      ])
+      expect(confirmPluginAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'proxy-change',
+          detail: expect.stringContaining('http://127.0.0.1:7890'),
+        }),
+      )
+      await expect(async () =>
+        handlers[channels.settingsProxySet]!({ mode: 'manual' }),
+      ).rejects.toMatchObject({ code: 'E_SETTINGS_INVALID' })
     } finally {
       await kernel.shutdown()
     }

@@ -10,16 +10,18 @@
 import { createHash } from 'node:crypto'
 import {
   access,
+  cp,
   mkdir,
   mkdtemp,
   readFile,
   readdir,
+  rename,
   rm,
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Kernel } from '../../src/kernel/kernel.js'
 import { KernelTokens } from '../../src/kernel/contracts/kernel-tokens.js'
 import type { EventBus } from '../../src/kernel/contracts/event-bus.js'
@@ -27,6 +29,9 @@ import { Topics } from '../../src/kernel/topics.js'
 import { LocalPluginManager } from '../../src/host/plugins/local-plugin-manager.js'
 import { PluginStateStore } from '../../src/host/plugins/state-store.js'
 import { PluginProvenanceStore } from '../../src/host/plugins/provenance-store.js'
+import { PluginGrantStore } from '../../src/host/plugins/grant-store.js'
+import { PluginRemovedStore } from '../../src/host/plugins/removed-plugin-store.js'
+import { copyDirectorySafe } from '../../src/host/plugins/safe-fs.js'
 import { ThemeRegistryImpl } from '../../src/host/electron/theme-registry.js'
 import { createMethodHandlers } from '../../src/host/ipc/method-handlers.js'
 import { IpcBridge } from '../../src/host/ipc/bridge.js'
@@ -61,8 +66,12 @@ interface RemoteEnv {
   dataRoot: string
   packagesRoot: string
   provenanceFile: string
+  grantsFile: string
+  removedFile: string
   state: PluginStateStore
   provenance: PluginProvenanceStore
+  grants: PluginGrantStore
+  removed: PluginRemovedStore
   kernel: Kernel
   manager: LocalPluginManager
   routes: Map<string, () => Response>
@@ -162,7 +171,9 @@ function createFetch(routes: Map<string, () => Response>): typeof fetch {
   }) as typeof fetch
 }
 
-async function createEnv(): Promise<RemoteEnv> {
+async function createEnv(
+  options: { copyDirectory?: typeof copyDirectorySafe } = {},
+): Promise<RemoteEnv> {
   const root = await mkdtemp(path.join(tmpdir(), 'rem2-remote-'))
   const userRoot = path.join(root, 'user-plugins')
   const builtinRoot = path.join(root, 'builtin-plugins')
@@ -175,6 +186,12 @@ async function createEnv(): Promise<RemoteEnv> {
   const provenanceFile = path.join(root, 'plugin-provenance.json')
   const provenance = new PluginProvenanceStore(provenanceFile)
   await provenance.load()
+  const grantsFile = path.join(root, 'plugin-grants.json')
+  const grants = new PluginGrantStore(grantsFile)
+  await grants.load()
+  const removedFile = path.join(root, 'plugin-removed.json')
+  const removed = new PluginRemovedStore(removedFile)
+  await removed.load()
 
   const routes = new Map<string, () => Response>()
   const fetchImpl = createFetch(routes)
@@ -182,6 +199,7 @@ async function createEnv(): Promise<RemoteEnv> {
     id: 'rem2-remote-plugin-test',
     roots: [userRoot],
     builtinRoot,
+    grantedCapabilities: id => grants.get(id),
     disabledPlugins: state.ids(),
     startTimeoutMs: 5000,
     stopTimeoutMs: 5000,
@@ -196,8 +214,11 @@ async function createEnv(): Promise<RemoteEnv> {
     state,
     builtinRoot,
     provenance,
+    grants,
+    removed,
     packagesRoot,
     fetchImpl,
+    ...(options.copyDirectory ? { copyDirectory: options.copyDirectory } : {}),
   })
 
   const env: RemoteEnv = {
@@ -207,8 +228,12 @@ async function createEnv(): Promise<RemoteEnv> {
     dataRoot,
     packagesRoot,
     provenanceFile,
+    grantsFile,
+    removedFile,
     state,
     provenance,
+    grants,
+    removed,
     kernel,
     manager,
     routes,
@@ -307,7 +332,7 @@ describe('integration · remote plugin inspect and install', () => {
     expect(serialized).not.toContain(env.root)
   })
 
-  it('installs from the cached package disabled, records provenance and exposes origin', async () => {
+  it('installs from the cached package enabled, records provenance and exposes origin', async () => {
     const env = await createEnv()
     const marker = path.join(env.root, 'executed.marker')
     const zip = buildPluginZip({
@@ -333,13 +358,14 @@ describe('integration · remote plugin inspect and install', () => {
       id: PLUGIN_ID,
       version: '1.0.0',
       source: 'user',
-      state: 'Disabled',
-      enabled: false,
+      state: 'Active',
+      enabled: true,
       canUninstall: true,
       origin: { kind: 'remote', url: REPO_SOURCE, sha256: digest },
     })
     expect(installed.restartRequired).toBe(false)
-    await expect(access(marker)).rejects.toThrow()
+    // Installation enables the plugin immediately.
+    expect(await readFile(marker, 'utf8')).toBe('executed')
     await access(path.join(env.userRoot, PLUGIN_ID, 'plugin.json'))
 
     const provenance = JSON.parse(
@@ -359,6 +385,140 @@ describe('integration · remote plugin inspect and install', () => {
     const detail = await env.manager.detail(PLUGIN_ID)
     expect(JSON.stringify(detail)).not.toMatch(/rootDir|container/)
     expect(JSON.stringify(detail)).not.toContain(env.userRoot)
+  })
+
+  it('records install-time capability approval and enables the plugin', async () => {
+    const env = await createEnv()
+    const zip = buildPluginZip({
+      version: '1.0.0',
+      requires: ['ui.panel'],
+    })
+    const digest = digestOf(zip)
+    env.publish({ version: '1.0.0', zip, digest })
+
+    const inspection = await env.manager.inspectRemote({
+      url: REPO_SOURCE,
+      operationId: 'inspect-approve',
+    })
+    expect(inspection.requires).toEqual(['ui.panel'])
+
+    // Approvals never exceed the manifest.
+    await expect(
+      env.manager.installFromRemote({
+        url: REPO_SOURCE,
+        operationId: 'install-undeclared',
+        sha256: digest,
+        capabilities: ['ui.theme'],
+      }),
+    ).rejects.toMatchObject({ code: 'E_CAPABILITY_INVALID' })
+
+    const installed = await env.manager.installFromRemote({
+      url: REPO_SOURCE,
+      operationId: 'install-approved',
+      sha256: digest,
+      capabilities: inspection.requires,
+    })
+
+    expect(installed.plugin).toMatchObject({
+      version: '1.0.0',
+      state: 'Active',
+      enabled: true,
+      permissions: { granted: ['ui.panel'], denied: [] },
+    })
+    expect(env.grants.get(PLUGIN_ID)).toEqual(['ui.panel'])
+    const persisted = JSON.parse(await readFile(env.grantsFile, 'utf8')) as {
+      entries: Record<string, string[]>
+    }
+    expect(persisted.entries[PLUGIN_ID]).toEqual(['ui.panel'])
+  })
+
+  it('keeps an uninstalled remote plugin listed and reinstalls its recorded release', async () => {
+    const env = await createEnv()
+    const zip = buildPluginZip({
+      version: '1.0.0',
+      requires: ['ui.panel'],
+    })
+    const digest = digestOf(zip)
+    env.publish({ version: '1.0.0', zip, digest })
+
+    await env.manager.installFromRemote({
+      url: REPO_SOURCE,
+      operationId: 'install-removed',
+      sha256: digest,
+      capabilities: ['ui.panel'],
+    })
+    await env.manager.uninstall(PLUGIN_ID)
+
+    expect(
+      (await env.manager.list()).plugins.find(
+        plugin => plugin.id === PLUGIN_ID,
+      ),
+    ).toMatchObject({
+      state: 'NotInstalled',
+      enabled: false,
+      canUninstall: false,
+      canInstall: true,
+      origin: { kind: 'remote', url: REPO_SOURCE, sha256: digest },
+    })
+    // Uninstall clears the grants; the record still knows what was approved.
+    expect(env.grants.get(PLUGIN_ID)).toEqual([])
+
+    const reinstalled = await env.manager.reinstall(PLUGIN_ID)
+    expect(reinstalled.plugin).toMatchObject({
+      id: PLUGIN_ID,
+      version: '1.0.0',
+      state: 'Active',
+      enabled: true,
+      permissions: { granted: ['ui.panel'], denied: [] },
+      origin: { kind: 'remote', sha256: digest },
+    })
+    expect(env.grants.get(PLUGIN_ID)).toEqual(['ui.panel'])
+    expect(
+      (await env.manager.list()).plugins.filter(
+        plugin => plugin.id === PLUGIN_ID,
+      ),
+    ).toHaveLength(1)
+  })
+
+  it('requires native confirmation before reinstalling a removed plugin', async () => {
+    const env = await createEnv()
+    const zip = buildPluginZip({
+      version: '1.0.0',
+      requires: ['ui.panel'],
+    })
+    env.publish({ version: '1.0.0', zip, digest: digestOf(zip) })
+    await env.manager.installFromRemote({
+      url: REPO_SOURCE,
+      operationId: 'install-confirm-removed',
+      capabilities: ['ui.panel'],
+    })
+    await env.manager.uninstall(PLUGIN_ID)
+
+    const bus = env.kernel.root.resolve<EventBus>(KernelTokens.EventBus)
+    const confirmPluginAction = vi.fn(async () => false)
+    const handlers = createMethodHandlers({
+      kernel: env.kernel,
+      bus,
+      themeRegistry: new ThemeRegistryImpl(),
+      pluginManager: env.manager,
+      confirmPluginAction,
+    })
+
+    await expect(
+      handlers[channels.pluginReinstall]!({ pluginId: PLUGIN_ID }),
+    ).rejects.toMatchObject({ code: 'E_CONFIRMATION_DENIED' })
+    expect(confirmPluginAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'remote-install',
+        detail: expect.stringContaining('ui.panel'),
+      }),
+    )
+    // Nothing was installed by the rejected confirmation.
+    expect(
+      (await env.manager.list()).plugins.find(
+        plugin => plugin.id === PLUGIN_ID,
+      ),
+    ).toMatchObject({ state: 'NotInstalled' })
   })
 
   it('blocks installation when the release publishes no digest', async () => {
@@ -392,6 +552,25 @@ describe('integration · remote plugin inspect and install', () => {
       name.includes('.part-'),
     )
     expect(leftovers).toEqual([])
+  })
+
+  it('keeps the plugin disabled when provenance write fails after commit', async () => {
+    const env = await createEnv()
+    const zip = buildPluginZip({ version: '1.0.0' })
+    env.publish({ version: '1.0.0', zip, digest: digestOf(zip) })
+    vi.spyOn(env.provenance, 'set').mockRejectedValueOnce(
+      new Error('provenance disk full'),
+    )
+
+    await expect(
+      env.manager.installFromRemote({
+        url: REPO_SOURCE,
+        operationId: 'install-provenance-failure',
+      }),
+    ).rejects.toMatchObject({ code: 'E_INSTALL_FAILED' })
+
+    expect(env.state.isDisabled(PLUGIN_ID)).toBe(true)
+    expect(await listEntries(env.userRoot)).toEqual([])
   })
 
   it('drops a poisoned cache entry when an inspect digest does not match', async () => {
@@ -442,6 +621,225 @@ describe('integration · remote plugin inspect and install', () => {
     expect(env.manager.cancelDownload('missing-operation')).toBe(false)
     expect(env.manager.cancelDownload('missing-operation')).toBe(false)
   })
+
+  it('honours cancellation before the install commit starts', async () => {
+    const env = await createEnv()
+    const zip = buildPluginZip({ version: '1.0.0' })
+    env.publish({ version: '1.0.0', zip, digest: digestOf(zip) })
+    let cancelled = false
+
+    await expect(
+      env.manager.installFromRemote(
+        {
+          url: REPO_SOURCE,
+          operationId: 'install-cancel-before-commit',
+        },
+        progress => {
+          if (progress.phase === 'installing') {
+            cancelled = env.manager.cancelDownload(
+              'install-cancel-before-commit',
+            )
+          }
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'E_CANCELLED' })
+
+    expect(cancelled).toBe(true)
+    expect(await listEntries(env.userRoot)).toEqual([])
+  })
+
+  it('refuses cancellation once the install commit section has started', async () => {
+    const env = await createEnv()
+    const zip = buildPluginZip({ version: '1.0.0' })
+    env.publish({ version: '1.0.0', zip, digest: digestOf(zip) })
+
+    let lateCancel: boolean | undefined
+    const installed = await env.manager.installFromRemote(
+      { url: REPO_SOURCE, operationId: 'install-cancel-mid-commit' },
+      progress => {
+        if (progress.phase !== 'installing') return
+        // The commit section starts as soon as this callback returns, so a
+        // cancellation on a later task must be refused rather than abort a
+        // half-committed install.
+        setTimeout(() => {
+          lateCancel = env.manager.cancelDownload('install-cancel-mid-commit')
+        }, 0)
+      },
+    )
+
+    expect(lateCancel).toBe(false)
+    expect(installed.changed).toBe(true)
+    expect(await listEntries(env.userRoot)).toEqual([PLUGIN_ID])
+  })
+
+  it('restores an orphaned backup when the journal is missing', async () => {
+    const env = await createEnv()
+    const zip = buildPluginZip({ version: '1.0.0' })
+    env.publish({ version: '1.0.0', zip, digest: digestOf(zip) })
+    await env.manager.installFromRemote({
+      url: REPO_SOURCE,
+      operationId: 'install-orphan',
+    })
+    const target = path.join(env.userRoot, PLUGIN_ID)
+    await rename(target, path.join(env.userRoot, `.backup-${PLUGIN_ID}-orphan`))
+
+    await env.manager.prepare()
+
+    await access(path.join(target, 'plugin.json'))
+    expect(await listEntries(env.userRoot)).toEqual([PLUGIN_ID])
+  })
+
+  it('recovers an update interrupted after the old directory was moved aside', async () => {
+    const env = await createEnv()
+    const zip = buildPluginZip({ version: '1.0.0' })
+    env.publish({ version: '1.0.0', zip, digest: digestOf(zip) })
+    await env.manager.installFromRemote({
+      url: REPO_SOURCE,
+      operationId: 'install-recovery',
+    })
+    const oldEntry = env.provenance.get(PLUGIN_ID)!
+    const pluginDir = path.join(env.userRoot, PLUGIN_ID)
+    const backupName = `.backup-${PLUGIN_ID}-crash`
+    const workName = '.update-crash'
+    await rename(pluginDir, path.join(env.userRoot, backupName))
+    await mkdir(path.join(env.userRoot, workName))
+    const journalDir = path.join(env.root, 'plugin-transactions')
+    await mkdir(journalDir)
+    await writeFile(
+      path.join(journalDir, `${PLUGIN_ID}.json`),
+      JSON.stringify({
+        version: 1,
+        pluginId: PLUGIN_ID,
+        stage: 'backed-up',
+        backupName,
+        workName,
+        previousDisabled: true,
+        previousProvenance: oldEntry,
+        nextProvenance: {
+          ...oldEntry,
+          sha256: 'b'.repeat(64),
+          installedAt: '2026-03-01T00:00:00Z',
+        },
+      }),
+    )
+
+    await env.manager.prepare()
+
+    await access(path.join(pluginDir, 'plugin.json'))
+    expect(await listEntries(env.userRoot)).toEqual([PLUGIN_ID])
+    expect(env.provenance.get(PLUGIN_ID)?.sha256).toBe(oldEntry.sha256)
+    expect(await listEntries(journalDir)).toEqual([])
+    expect((await env.manager.detail(PLUGIN_ID)).enabled).toBe(false)
+  })
+
+  it('finishes cleanup for a committed update whose backup deletion failed', async () => {
+    const env = await createEnv()
+    const zip = buildPluginZip({ version: '1.0.0' })
+    env.publish({ version: '1.0.0', zip, digest: digestOf(zip) })
+    await env.manager.installFromRemote({
+      url: REPO_SOURCE,
+      operationId: 'install-committed-cleanup',
+    })
+    const oldEntry = env.provenance.get(PLUGIN_ID)!
+    const pluginDir = path.join(env.userRoot, PLUGIN_ID)
+    // Simulate a post-commit crash: the new tree is in place, the old tree is
+    // still parked as a backup and the journal already reached `committed`.
+    const backupName = `.backup-${PLUGIN_ID}-committed`
+    await cp(pluginDir, path.join(env.userRoot, backupName), {
+      recursive: true,
+    })
+    const journalDir = path.join(env.root, 'plugin-transactions')
+    await mkdir(journalDir)
+    await writeFile(
+      path.join(journalDir, `${PLUGIN_ID}.json`),
+      JSON.stringify({
+        version: 1,
+        pluginId: PLUGIN_ID,
+        stage: 'committed',
+        backupName,
+        workName: '.update-committed',
+        previousDisabled: true,
+        previousProvenance: { ...oldEntry, sha256: 'a'.repeat(64) },
+        nextProvenance: oldEntry,
+      }),
+    )
+
+    await env.manager.prepare()
+
+    await access(path.join(pluginDir, 'plugin.json'))
+    expect(await listEntries(env.userRoot)).toEqual([PLUGIN_ID])
+    expect(env.provenance.get(PLUGIN_ID)?.sha256).toBe(oldEntry.sha256)
+    expect(await listEntries(journalDir)).toEqual([])
+  })
+
+  it('never exposes a half-updated plugin to a concurrent list()', async () => {
+    let markCommitOpen!: () => void
+    const commitOpen = new Promise<void>(resolve => {
+      markCommitOpen = resolve
+    })
+    let releaseCommit!: () => void
+    const commitGate = new Promise<void>(resolve => {
+      releaseCommit = resolve
+    })
+    let paused = false
+    const env = await createEnv({
+      // Pause inside the commit section, between the directory swap and the
+      // provenance write, which is the window a naive read would tear.
+      copyDirectory: async (from, to, options) => {
+        if (!paused) {
+          paused = true
+          markCommitOpen()
+          await commitGate
+        }
+        await copyDirectorySafe(from, to, options)
+      },
+    })
+
+    const firstZip = buildPluginZip({ version: '1.0.0' })
+    env.publish({ version: '1.0.0', zip: firstZip, digest: digestOf(firstZip) })
+    await env.manager.installFromRemote({
+      url: REPO_SOURCE,
+      operationId: 'install-snapshot',
+    })
+    await writeUserData(env)
+
+    const secondZip = buildPluginZip({ version: '2.0.0' })
+    const secondDigest = digestOf(secondZip)
+    env.publish({
+      version: '2.0.0',
+      zip: secondZip,
+      digest: secondDigest,
+      publishedAt: '2026-02-01T00:00:00Z',
+    })
+
+    const updating = env.manager.applyUpdate({
+      pluginId: PLUGIN_ID,
+      operationId: 'update-snapshot',
+      expectedVersion: '2.0.0',
+      expectedSha256: secondDigest,
+    })
+    await commitOpen
+
+    let settled = false
+    const listing = env.manager.list().then(value => {
+      settled = true
+      return value
+    })
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(settled).toBe(false)
+
+    releaseCommit()
+    const updated = await updating
+    const listed = await listing
+    expect(updated.ok).toBe(true)
+    expect(
+      listed.plugins.find(plugin => plugin.id === PLUGIN_ID),
+    ).toMatchObject({
+      id: PLUGIN_ID,
+      version: '2.0.0',
+      origin: { kind: 'remote', sha256: secondDigest },
+    })
+  })
 })
 
 describe('integration · remote plugin updates', () => {
@@ -479,7 +877,91 @@ describe('integration · remote plugin updates', () => {
     })
   })
 
-  it('updates a disabled plugin in place and preserves config and data', async () => {
+  it('reports source failures during a bulk check instead of pretending there are no updates', async () => {
+    const env = await createEnv()
+    const zip = buildPluginZip({ version: '1.0.0' })
+    env.publish({ version: '1.0.0', zip, digest: digestOf(zip) })
+    await env.manager.installFromRemote({
+      url: REPO_SOURCE,
+      operationId: 'install-check-failure',
+    })
+    env.routes.set(
+      'https://api.github.com/repos/acme/hello/releases/latest',
+      () => new Response('unavailable', { status: 503 }),
+    )
+
+    const checked = await env.manager.checkUpdates()
+    expect(checked.updates).toEqual([])
+    expect(checked.issues).toHaveLength(1)
+    expect(checked.issues[0]).toContain(PLUGIN_ID)
+    expect(checked.issues[0]).toContain('503')
+  })
+
+  it('rejects an update when the release changed after it was checked', async () => {
+    const env = await createEnv()
+    const firstZip = buildPluginZip({ version: '1.0.0' })
+    env.publish({ version: '1.0.0', zip: firstZip, digest: digestOf(firstZip) })
+    await env.manager.installFromRemote({
+      url: REPO_SOURCE,
+      operationId: 'install-toctou',
+    })
+
+    const secondZip = buildPluginZip({ version: '2.0.0' })
+    const secondDigest = digestOf(secondZip)
+    env.publish({ version: '2.0.0', zip: secondZip, digest: secondDigest })
+    const checked = await env.manager.checkUpdates(PLUGIN_ID)
+    expect(checked.updates[0]).toMatchObject({
+      latestVersion: '2.0.0',
+      sha256: secondDigest,
+    })
+
+    const thirdZip = buildPluginZip({ version: '3.0.0' })
+    env.publish({
+      version: '3.0.0',
+      zip: thirdZip,
+      digest: digestOf(thirdZip),
+    })
+
+    await expect(
+      env.manager.applyUpdate({
+        pluginId: PLUGIN_ID,
+        operationId: 'update-toctou',
+        expectedVersion: '2.0.0',
+        expectedSha256: secondDigest,
+      }),
+    ).rejects.toMatchObject({ code: 'E_UPDATE_CHANGED' })
+
+    expect((await env.manager.detail(PLUGIN_ID)).version).toBe('1.0.0')
+    expect(await listEntries(env.userRoot)).toEqual([PLUGIN_ID])
+  })
+
+  it('rejects a package whose manifest version does not match the release', async () => {
+    const env = await createEnv()
+    const firstZip = buildPluginZip({ version: '1.0.0' })
+    env.publish({ version: '1.0.0', zip: firstZip, digest: digestOf(firstZip) })
+    await env.manager.installFromRemote({
+      url: REPO_SOURCE,
+      operationId: 'install-version-mismatch',
+    })
+
+    const mismatchedZip = buildPluginZip({ version: '1.5.0' })
+    const digest = digestOf(mismatchedZip)
+    env.publish({ version: '2.0.0', zip: mismatchedZip, digest })
+
+    await expect(
+      env.manager.applyUpdate({
+        pluginId: PLUGIN_ID,
+        operationId: 'update-version-mismatch',
+        expectedVersion: '2.0.0',
+        expectedSha256: digest,
+      }),
+    ).rejects.toMatchObject({ code: 'E_MANIFEST_INVALID' })
+
+    expect((await env.manager.detail(PLUGIN_ID)).version).toBe('1.0.0')
+    expect(await listEntries(env.userRoot)).toEqual([PLUGIN_ID])
+  })
+
+  it('updates a live plugin in place and preserves config and data', async () => {
     const env = await createEnv()
     const firstZip = buildPluginZip({ version: '1.0.0' })
     const firstDigest = digestOf(firstZip)
@@ -490,7 +972,15 @@ describe('integration · remote plugin updates', () => {
     })
     await writeUserData(env)
 
-    const secondZip = buildPluginZip({ version: '2.0.0' })
+    const secondZip = buildPluginZip({
+      version: '2.0.0',
+      extraEntries: [
+        {
+          name: 'config/settings.json',
+          content: '{"a":"default-from-v2"}',
+        },
+      ],
+    })
     const secondDigest = digestOf(secondZip)
     env.publish({
       version: '2.0.0',
@@ -502,6 +992,8 @@ describe('integration · remote plugin updates', () => {
     const updated = await env.manager.applyUpdate({
       pluginId: PLUGIN_ID,
       operationId: 'update-v2',
+      expectedVersion: '2.0.0',
+      expectedSha256: secondDigest,
     })
 
     expect(updated.ok).toBe(true)
@@ -510,7 +1002,8 @@ describe('integration · remote plugin updates', () => {
     expect(updated.plugin).toMatchObject({
       id: PLUGIN_ID,
       version: '2.0.0',
-      state: 'Disabled',
+      state: 'Active',
+      enabled: true,
       origin: { kind: 'remote', sha256: secondDigest },
     })
     expect(
@@ -534,6 +1027,39 @@ describe('integration · remote plugin updates', () => {
     expect(await listEntries(env.userRoot)).toEqual([PLUGIN_ID])
   })
 
+  it('installs a capability-adding update disabled for explicit approval', async () => {
+    const env = await createEnv()
+    const firstZip = buildPluginZip({ version: '1.0.0' })
+    env.publish({ version: '1.0.0', zip: firstZip, digest: digestOf(firstZip) })
+    await env.manager.installFromRemote({
+      url: REPO_SOURCE,
+      operationId: 'install-before-capability-update',
+    })
+    expect((await env.manager.detail(PLUGIN_ID)).state).toBe('Active')
+
+    const secondZip = buildPluginZip({
+      version: '2.0.0',
+      requires: ['ui.panel'],
+    })
+    const secondDigest = digestOf(secondZip)
+    env.publish({ version: '2.0.0', zip: secondZip, digest: secondDigest })
+
+    const result = await env.manager.applyUpdate({
+      pluginId: PLUGIN_ID,
+      operationId: 'update-adds-capability',
+      expectedVersion: '2.0.0',
+      expectedSha256: secondDigest,
+    })
+
+    expect(result.plugin).toMatchObject({
+      version: '2.0.0',
+      state: 'Disabled',
+      enabled: false,
+      permissions: { denied: ['ui.panel'] },
+    })
+    expect(result.message).toContain('require approval')
+  })
+
   it('reports changed:false when the installed version is already newest', async () => {
     const env = await createEnv()
     const zip = buildPluginZip({ version: '1.0.0' })
@@ -546,6 +1072,8 @@ describe('integration · remote plugin updates', () => {
     const result = await env.manager.applyUpdate({
       pluginId: PLUGIN_ID,
       operationId: 'update-current',
+      expectedVersion: '1.0.0',
+      expectedSha256: digestOf(zip),
     })
     expect(result).toMatchObject({ changed: false, restartRequired: false })
     expect(result.plugin?.version).toBe('1.0.0')
@@ -564,7 +1092,6 @@ describe('integration · remote plugin updates', () => {
       url: REPO_SOURCE,
       operationId: 'install-rollback-v1',
     })
-    await env.manager.enable(PLUGIN_ID)
     expect((await env.manager.detail(PLUGIN_ID)).state).toBe('Active')
     await writeUserData(env)
 
@@ -576,16 +1103,19 @@ export default function factory() {
 }
 `,
     })
+    const brokenDigest = digestOf(brokenZip)
     env.publish({
       version: '2.0.0',
       zip: brokenZip,
-      digest: digestOf(brokenZip),
+      digest: brokenDigest,
     })
 
     await expect(
       env.manager.applyUpdate({
         pluginId: PLUGIN_ID,
         operationId: 'update-broken',
+        expectedVersion: '2.0.0',
+        expectedSha256: brokenDigest,
       }),
     ).rejects.toMatchObject({ code: 'E_UPDATE_FAILED' })
 
@@ -627,6 +1157,8 @@ export default function factory() {
       env.manager.applyUpdate({
         pluginId: PLUGIN_ID,
         operationId: 'update-dep',
+        expectedVersion: '2.0.0',
+        expectedSha256: digestOf(brokenZip),
       }),
     ).rejects.toMatchObject({ code: 'E_DEPENDENCY' })
 
@@ -650,6 +1182,8 @@ export default function factory() {
       env.manager.applyUpdate({
         pluginId: 'com.acme.local',
         operationId: 'update-local',
+        expectedVersion: '9.9.9',
+        expectedSha256: 'a'.repeat(64),
       }),
     ).rejects.toMatchObject({ code: 'E_PROVENANCE_MISSING' })
     await expect(
@@ -698,6 +1232,8 @@ describe('integration · remote plugin IPC boundary', () => {
       handlers[channels.pluginUpdateInstall]!({
         operationId: 'op-1',
         pluginId: '../escape',
+        expectedVersion: '2.0.0',
+        expectedSha256: 'a'.repeat(64),
       }),
     ).rejects.toThrow(/invalid format/)
     expect(() =>

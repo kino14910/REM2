@@ -20,6 +20,7 @@ import {
   parsePluginList,
   parsePluginOperation,
   parsePluginUpdateCheck,
+  parseProxySettings,
   parseRouteList,
 } from '../../src/frontend/lib/dto-guards.js'
 import type { PluginDetailDto } from '../../src/shared/ipc-contract.js'
@@ -53,6 +54,7 @@ function validPlugin(): PluginDetailDto {
     permissions: { granted: [], denied: [] },
     compatibility: { minKernel: '^1.0.0', contractVersion: '1' },
     canUninstall: true,
+    canInstall: false,
     restartRequired: false,
   }
 }
@@ -317,6 +319,39 @@ describe('unit · dto guards · parsePanelData', () => {
   })
 })
 
+describe('unit · dto guards · proxy settings', () => {
+  it('accepts system settings with the resolved proxy diagnostic', () => {
+    expect(
+      parseProxySettings({ mode: 'system', resolved: 'PROXY 127.0.0.1:7890' }),
+    ).toEqual({ mode: 'system', resolved: 'PROXY 127.0.0.1:7890' })
+  })
+
+  it('accepts manual settings with address and bypass', () => {
+    expect(
+      parseProxySettings({
+        mode: 'manual',
+        address: '127.0.0.1:7890',
+        bypass: 'localhost',
+      }),
+    ).toEqual({
+      mode: 'manual',
+      address: '127.0.0.1:7890',
+      bypass: 'localhost',
+    })
+  })
+
+  it.each([
+    ['null', null],
+    ['an array', []],
+    ['an unknown mode', { mode: 'auto' }],
+    ['manual without an address', { mode: 'manual' }],
+    ['a non-string address', { mode: 'manual', address: 42 }],
+    ['an oversized bypass', { mode: 'system', bypass: 'x'.repeat(513) }],
+  ])('rejects %s', (_label, value) => {
+    expect(() => parseProxySettings(value)).toThrow(/invalid proxy settings/)
+  })
+})
+
 describe('unit · dto guards · plugin management', () => {
   it('accepts a valid plugin list and merges host issues', () => {
     const result = parsePluginList({
@@ -481,6 +516,26 @@ describe('unit · dto guards · remote install DTOs', () => {
     expect(parsed.issues).toHaveLength(4)
     expect(parsed.issues[0]).toContain('update[1]')
     expect(parsed.issues[3]).toContain('update[4]')
+  })
+
+  it('keeps host-reported update source issues alongside malformed entries', () => {
+    const good = {
+      pluginId: 'com.acme.hello',
+      currentVersion: '1.0.0',
+      latestVersion: '1.1.0',
+      hasUpdate: true,
+      url: 'https://github.com/acme/hello',
+      sha256: DIGEST,
+    }
+    const parsed = parsePluginUpdateCheck({
+      updates: [good, { ...good, pluginId: '' }],
+      issues: ['com.acme.offline: HTTP 503'],
+    })
+    expect(parsed.items).toEqual([good])
+    expect(parsed.issues).toEqual([
+      'com.acme.offline: HTTP 503',
+      expect.stringContaining('update[1]'),
+    ])
   })
 
   it('rejects malformed update envelopes', () => {

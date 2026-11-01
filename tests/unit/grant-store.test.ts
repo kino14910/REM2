@@ -64,7 +64,10 @@ describe('unit · plugin grant store', () => {
   it.each([
     ['bad JSON', '{"version":1'],
     ['invalid id', '{"version":1,"entries":{"../escape":["ui.panel"]}}'],
-    ['empty capability list', '{"version":1,"entries":{"com.example.plugin":[]}}'],
+    [
+      'empty capability list',
+      '{"version":1,"entries":{"com.example.plugin":[]}}',
+    ],
     [
       'invalid capability',
       JSON.stringify({
