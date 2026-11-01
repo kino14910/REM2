@@ -24,6 +24,7 @@ type PluginAction =
   | 'disable'
   | 'grant'
   | 'uninstall'
+  | 'reinstall'
 
 export type RemotePending =
   | 'inspecting'
@@ -60,9 +61,18 @@ const PLUGIN_ERROR_TEXT: Record<string, string> = {
   E_DEPENDENCY: 'The plugin has an unsatisfied hard dependency.',
   E_INCOMPATIBLE: 'The plugin is not compatible with this kernel.',
   E_UPDATE_FAILED: 'The update failed; the previous version was restored.',
+  E_UPDATE_CHANGED:
+    'The release changed after it was checked. Review the update again.',
+  E_UPDATE_COMMITTED:
+    'The update completed, but the status could not be refreshed. Reload the plugin list.',
   E_ROLLBACK_FAILED:
     'The update failed and the rollback did not complete; inspect the plugin directory.',
   E_INSTALL_FAILED: 'The installation failed and was cleaned up.',
+  E_CONFIRMATION_DENIED: 'The action was cancelled at the system confirmation.',
+  E_TARGET_CHANGED:
+    'The plugin changed while confirmation was pending. Review it again.',
+  E_CONFIRMATION_UNAVAILABLE:
+    'This host cannot display the required confirmation dialog.',
   E_OPERATION_IN_PROGRESS:
     'Another operation is already running for this plugin.',
   E_MANAGER_UNAVAILABLE: 'Plugin management is unavailable.',
@@ -96,7 +106,6 @@ class PluginsStore {
   pending = $state<{ action: PluginAction; pluginId?: string } | undefined>(
     undefined,
   )
-  confirmation = $state<{ pluginId: string } | undefined>(undefined)
   selected = $derived(this.items.find(item => item.id === this.selectedId))
 
   /** Remote install flow: inspection is the read-only preview shown before confirmation. */
@@ -154,23 +163,37 @@ class PluginsStore {
     )
   }
 
+  /**
+   * Consent flow: grant the approved capabilities and enable in one host call.
+   * The main process confirms both together, then persists the grant before
+   * starting the plugin, so a grant failure cannot fall through to enable.
+   */
+  grantAndEnable(pluginId: string, capabilities: string[]): Promise<void> {
+    return this.invoke(
+      'enable',
+      channels.pluginEnable,
+      { pluginId, capabilities },
+      pluginId,
+    )
+  }
+
   disable(pluginId: string): Promise<void> {
     return this.run('disable', pluginId)
   }
 
-  requestUninstall(pluginId: string): void {
-    this.confirmation = { pluginId }
+  /** Uninstall directly: no confirmation banner or dialog. */
+  uninstall(pluginId: string): Promise<void> {
+    return this.run('uninstall', pluginId)
   }
 
-  cancelConfirmation(): void {
-    this.confirmation = undefined
-  }
-
-  confirm(): Promise<void> {
-    const confirmation = this.confirmation
-    this.confirmation = undefined
-    if (!confirmation) return Promise.resolve()
-    return this.run('uninstall', confirmation.pluginId)
+  /** Install an uninstalled remote plugin again from its recorded release. */
+  reinstall(pluginId: string): Promise<void> {
+    return this.invoke(
+      'reinstall',
+      channels.pluginReinstall,
+      { pluginId },
+      pluginId,
+    )
   }
 
   installFromDirectory(): Promise<void> {
@@ -207,7 +230,11 @@ class PluginsStore {
     }
   }
 
-  /** Install the currently inspected package after explicit user confirmation. */
+  /**
+   * Install the inspected package after explicit approval. The declared
+   * capabilities are approved in this same step, so installation enables the
+   * plugin instead of deferring consent to a later enable.
+   */
   async installRemote(): Promise<void> {
     const inspection = this.inspection
     if (!inspection || this.remotePending) return
@@ -215,6 +242,10 @@ class PluginsStore {
     this.progress = undefined
     this.remoteError = undefined
     this.activeOperationId = newOperationId()
+    // `inspection` is a `$state` proxy; the IPC layer structured-clones its
+    // arguments, and a proxy array cannot be cloned ("An object could not be
+    // cloned"). Copy it into a plain array before sending.
+    const capabilities = [...inspection.requires]
     try {
       const result = parsePluginOperation(
         await ipc.request<PluginOperationResultDto>(
@@ -223,6 +254,7 @@ class PluginsStore {
             operationId: this.activeOperationId,
             url: inspection.url,
             ...(inspection.sha256 ? { sha256: inspection.sha256 } : {}),
+            ...(capabilities.length > 0 ? { capabilities } : {}),
           },
         ),
       )
@@ -277,9 +309,18 @@ class PluginsStore {
     }
   }
 
-  /** Apply an update for one plugin; the caller must have confirmed first. */
-  async applyUpdate(pluginId: string): Promise<void> {
+  /**
+   * Apply one checked update. The version and digest are sent with the request
+   * and re-checked by the host, so a release that changes after confirmation
+   * is rejected instead of silently installed.
+   */
+  async applyUpdate(update: PluginUpdateDto): Promise<void> {
     if (this.remotePending) return
+    if (!update.sha256) {
+      this.updateError =
+        'The release does not publish a SHA-256 digest, so the update cannot be applied.'
+      return
+    }
     this.remotePending = 'updating'
     this.updateError = undefined
     this.remoteError = undefined
@@ -289,11 +330,18 @@ class PluginsStore {
       const result = parsePluginOperation(
         await ipc.request<PluginOperationResultDto>(
           channels.pluginUpdateInstall,
-          { operationId: this.activeOperationId, pluginId },
+          {
+            operationId: this.activeOperationId,
+            pluginId: update.pluginId,
+            expectedVersion: update.latestVersion,
+            expectedSha256: update.sha256,
+          },
         ),
       )
       this.applyResult(result)
-      this.updates = this.updates.filter(update => update.pluginId !== pluginId)
+      this.updates = this.updates.filter(
+        item => item.pluginId !== update.pluginId,
+      )
       await this.load()
     } catch (error) {
       this.updateError = pluginErrorText(error)
@@ -344,7 +392,7 @@ class PluginsStore {
       this.applyResult(result)
       await this.load()
     } catch (error) {
-      this.actionError = (error as Error).message
+      this.actionError = pluginErrorText(error)
       await this.load()
     } finally {
       this.pending = undefined

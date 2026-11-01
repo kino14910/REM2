@@ -19,7 +19,7 @@ export class PluginsRegistry implements PluginsRegistryView {
 
   /** All plugin entries (sorted by id for determinism). */
   allLoaded(): LoadedPlugin[] {
-    return Array.from(this.plugins.values()).sort((a, b) =>
+    return Array.from(this.plugins.values()).toSorted((a, b) =>
       a.manifest.id.localeCompare(b.manifest.id, 'en'),
     )
   }
