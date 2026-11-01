@@ -9,7 +9,7 @@ class RoutesStore {
   activePath = $state<string | undefined>(undefined)
   error = $state<string | undefined>(undefined)
 
-  ordered = $derived([...this.items].sort((a, b) => a.order - b.order))
+  ordered = $derived([...this.items].toSorted((a, b) => a.order - b.order))
   active = $derived(this.ordered.find(r => r.path === this.activePath))
 
   set(list: RouteDto[]): void {

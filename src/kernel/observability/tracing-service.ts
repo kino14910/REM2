@@ -69,7 +69,7 @@ export class TracingService implements Tracer {
   }
 
   listExporters(): string[] {
-    return Array.from(this.exporters.keys()).sort()
+    return Array.from(this.exporters.keys()).toSorted()
   }
 
   startSpan(name: string, attrs?: Record<string, unknown>): Span {

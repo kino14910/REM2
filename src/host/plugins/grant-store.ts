@@ -99,9 +99,9 @@ export class PluginGrantStore {
       )
     }
     const previous = this.grants[pluginId]
-    const merged = [...new Set([...(previous ?? []), ...capabilities])].toSorted(
-      (a, b) => a.localeCompare(b, 'en'),
-    )
+    const merged = [
+      ...new Set([...(previous ?? []), ...capabilities]),
+    ].toSorted((a, b) => a.localeCompare(b, 'en'))
     this.grants[pluginId] = merged
     try {
       await this.persist()

@@ -16,11 +16,11 @@ export class MutablePermissionSet implements PermissionSet {
   ) {}
 
   get granted(): readonly string[] {
-    return Array.from(this.grantedSet).sort()
+    return Array.from(this.grantedSet).toSorted()
   }
 
   get denied(): readonly string[] {
-    return Array.from(this.deniedSet).sort()
+    return Array.from(this.deniedSet).toSorted()
   }
 
   isGranted(capability: string): boolean {

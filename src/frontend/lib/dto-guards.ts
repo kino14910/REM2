@@ -17,6 +17,8 @@ import type {
   PluginRemoteInspectionDto,
   PluginRuntimeStateDto,
   PluginUpdateDto,
+  ProxyModeDto,
+  ProxySettingsDto,
 } from '../../shared/ipc-contract.js'
 
 /** Upper bound for rendered panel data (keeps a rogue plugin from freezing the UI). */
@@ -186,6 +188,12 @@ type FormAttempt =
   | { ok: true; fields: PanelFormDto['fields'] }
   | { ok: false; attempted: boolean; reason: string }
 
+const invalidForm = (reason: string): FormAttempt => ({
+  ok: false,
+  attempted: true,
+  reason: `invalid form: ${reason}`,
+})
+
 /** Validates the generic form contract; malformed declared forms never fall back to JSON. */
 function asForm(value: unknown): FormAttempt {
   if (typeof value !== 'object' || value === null) {
@@ -193,57 +201,52 @@ function asForm(value: unknown): FormAttempt {
   }
   const v = value as Record<string, unknown>
   if (v.kind !== 'form') return { ok: false, attempted: false, reason: '' }
-  const invalid = (reason: string): FormAttempt => ({
-    ok: false,
-    attempted: true,
-    reason: `invalid form: ${reason}`,
-  })
   if (!Array.isArray(v.fields) || v.fields.length === 0) {
-    return invalid('"fields" must be a non-empty array')
+    return invalidForm('"fields" must be a non-empty array')
   }
 
   const ids = new Set<string>()
   for (const entry of v.fields) {
     if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
-      return invalid('every field must be an object')
+      return invalidForm('every field must be an object')
     }
     const field = entry as Record<string, unknown>
     if (!isNonEmptyString(field.id) || !isNonEmptyString(field.label)) {
-      return invalid('field id and label must be non-empty strings')
+      return invalidForm('field id and label must be non-empty strings')
     }
-    if (ids.has(field.id)) return invalid(`duplicate field id: ${field.id}`)
+    if (ids.has(field.id)) return invalidForm(`duplicate field id: ${field.id}`)
     ids.add(field.id)
     if (typeof field.value !== 'string') {
-      return invalid(`field ${field.id} value must be a string`)
+      return invalidForm(`field ${field.id} value must be a string`)
     }
     if (field.type === 'color') {
       if (!/^#[0-9a-fA-F]{6}$/.test(field.value)) {
-        return invalid(`color field ${field.id} requires #RRGGBB`)
+        return invalidForm(`color field ${field.id} requires #RRGGBB`)
       }
       continue
     }
     if (field.type !== 'select') {
-      return invalid(`field ${field.id} has unsupported type`)
+      return invalidForm(`field ${field.id} has unsupported type`)
     }
     if (!Array.isArray(field.options) || field.options.length === 0) {
-      return invalid(`select field ${field.id} requires options`)
+      return invalidForm(`select field ${field.id} requires options`)
     }
     const options = new Set<string>()
     for (const option of field.options) {
       if (typeof option !== 'object' || option === null) {
-        return invalid(`select field ${field.id} has an invalid option`)
+        return invalidForm(`select field ${field.id} has an invalid option`)
       }
       const item = option as Record<string, unknown>
       if (!isNonEmptyString(item.value) || !isNonEmptyString(item.label)) {
-        return invalid(`select field ${field.id} has an invalid option`)
+        return invalidForm(`select field ${field.id} has an invalid option`)
       }
       if (options.has(item.value)) {
-        return invalid(`select field ${field.id} has duplicate options`)
+        return invalidForm(`select field ${field.id} has duplicate options`)
       }
       options.add(item.value)
     }
     if (!options.has(field.value)) {
-      return invalid(`select field ${field.id} value is not in options`)
+      return invalidForm(`select field ${field.id} value is not in options`)
     }
   }
   return { ok: true, fields: v.fields as PanelFormDto['fields'] }
@@ -307,6 +310,7 @@ const PLUGIN_STATES = new Set<PluginRuntimeStateDto>([
   'Unloaded',
   'Disposed',
   'Disabled',
+  'NotInstalled',
 ])
 
 function pluginIssue(entry: unknown, index: number): string | undefined {
@@ -329,6 +333,7 @@ function pluginIssue(entry: unknown, index: number): string | undefined {
     'enabled',
     'builtin',
     'canUninstall',
+    'canInstall',
     'restartRequired',
   ] as const) {
     if (typeof plugin[field] !== 'boolean') {
@@ -598,7 +603,9 @@ export function parsePluginUpdateCheck(value: unknown): {
     throw new Error('invalid update check: expected { updates: array }')
   }
   const items: PluginUpdateDto[] = []
-  const issues: string[] = []
+  const issues = Array.isArray(value.issues)
+    ? value.issues.filter((issue): issue is string => typeof issue === 'string')
+    : []
   value.updates.forEach((entry, index) => {
     const issue = updateIssue(entry, index)
     if (issue) issues.push(issue)
@@ -613,6 +620,51 @@ const DOWNLOAD_PHASES = new Set<PluginDownloadPhase>([
   'extracting',
   'installing',
 ])
+
+const PROXY_MODES = new Set<ProxyModeDto>(['system', 'direct', 'manual'])
+const MAX_SETTINGS_TEXT = 512
+
+/**
+ * Validates the host's proxy settings payload.
+ *
+ * Unlike a list this drives a form: a half-valid payload must never pre-fill
+ * the fields, so any bad field throws and the store degrades to its error state.
+ */
+export function parseProxySettings(value: unknown): ProxySettingsDto {
+  if (!isRecord(value)) {
+    throw new Error('invalid proxy settings: expected an object')
+  }
+  const mode = value.mode
+  if (typeof mode !== 'string' || !PROXY_MODES.has(mode as ProxyModeDto)) {
+    throw new Error(
+      'invalid proxy settings: mode must be "system", "direct" or "manual"',
+    )
+  }
+  for (const field of ['address', 'bypass', 'resolved'] as const) {
+    if (value[field] !== undefined && typeof value[field] !== 'string') {
+      throw new Error(`invalid proxy settings: "${field}" must be a string`)
+    }
+    if (
+      typeof value[field] === 'string' &&
+      value[field].length > MAX_SETTINGS_TEXT
+    ) {
+      throw new Error(
+        `invalid proxy settings: "${field}" must be at most ${MAX_SETTINGS_TEXT} characters`,
+      )
+    }
+  }
+  if (mode === 'manual' && !isNonEmptyString(value.address)) {
+    throw new Error(
+      'invalid proxy settings: manual mode requires a non-empty address',
+    )
+  }
+  return {
+    mode: mode as ProxyModeDto,
+    ...(typeof value.address === 'string' ? { address: value.address } : {}),
+    ...(typeof value.bypass === 'string' ? { bypass: value.bypass } : {}),
+    ...(typeof value.resolved === 'string' ? { resolved: value.resolved } : {}),
+  }
+}
 
 function isByteCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0

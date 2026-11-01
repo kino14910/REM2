@@ -48,7 +48,7 @@ export async function validateTarget(target: string): Promise<ValidateEntry[]> {
   // Case two: the target directory is a parent directory; probe each child directory's plugin.json in turn.
   const entries: ValidateEntry[] = []
   const children = await readdir(abs)
-  for (const child of children.sort()) {
+  for (const child of children.toSorted()) {
     const manifestPath = path.join(abs, child, 'plugin.json')
     if (!(await exists(manifestPath))) continue
     entries.push(await validateManifestFile(manifestPath))

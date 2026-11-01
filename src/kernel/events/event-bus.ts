@@ -248,7 +248,7 @@ export class EventBusImpl implements EventBus {
   private pickResponder(topic: string): Responder | undefined {
     const candidates = this.responders
       .filter(r => !r.removed && r.topic === topic)
-      .sort((a, b) => a.seq - b.seq)
+      .toSorted((a, b) => a.seq - b.seq)
     return candidates[0]
   }
 

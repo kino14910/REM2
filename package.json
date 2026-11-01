@@ -29,9 +29,6 @@
     "./src": "./src/kernel/index.ts",
     "./package.json": "./package.json"
   },
-  "imports": {
-    "rem2-kernel": "./src/kernel/index.ts"
-  },
   "scripts": {
     "dev": "tsx src/host/cli/run.ts",
     "build": "pnpm build:kernel && pnpm build:plugins && pnpm build:external",

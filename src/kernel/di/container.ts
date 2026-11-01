@@ -164,7 +164,7 @@ export class Container implements ContainerContract, ServiceRegistry {
         }
       }
     }
-    return Array.from(new Set([...own, ...inherited])).sort()
+    return Array.from(new Set([...own, ...inherited])).toSorted()
   }
 
   createChild(scope: string): Container {

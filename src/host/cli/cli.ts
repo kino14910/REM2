@@ -82,7 +82,7 @@ async function listPlugins(): Promise<number> {
     return 1
   }
   const plugins: string[] = []
-  for (const entry of entries.sort()) {
+  for (const entry of entries.toSorted()) {
     try {
       await stat(path.join(root, entry, 'plugin.json'))
       plugins.push(entry)

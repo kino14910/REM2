@@ -98,7 +98,7 @@ async function main() {
           e.name !== 'node_modules',
       )
       .map(e => e.name)
-      .sort()
+      .toSorted()
   } catch {
     // The external repository is optional for a standalone kernel checkout:
     // no repository means no release artifacts, not a failed build.

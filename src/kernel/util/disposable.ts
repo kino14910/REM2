@@ -27,7 +27,7 @@ export class DisposableStore implements Disposable {
   async dispose(): Promise<void> {
     if (this.disposed) return
     this.disposed = true
-    const reversed = [...this.items].reverse()
+    const reversed = [...this.items].toReversed()
     this.items.length = 0
     for (const item of reversed) {
       try {
@@ -52,7 +52,7 @@ export function disposableFrom(
 ): Disposable {
   return {
     async dispose(): Promise<void> {
-      for (const fn of [...fns].reverse()) {
+      for (const fn of [...fns].toReversed()) {
         try {
           await fn()
         } catch {

@@ -6,6 +6,20 @@
   },
   "ignorePatterns": ["dist/**", "coverage/**", ".vite/**", "node_modules/**"],
   "rules": {
-    "no-console": "off"
-  }
+    "no-console": "off",
+    "no-underscore-dangle": [
+      "warn",
+      {
+        "allow": ["__rem2Probe", "__dirname"]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["src/kernel/isolation/**"],
+      "rules": {
+        "unicorn/require-post-message-target-origin": "off"
+      }
+    }
+  ]
 }

@@ -135,7 +135,7 @@ export class PluginDiscovery {
       return out
     }
 
-    for (const entry of entries.sort((a, b) => a.localeCompare(b, 'en'))) {
+    for (const entry of entries.toSorted((a, b) => a.localeCompare(b, 'en'))) {
       if (entry.startsWith('.') || entry === 'node_modules') continue
       const dir = path.join(root, entry)
 

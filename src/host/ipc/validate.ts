@@ -14,6 +14,10 @@
 
 import { isValidPluginId } from '../../kernel/discovery/manifest-validator.js'
 import { isSha256 } from '../plugins/integrity.js'
+import {
+  normalizeProxySettings,
+  type ProxySettings,
+} from '../settings/proxy-settings.js'
 
 const MAX_URL_LENGTH = 2048
 const OPERATION_ID_RE = /^[A-Za-z0-9._:-]{1,64}$/
@@ -74,24 +78,18 @@ export function pluginIdOf(args: unknown): string {
 const CAPABILITY_RE = /^[a-z][a-z0-9-]*(\.[a-z0-9-]+)*$/
 const MAX_GRANTED_CAPABILITIES = 64
 
-/** Validates `{ pluginId, capabilities: string[] }` for `plugin.permission.grant`. */
-export function permissionGrantArgsOf(args: unknown): {
-  pluginId: string
-  capabilities: string[]
-} {
-  const obj = asObject(args)
-  const pluginId = pluginIdOf(obj)
-  if (!Array.isArray(obj.capabilities) || obj.capabilities.length === 0) {
+function capabilitiesOf(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length === 0) {
     throw new Error(
       'invalid args: expected { capabilities: non-empty string[] }',
     )
   }
-  if (obj.capabilities.length > MAX_GRANTED_CAPABILITIES) {
+  if (value.length > MAX_GRANTED_CAPABILITIES) {
     throw new Error(
       `invalid args: capabilities must contain at most ${MAX_GRANTED_CAPABILITIES} entries`,
     )
   }
-  const capabilities = obj.capabilities.map(capability => {
+  const capabilities = value.map(capability => {
     if (typeof capability !== 'string' || !CAPABILITY_RE.test(capability)) {
       throw new Error(
         'invalid args: capabilities must be valid capability names',
@@ -102,11 +100,43 @@ export function permissionGrantArgsOf(args: unknown): {
   if (new Set(capabilities).size !== capabilities.length) {
     throw new Error('invalid args: duplicate capability')
   }
-  return { pluginId, capabilities }
+  return capabilities
+}
+
+/** Validates `{ pluginId, capabilities: string[] }` for `plugin.permission.grant`. */
+export function permissionGrantArgsOf(args: unknown): {
+  pluginId: string
+  capabilities: string[]
+} {
+  const obj = asObject(args)
+  return {
+    pluginId: pluginIdOf(obj),
+    capabilities: capabilitiesOf(obj.capabilities),
+  }
+}
+
+/**
+ * Validates `{ pluginId, capabilities? }` for `plugin.enable`.
+ * Capabilities turn this into the single-consent "grant and enable" path.
+ */
+export function pluginEnableArgsOf(args: unknown): {
+  pluginId: string
+  capabilities?: string[]
+} {
+  const obj = asObject(args)
+  const pluginId = pluginIdOf(obj)
+  return obj.capabilities === undefined
+    ? { pluginId }
+    : { pluginId, capabilities: capabilitiesOf(obj.capabilities) }
 }
 
 export function noArgsOf(args: unknown): void {
   if (args !== undefined) throw new Error('invalid args: expected no arguments')
+}
+
+/** Validates `{ mode, address?, bypass? }` for `settings.proxy.set`. */
+export function proxySettingsArgsOf(args: unknown): ProxySettings {
+  return normalizeProxySettings(asObject(args))
 }
 
 /**
@@ -155,22 +185,38 @@ export function inspectRemoteArgsOf(args: unknown): {
     : { url, operationId: operationIdOf(obj) }
 }
 
-/** Validates `{ operationId, url, sha256? }` for remote installation. */
+/** Validates `{ operationId, url, sha256?, capabilities? }` for remote installation. */
 export function installRemoteArgsOf(args: unknown): {
   operationId: string
   url: string
   sha256?: string
+  capabilities?: string[]
 } {
   const obj = asObject(args)
   const operationId = operationIdOf(obj)
   const url = remoteUrlOf(obj)
-  if (obj.sha256 === undefined) return { operationId, url }
+  const capabilities =
+    obj.capabilities === undefined
+      ? undefined
+      : capabilitiesOf(obj.capabilities)
+  if (obj.sha256 === undefined) {
+    return {
+      operationId,
+      url,
+      ...(capabilities ? { capabilities } : {}),
+    }
+  }
   if (!isSha256(obj.sha256)) {
     throw new Error(
       'invalid args: sha256 must be exactly 64 hexadecimal characters',
     )
   }
-  return { operationId, url, sha256: obj.sha256.toLowerCase() }
+  return {
+    operationId,
+    url,
+    sha256: obj.sha256.toLowerCase(),
+    ...(capabilities ? { capabilities } : {}),
+  }
 }
 
 /** Validates `{ pluginId? }` for update checks. */
@@ -185,14 +231,32 @@ export function updateCheckArgsOf(args: unknown): { pluginId?: string } {
   return { pluginId }
 }
 
-/** Validates `{ operationId, pluginId }` for applying an update. */
+/**
+ * Validates `{ operationId, pluginId, expectedVersion, expectedSha256 }` for
+ * applying an update. The expected values bind execution to what the user saw.
+ */
 export function updateInstallArgsOf(args: unknown): {
   operationId: string
   pluginId: string
+  expectedVersion: string
+  expectedSha256: string
 } {
   const obj = asObject(args)
+  const expectedVersion = nonEmptyString(obj.expectedVersion, 'expectedVersion')
+  if (expectedVersion.length > 128) {
+    throw new Error(
+      'invalid args: expectedVersion must be at most 128 characters',
+    )
+  }
+  if (!isSha256(obj.expectedSha256)) {
+    throw new Error(
+      'invalid args: expectedSha256 must be exactly 64 hexadecimal characters',
+    )
+  }
   return {
     operationId: operationIdOf(obj),
     pluginId: pluginIdOf(obj),
+    expectedVersion,
+    expectedSha256: obj.expectedSha256.toLowerCase(),
   }
 }

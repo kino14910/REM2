@@ -76,7 +76,7 @@ export class MetricsService implements MetricsApi {
   }
 
   listSinks(): string[] {
-    return Array.from(this.sinks.keys()).sort()
+    return Array.from(this.sinks.keys()).toSorted()
   }
 
   counter(name: string, labels?: Labels): Counter {

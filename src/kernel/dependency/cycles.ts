@@ -55,7 +55,7 @@ export function findCycles(graph: Map<string, string[]>): string[][] {
   }
 
   // Traverse in name order to keep cycle detection results deterministic.
-  const sortedNodes = Array.from(allNodes).sort((a, b) =>
+  const sortedNodes = Array.from(allNodes).toSorted((a, b) =>
     a.localeCompare(b, 'en'),
   )
   for (const node of sortedNodes) {

@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { constants } from 'node:fs'
 import {
   copyFile,
@@ -6,6 +7,8 @@ import {
   readdir,
   readFile,
   realpath,
+  rename,
+  rm,
 } from 'node:fs/promises'
 import path from 'node:path'
 import { PluginManagementError } from './errors.js'
@@ -15,6 +18,8 @@ const MAX_BYTES = 100 * 1024 * 1024
 
 interface CopyOptions {
   skipExisting?: boolean
+  /** Replace files already present at the destination (still rejects symlinks). */
+  overwrite?: boolean
 }
 
 export function assertInside(
@@ -108,7 +113,18 @@ async function copyDirectory(
         'plugin package exceeds file or size limits',
       )
     }
-    if (options.skipExisting) {
+    if (options.overwrite) {
+      // Copy beside the destination and rename, so a failed copy never leaves
+      // a half-written user configuration in place.
+      const temporary = `${to}.rem2-copy-${randomBytes(4).toString('hex')}`
+      try {
+        await copyFile(from, temporary)
+        await rename(temporary, to)
+      } catch (error) {
+        await rm(temporary, { force: true }).catch(() => undefined)
+        throw error
+      }
+    } else if (options.skipExisting) {
       try {
         await copyFile(from, to, constants.COPYFILE_EXCL)
       } catch (error) {

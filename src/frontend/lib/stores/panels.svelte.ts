@@ -20,7 +20,7 @@ class PanelsStore {
   issues = $state<string[]>([])
 
   /** Sort once in the derived value, not in the template. */
-  ordered = $derived([...this.items].sort((a, b) => a.order - b.order))
+  ordered = $derived([...this.items].toSorted((a, b) => a.order - b.order))
   /**
    * No silent fallback to the first panel: an unknown active id must surface
    * as an explicit empty state, not quietly render a different panel.

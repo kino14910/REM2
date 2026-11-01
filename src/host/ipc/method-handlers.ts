@@ -50,7 +50,9 @@ import {
   operationIdOf,
   panelIdOf,
   permissionGrantArgsOf,
+  pluginEnableArgsOf,
   pluginIdOf,
+  proxySettingsArgsOf,
   themeIdOf,
   uiEventArgsOf,
   updateCheckArgsOf,
@@ -61,11 +63,26 @@ import type {
   RemoteProgress,
 } from '../plugins/local-plugin-manager.js'
 import { PluginManagementError } from '../plugins/errors.js'
+import type { ProxySettingsService } from '../settings/proxy-settings-service.js'
+import { ProxySettingsError } from '../settings/proxy-settings.js'
 
 /** Handler for a single method (args come from the renderer and are untrusted at runtime). */
 export type MethodHandler = (args: unknown) => unknown | Promise<unknown>
 
 export type MethodFactory = (ctx: MethodContext) => MethodHandler | null
+
+export interface PluginActionConfirmation {
+  action:
+    | 'enable'
+    | 'permission-grant'
+    | 'directory-install'
+    | 'remote-install'
+    | 'update-install'
+    | 'proxy-change'
+  title: string
+  message: string
+  detail: string
+}
 
 export interface MethodContext {
   kernel: Kernel
@@ -74,7 +91,36 @@ export interface MethodContext {
   /** Electron nativeTheme in production; deterministic injection for tests. */
   isSystemDark?: () => boolean
   pluginManager?: LocalPluginManager
+  /** Host proxy settings (Electron session in production, fake in tests). */
+  proxySettings?: ProxySettingsService
   choosePluginDirectory?: () => Promise<string | undefined>
+  /**
+   * Main-process consent boundary for sensitive plugin actions. The browser UI
+   * has its own dialogs, but a compromised renderer can call IPC directly, so
+   * production must supply a native confirmation here.
+   */
+  confirmPluginAction?: (request: PluginActionConfirmation) => Promise<boolean>
+}
+
+async function confirmPluginAction(
+  ctx: MethodContext,
+  request: PluginActionConfirmation,
+): Promise<void> {
+  if (!ctx.confirmPluginAction) {
+    // Fail closed: a host that cannot present consent must not execute a
+    // sensitive action just because the renderer asked for it.
+    throw new PluginManagementError(
+      'E_CONFIRMATION_UNAVAILABLE',
+      'the host cannot display a confirmation dialog for this action',
+    )
+  }
+  const approved = await ctx.confirmPluginAction(request)
+  if (!approved) {
+    throw new PluginManagementError(
+      'E_CONFIRMATION_DENIED',
+      'the plugin action was not confirmed',
+    )
+  }
 }
 
 function pluginManagerOf(ctx: MethodContext): LocalPluginManager {
@@ -85,6 +131,16 @@ function pluginManagerOf(ctx: MethodContext): LocalPluginManager {
     )
   }
   return ctx.pluginManager
+}
+
+function proxySettingsOf(ctx: MethodContext): ProxySettingsService {
+  if (!ctx.proxySettings) {
+    throw new ProxySettingsError(
+      'E_SETTINGS_UNAVAILABLE',
+      'proxy settings service is unavailable',
+    )
+  }
+  return ctx.proxySettings
 }
 
 /**
@@ -290,18 +346,85 @@ export const METHOD_FACTORIES = {
           message: 'Installation cancelled.',
         }
       }
-      return await pluginManagerOf(ctx).installFromDirectory(source)
+      const manager = pluginManagerOf(ctx)
+      // Read the manifest before installing so the capability approval happens
+      // before any file is copied and before the plugin starts.
+      const inspected = await manager.inspectDirectory(source)
+      await confirmPluginAction(ctx, {
+        action: 'directory-install',
+        title: 'Install and enable plugin',
+        message: `Install "${inspected.name}" and enable it?`,
+        detail: [
+          `${inspected.id} ${inspected.version}`,
+          inspected.requires.length > 0
+            ? `Capabilities to approve: ${inspected.requires.join(', ')}`
+            : 'Capabilities: none declared',
+          'Installing enables the plugin immediately and starts executable plugin code.',
+        ].join('\n'),
+      })
+      return await manager.installFromDirectory(source, {
+        capabilities: inspected.requires,
+      })
     }
   },
 
   [channels.pluginEnable]: (ctx): MethodHandler => {
-    return args => pluginManagerOf(ctx).enable(pluginIdOf(args))
+    return async args => {
+      const manager = pluginManagerOf(ctx)
+      const { pluginId, capabilities } = pluginEnableArgsOf(args)
+      const plugin = await manager.detail(pluginId)
+      const willEnable = !plugin.enabled
+      if (willEnable || capabilities) {
+        await confirmPluginAction(ctx, {
+          action: 'enable',
+          title: capabilities ? 'Grant and enable plugin' : 'Enable plugin',
+          message: capabilities
+            ? `Grant capabilities and enable "${plugin.name}"?`
+            : `Enable "${plugin.name}"?`,
+          detail: [
+            `${plugin.id} ${plugin.version}`,
+            `Source: ${plugin.source}`,
+            capabilities
+              ? `Capabilities to grant: ${capabilities.join(', ')}`
+              : plugin.requires.length > 0
+                ? `Capabilities: ${plugin.requires.join(', ')}`
+                : 'Capabilities: none declared',
+            'Enabling starts executable plugin code.',
+          ].join('\n'),
+        })
+      }
+      if (capabilities) {
+        await manager.grantPermissions(pluginId, capabilities, {
+          version: plugin.version,
+          ...(plugin.origin?.sha256 ? { sha256: plugin.origin.sha256 } : {}),
+        })
+      }
+      return await manager.enable(pluginId, {
+        version: plugin.version,
+        ...(plugin.origin?.sha256 ? { sha256: plugin.origin.sha256 } : {}),
+      })
+    }
   },
 
   [channels.pluginPermissionGrant]: (ctx): MethodHandler => {
-    return args => {
+    return async args => {
+      const manager = pluginManagerOf(ctx)
       const { pluginId, capabilities } = permissionGrantArgsOf(args)
-      return pluginManagerOf(ctx).grantPermissions(pluginId, capabilities)
+      const plugin = await manager.detail(pluginId)
+      await confirmPluginAction(ctx, {
+        action: 'permission-grant',
+        title: 'Grant plugin capabilities',
+        message: `Grant capabilities to "${plugin.name}"?`,
+        detail: [
+          plugin.id,
+          `Capabilities: ${capabilities.join(', ')}`,
+          'A grant only expands what the plugin may access; it does not sandbox anything else.',
+        ].join('\n'),
+      })
+      return await manager.grantPermissions(pluginId, capabilities, {
+        version: plugin.version,
+        ...(plugin.origin?.sha256 ? { sha256: plugin.origin.sha256 } : {}),
+      })
     }
   },
 
@@ -310,6 +433,8 @@ export const METHOD_FACTORIES = {
   },
 
   [channels.pluginUninstall]: (ctx): MethodHandler => {
+    // Uninstall has no confirmation banner or dialog; the UI button is the
+    // consent, and a renderer cannot be tricked into an extra prompt.
     return args => pluginManagerOf(ctx).uninstall(pluginIdOf(args))
   },
 
@@ -334,11 +459,70 @@ export const METHOD_FACTORIES = {
 
   [channels.pluginInstallFromRemote]: (ctx): MethodHandler => {
     return async args => {
-      const { operationId, url, sha256 } = installRemoteArgsOf(args)
+      const { operationId, url, sha256, capabilities } =
+        installRemoteArgsOf(args)
+      await confirmPluginAction(ctx, {
+        action: 'remote-install',
+        title: 'Install remote plugin',
+        message: 'Install this remote plugin package and enable it?',
+        detail: [
+          `Source: ${url}`,
+          sha256
+            ? `SHA-256: ${sha256}`
+            : 'SHA-256: missing (install will be blocked)',
+          capabilities && capabilities.length > 0
+            ? `Capabilities to approve: ${capabilities.join(', ')}`
+            : 'Capabilities: none declared',
+          'Installing enables the plugin immediately and starts executable plugin code.',
+        ].join('\n'),
+      })
       return await pluginManagerOf(ctx).installFromRemote(
-        { operationId, url, ...(sha256 ? { sha256 } : {}) },
+        {
+          operationId,
+          url,
+          ...(sha256 ? { sha256 } : {}),
+          ...(capabilities ? { capabilities } : {}),
+        },
         progressSinkFor(ctx, operationId),
       )
+    }
+  },
+
+  [channels.pluginReinstall]: (ctx): MethodHandler => {
+    return async args => {
+      const manager = pluginManagerOf(ctx)
+      const pluginId = pluginIdOf(args)
+      const plugin = await manager.detail(pluginId)
+      if (plugin.state !== 'NotInstalled') {
+        throw new PluginManagementError(
+          'E_DUPLICATE_ID',
+          `plugin is already installed: ${pluginId}`,
+        )
+      }
+      if (
+        plugin.origin?.kind !== 'remote' ||
+        !plugin.origin.url ||
+        !plugin.origin.sha256
+      ) {
+        throw new PluginManagementError(
+          'E_SOURCE_INVALID',
+          'this plugin was installed from a local directory; choose its folder to install it again',
+        )
+      }
+      await confirmPluginAction(ctx, {
+        action: 'remote-install',
+        title: 'Install plugin again',
+        message: `Install "${plugin.name}" ${plugin.version} again?`,
+        detail: [
+          `Source: ${plugin.origin.url}`,
+          `SHA-256: ${plugin.origin.sha256}`,
+          plugin.requires.length > 0
+            ? `Capabilities to approve: ${plugin.requires.join(', ')}`
+            : 'Capabilities: none declared',
+          'Installing enables the plugin immediately and starts executable plugin code.',
+        ].join('\n'),
+      })
+      return await manager.reinstall(pluginId)
     }
   },
 
@@ -361,11 +545,46 @@ export const METHOD_FACTORIES = {
 
   [channels.pluginUpdateInstall]: (ctx): MethodHandler => {
     return async args => {
-      const { operationId, pluginId } = updateInstallArgsOf(args)
+      const { operationId, pluginId, expectedVersion, expectedSha256 } =
+        updateInstallArgsOf(args)
+      await confirmPluginAction(ctx, {
+        action: 'update-install',
+        title: 'Update plugin',
+        message: `Update "${pluginId}" to ${expectedVersion}?`,
+        detail: [
+          `Version: ${expectedVersion}`,
+          `SHA-256: ${expectedSha256}`,
+          'The current version is backed up and restored if the update fails.',
+        ].join('\n'),
+      })
       return await pluginManagerOf(ctx).applyUpdate(
-        { operationId, pluginId },
+        { operationId, pluginId, expectedVersion, expectedSha256 },
         progressSinkFor(ctx, operationId),
       )
+    }
+  },
+
+  [channels.settingsProxyGet]: (ctx): MethodHandler => {
+    return args => {
+      noArgsOf(args)
+      return proxySettingsOf(ctx).get()
+    }
+  },
+
+  [channels.settingsProxySet]: (ctx): MethodHandler => {
+    return async args => {
+      const settings = proxySettingsArgsOf(args)
+      await confirmPluginAction(ctx, {
+        action: 'proxy-change',
+        title: 'Change network proxy',
+        message: `Switch network proxy mode to "${settings.mode}"?`,
+        detail: [
+          ...(settings.address ? [`Address: ${settings.address}`] : []),
+          ...(settings.bypass ? [`Bypass: ${settings.bypass}`] : []),
+          'All Electron HTTP(S) traffic and plugin downloads use this proxy.',
+        ].join('\n'),
+      })
+      return await proxySettingsOf(ctx).set(settings)
     }
   },
 

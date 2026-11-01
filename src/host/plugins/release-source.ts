@@ -14,11 +14,13 @@ export interface RemoteRelease {
 export interface ResolveReleaseOptions {
   fetchImpl?: typeof fetch
   timeoutMs?: number
+  signal?: AbortSignal
 }
 
 interface RequestOptions {
   fetchImpl: typeof fetch
   timeoutMs: number
+  signal?: AbortSignal
 }
 
 interface GitHubAsset {
@@ -56,6 +58,8 @@ const ALLOWED_HOSTS = new Set([
   'objects.githubusercontent.com',
   'release-assets.githubusercontent.com',
 ])
+const RELEASE_METADATA_MAX_BYTES = 1024 * 1024
+const SIDECAR_MAX_BYTES = 16 * 1024
 
 export async function resolveRemoteRelease(
   source: string,
@@ -74,6 +78,7 @@ export async function resolveRemoteRelease(
   const requestOptions: RequestOptions = {
     fetchImpl: options.fetchImpl ?? fetch,
     timeoutMs: options.timeoutMs ?? 15_000,
+    ...(options.signal ? { signal: options.signal } : {}),
   }
   const github = parsed.source
   if (github.kind === 'download') {
@@ -147,7 +152,10 @@ function parseSource(source: string): ParsedSource {
 
   const host = url.hostname.toLowerCase()
   if (host !== 'github.com') {
-    if (url.pathname.toLowerCase().endsWith('.zip')) {
+    if (
+      ALLOWED_HOSTS.has(host) &&
+      url.pathname.toLowerCase().endsWith('.zip')
+    ) {
       return { kind: 'direct', url: source }
     }
     throw new PluginManagementError(
@@ -293,51 +301,85 @@ async function resolveSha256(
   }
   const sidecar = assets.find(item => item.name === `${asset.name}.sha256`)
   if (!sidecar) return undefined
-  try {
-    const text = await fetchText(validateAssetUrl(sidecar.downloadUrl), options)
-    const parsed = parseSha256Text(text)
-    if (typeof parsed !== 'string') return undefined
-    const normalized = parsed.toLowerCase()
-    return isSha256(normalized) ? normalized : undefined
-  } catch {
-    return undefined
-  }
+  const text = await fetchText(validateAssetUrl(sidecar.downloadUrl), options)
+  const parsed = parseSha256Text(text)
+  if (typeof parsed !== 'string') return undefined
+  const normalized = parsed.toLowerCase()
+  return isSha256(normalized) ? normalized : undefined
 }
 
 async function fetchJson(
   url: string,
   options: RequestOptions,
 ): Promise<unknown> {
-  return fetchWithTimeout(url, options, response => response.json())
+  return fetchWithTimeout(
+    url,
+    options,
+    RELEASE_METADATA_MAX_BYTES,
+    text => JSON.parse(text) as unknown,
+  )
 }
 
 async function fetchText(
   url: string,
   options: RequestOptions,
 ): Promise<string> {
-  return fetchWithTimeout(url, options, response => response.text())
+  return fetchWithTimeout(url, options, SIDECAR_MAX_BYTES, text => text)
 }
 
 async function fetchWithTimeout<T>(
   url: string,
   options: RequestOptions,
-  consume: (response: Response) => Promise<T>,
+  maxBytes: number,
+  consume: (text: string) => T,
 ): Promise<T> {
   const controller = new AbortController()
+  const onExternalAbort = (): void => controller.abort(options.signal?.reason)
+  if (options.signal?.aborted) onExternalAbort()
+  else
+    options.signal?.addEventListener('abort', onExternalAbort, { once: true })
   const timer = setTimeout(() => controller.abort(), options.timeoutMs)
+  let currentUrl = assertAllowedFetchUrl(url)
   try {
-    const response = await options.fetchImpl(url, {
-      signal: controller.signal,
-      headers: { Accept: 'application/vnd.github+json' },
-    })
+    let response: Response | undefined
+    for (let redirects = 0; ; redirects += 1) {
+      response = await options.fetchImpl(currentUrl.href, {
+        signal: controller.signal,
+        redirect: 'manual',
+        headers: { Accept: 'application/vnd.github+json' },
+      })
+      if (!REDIRECT_STATUSES.has(response.status)) break
+      if (redirects >= MAX_REDIRECTS) {
+        throw new PluginManagementError(
+          'E_SOURCE_INVALID',
+          `release request exceeded the maximum of ${MAX_REDIRECTS} redirects`,
+        )
+      }
+      const location = response.headers.get('location')
+      if (!location) {
+        throw new PluginManagementError(
+          'E_SOURCE_INVALID',
+          'release redirect is missing a Location header',
+        )
+      }
+      await response.body?.cancel().catch(() => undefined)
+      currentUrl = assertAllowedFetchUrl(new URL(location, currentUrl).href)
+    }
     if (!response.ok) {
       throw new PluginManagementError(
         'E_DOWNLOAD',
         `release request failed with HTTP ${response.status}: ${url}`,
       )
     }
-    return await consume(response)
+    return consume(await readResponseText(response, maxBytes))
   } catch (error) {
+    if (options.signal?.aborted) {
+      throw new PluginManagementError(
+        'E_CANCELLED',
+        'release request was cancelled',
+        { cause: error },
+      )
+    }
     if (controller.signal.aborted) {
       throw new PluginManagementError(
         'E_DOWNLOAD_TIMEOUT',
@@ -353,7 +395,73 @@ async function fetchWithTimeout<T>(
     )
   } finally {
     clearTimeout(timer)
+    options.signal?.removeEventListener('abort', onExternalAbort)
   }
+}
+
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
+const MAX_REDIRECTS = 5
+
+function assertAllowedFetchUrl(value: string): URL {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch (error) {
+    throw new PluginManagementError(
+      'E_SOURCE_INVALID',
+      'release redirect contains an invalid URL',
+      { cause: error },
+    )
+  }
+  if (url.protocol !== 'https:' || !ALLOWED_HOSTS.has(url.hostname)) {
+    throw new PluginManagementError(
+      'E_SOURCE_INVALID',
+      `release request left the HTTPS allowlist: ${url.href}`,
+    )
+  }
+  return url
+}
+
+async function readResponseText(
+  response: Response,
+  maxBytes: number,
+): Promise<string> {
+  const declaredBytes = parseContentLength(
+    response.headers.get('content-length'),
+  )
+  if (declaredBytes !== undefined && declaredBytes > maxBytes) {
+    throw new PluginManagementError(
+      'E_DOWNLOAD',
+      `release response declares ${declaredBytes} bytes, exceeding the ${maxBytes} byte limit`,
+    )
+  }
+  if (!response.body) {
+    throw new PluginManagementError(
+      'E_DOWNLOAD',
+      'release response did not contain a body',
+    )
+  }
+
+  const decoder = new TextDecoder()
+  let receivedBytes = 0
+  let text = ''
+  for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+    receivedBytes += chunk.byteLength
+    if (receivedBytes > maxBytes) {
+      throw new PluginManagementError(
+        'E_DOWNLOAD',
+        `release response exceeds the ${maxBytes} byte limit while streaming`,
+      )
+    }
+    text += decoder.decode(chunk, { stream: true })
+  }
+  return text + decoder.decode()
+}
+
+function parseContentLength(value: string | null): number | undefined {
+  if (value === null || !/^\d+$/.test(value)) return undefined
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) ? parsed : undefined
 }
 
 function optionalReleaseFields(

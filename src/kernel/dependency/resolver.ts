@@ -168,7 +168,7 @@ export class DependencyResolver {
       )
     }
 
-    return { steps, loadOrder, issues, dropped: Array.from(dropped).sort() }
+    return { steps, loadOrder, issues, dropped: Array.from(dropped).toSorted() }
   }
 
   satisfies(version: string, range: string): boolean {

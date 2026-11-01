@@ -25,6 +25,13 @@ export interface DownloadOptions {
   maxBytes?: number
   timeoutMs?: number
   maxRedirects?: number
+  /**
+   * `manual` (default and production) walks redirects here and validates every
+   * hop. `follow` is a compatibility fallback for injected fetch
+   * implementations that reject manual redirects; it can only validate a
+   * final URL when the implementation reports one.
+   */
+  redirectMode?: 'manual' | 'follow'
 }
 
 export interface DownloadResult {
@@ -72,42 +79,59 @@ export async function downloadPackage(
   }, options.timeoutMs ?? 30_000)
 
   try {
-    let redirects = 0
     let response: Response
-    while (true) {
+    if (options.redirectMode === 'follow') {
       response = await Promise.race([
         fetchImpl(currentUrl.href, {
-          redirect: 'manual',
+          redirect: 'follow',
           signal: controller.signal,
         }),
         abortRejection,
       ])
-      if (!REDIRECT_STATUSES.has(response.status)) break
-      if (redirects >= maxRedirects) {
-        throw new PluginManagementError(
-          'E_SOURCE_INVALID',
-          `download exceeded the maximum of ${maxRedirects} redirects`,
-        )
+      if (response.url) {
+        // Re-validate whenever the implementation reports where it ended up,
+        // so a trusted source cannot hop to a host outside the allowlist.
+        // Production uses manual mode; this branch exists only for injected
+        // fetch implementations that cannot follow redirects manually.
+        currentUrl = parseAllowedUrl(response.url, allowedHosts)
       }
-      const location = response.headers.get('location')
-      if (!location) {
-        throw new PluginManagementError(
-          'E_SOURCE_INVALID',
-          'redirect response is missing a Location header',
-        )
+    } else {
+      let redirects = 0
+      while (true) {
+        response = await Promise.race([
+          fetchImpl(currentUrl.href, {
+            redirect: 'manual',
+            signal: controller.signal,
+          }),
+          abortRejection,
+        ])
+        if (!REDIRECT_STATUSES.has(response.status)) break
+        if (redirects >= maxRedirects) {
+          throw new PluginManagementError(
+            'E_SOURCE_INVALID',
+            `download exceeded the maximum of ${maxRedirects} redirects`,
+          )
+        }
+        const location = response.headers.get('location')
+        if (!location) {
+          throw new PluginManagementError(
+            'E_SOURCE_INVALID',
+            'redirect response is missing a Location header',
+          )
+        }
+        let redirectUrl: URL
+        try {
+          redirectUrl = new URL(location, currentUrl)
+        } catch (error) {
+          throw new PluginManagementError(
+            'E_SOURCE_INVALID',
+            'redirect response contains an invalid Location header',
+            { cause: error },
+          )
+        }
+        currentUrl = parseAllowedUrl(redirectUrl.href, allowedHosts)
+        redirects += 1
       }
-      let redirectUrl: URL
-      try {
-        redirectUrl = new URL(location, currentUrl)
-      } catch (error) {
-        throw new PluginManagementError(
-          'E_SOURCE_INVALID',
-          'redirect response contains an invalid Location header',
-          { cause: error },
-        )
-      }
-      currentUrl = parseAllowedUrl(redirectUrl.href, allowedHosts)
-      redirects += 1
     }
 
     if (response.status < 200 || response.status >= 300) {

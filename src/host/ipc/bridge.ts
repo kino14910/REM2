@@ -135,21 +135,38 @@ export class IpcBridge {
   }
 }
 
-function timeoutFor(method: string): number {
+/**
+ * Timeout policy.
+ *
+ * Operations that can legitimately wait for a native confirmation, a directory
+ * chooser, a download or a plugin lifecycle have **no bridge timeout**. Their
+ * internal timeouts / cancellation handles bound the work. Applying a timeout
+ * here would reject only the renderer's wait while the host continued and later
+ * committed the action, which is worse than waiting.
+ */
+export function timeoutFor(method: string): number {
   if (
     method === channels.pluginInstallFromRemote ||
-    method === channels.pluginUpdateInstall
-  ) {
-    return 120_000
-  }
-  if (method === channels.pluginRemoteInspect) return 60_000
-  if (method === channels.pluginUpdateCheck) return 30_000
-  if (method === channels.pluginInstallFromDirectory) return 60_000
-  if (method === channels.pluginRestart) return 60_000
-  if (
+    method === channels.pluginReinstall ||
+    method === channels.pluginUpdateInstall ||
+    method === channels.pluginRemoteInspect ||
+    method === channels.pluginUpdateCheck ||
+    method === channels.pluginInstallFromDirectory ||
+    method === channels.pluginRestart ||
     method === channels.pluginEnable ||
+    method === channels.pluginPermissionGrant ||
     method === channels.pluginDisable ||
-    method === channels.pluginUninstall
+    method === channels.pluginUninstall ||
+    method === channels.settingsProxySet
+  ) {
+    return 0
+  }
+  // Reads may wait behind a directory commit. Fifteen seconds covers restart
+  // and data-preservation work without hiding a genuinely stuck responder.
+  if (
+    method === channels.pluginList ||
+    method === channels.pluginDetail ||
+    method === channels.settingsProxyGet
   ) {
     return 15_000
   }

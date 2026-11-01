@@ -83,9 +83,9 @@ export class Kernel {
    * Current authorization decision for a plugin, or `undefined` when it has
    * never been started. Snapshot only: mutating it does not grant anything.
    */
-  permissionsOf(pluginId: string):
-    | { granted: readonly string[]; denied: readonly string[] }
-    | undefined {
+  permissionsOf(
+    pluginId: string,
+  ): { granted: readonly string[]; denied: readonly string[] } | undefined {
     const set = this.deps.permissions.get(pluginId)
     return set
       ? { granted: set.granted.slice(), denied: set.denied.slice() }
@@ -583,9 +583,8 @@ export class Kernel {
       // for capabilities the manifest actually declares: a grant file cannot
       // escalate a plugin beyond its own `requires`.
       const declared = new Set(candidate.manifest.requires ?? [])
-      for (const capability of this.options.grantedCapabilities?.(
-        pluginId,
-      ) ?? []) {
+      for (const capability of this.options.grantedCapabilities?.(pluginId) ??
+        []) {
         if (!declared.has(capability)) continue
         this.deps.permissions.grant(pluginId, capability)
       }

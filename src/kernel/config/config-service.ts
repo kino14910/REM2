@@ -161,7 +161,7 @@ export class ConfigService implements ConfigAccess {
    */
   async set(key: string, value: unknown): Promise<void> {
     const writable = [...this.providers]
-      .reverse()
+      .toReversed()
       .find(p => typeof p.set === 'function')
     if (!writable || !writable.set) {
       throw new NotWritableError('(none)')

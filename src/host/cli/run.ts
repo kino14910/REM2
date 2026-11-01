@@ -12,6 +12,11 @@ import { createDeps } from '../../kernel/composition.js'
 import { parseArgs } from './args.js'
 import { projectRoot, builtinPluginsRoot } from './paths.js'
 
+/** Writes one line to stdout. */
+const write = (s: string): void => {
+  process.stdout.write(`${s}\n`)
+}
+
 /** Run the kernel until a shutdown signal is received. */
 export async function run(
   argv: string[] = process.argv.slice(2),
@@ -42,10 +47,6 @@ export async function run(
 
   const result = await kernel.start()
   const report = await kernel.health()
-
-  const write = (s: string): void => {
-    process.stdout.write(`${s}\n`)
-  }
 
   write('──── rem2-kernel started ────')
   write(`loadOrder : ${result.loadOrder.join(' -> ')}`)

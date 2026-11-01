@@ -190,16 +190,16 @@ export function validateManifest(raw: unknown): ManifestValidationResult {
       })
     } else {
       const seen = new Set<string>()
-      obj.contributes.forEach((raw, i) => {
-        if (!isPlainObject(raw)) {
+      obj.contributes.forEach((contribution, i) => {
+        if (!isPlainObject(contribution)) {
           issues.push({
             path: `$.contributes[${i}]`,
             message: 'contributes entries must be objects',
           })
           return
         }
-        const point = raw.point
-        const cid = raw.id
+        const point = contribution.point
+        const cid = contribution.id
         if (typeof point !== 'string' || !KNOWN_POINTS.has(point)) {
           issues.push({
             path: `$.contributes[${i}].point`,
@@ -213,8 +213,8 @@ export function validateManifest(raw: unknown): ManifestValidationResult {
           })
         }
         if (
-          raw.capability !== undefined &&
-          typeof raw.capability !== 'string'
+          contribution.capability !== undefined &&
+          typeof contribution.capability !== 'string'
         ) {
           issues.push({
             path: `$.contributes[${i}].capability`,

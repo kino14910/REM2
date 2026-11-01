@@ -82,7 +82,7 @@ export class LogService {
   }
 
   listSinks(): string[] {
-    return Array.from(this.sinks.keys()).sort()
+    return Array.from(this.sinks.keys()).toSorted()
   }
 
   child(scope: string, pluginId?: string): Logger {
