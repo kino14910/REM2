@@ -16,7 +16,9 @@
 | Explicit grants      | `<userData>/plugin-grants.json` (capabilities approved for user plugins)           |
 | Plugin config / data | Plugin `config/` and `data/`, moved to `<userData>/plugin-data/<id>/` on uninstall |
 | Remote provenance    | `<userData>/plugin-provenance.json` (URL + publisher digest + install time)        |
-| Remote package cache | `<userData>/plugin-packages/<sha256(url)>.zip` (10-minute TTL)                     |
+| Update journal       | `<userData>/plugin-transactions/<id>.json` (recovered before kernel start)         |
+| Remote package cache | `<userData>/plugin-packages/<sha256(url[+digest])>.zip` (10-minute TTL)            |
+| Host proxy settings  | `<userData>/proxy-settings.json` (system / direct / manual)                        |
 | Allowed IPC methods  | `src/shared/ipc-contract.ts`                                                       |
 
 Disabled intent is separate from runtime state: an enabled plugin that fails to start remains `enabled: true` with runtime state `Failed`, so the user can retry.
@@ -29,11 +31,13 @@ Electron layout:
 ├── plugin-manager.json           # { version: 1, disabled: string[] }
 ├── plugin-grants.json            # { version: 1, entries: { <id>: capability[] } }
 ├── plugin-provenance.json        # { version: 1, entries: { <id>: { kind, url, sha256, … } } }
+├── plugin-transactions/<id>.json # update journal; recovered before plugins start
 ├── plugin-packages/<hash>.zip    # remote download cache (reused for 10 minutes)
+├── proxy-settings.json           # { version: 1, proxy: { mode, address?, bypass? } }
 └── plugin-data/<plugin-id>/      # preserved config/ and data/
 ```
 
-Built-ins come from `builtinPluginsRoot()`; in a packaged app this is the read-only sibling `resources/plugins-dist` (6 built-in samples only). External plugins (such as `theme-switcher`) build into `plugins-external-dist` and install from a GitHub release into `<userData>/plugins`. Built-ins cannot be uninstalled. `<userData>` is resolved with `app.getPath('userData')`.
+Built-ins come from `builtinPluginsRoot()`; in a packaged app this is the read-only sibling `resources/plugins-dist` (built-in samples only). External plugins (such as `theme-switcher`) build into `plugins-external-dist` and install from a GitHub release into `<userData>/plugins`. Built-ins cannot be uninstalled. `<userData>` is resolved with `app.getPath('userData')`.
 
 ---
 
@@ -90,16 +94,17 @@ The entry must exist, be a regular file, and its `realpath` must remain inside t
 3. Validate that the source is a real directory and neither contains nor is contained by a managed root.
 4. Validate manifest, entry, compatibility, duplicate id, hard dependencies and soft dependencies.
 5. Reject any id already supplied by a built-in plugin.
-6. Copy to `<userRoot>/.<id>.install-*` on the same volume:
+6. Read the manifest and ask for native confirmation listing id, version and declared capabilities. Approving grants exactly those capabilities and authorizes the enabled install.
+7. Copy to `<userRoot>/.<id>.install-*` on the same volume:
    - never follow symbolic links;
    - create files exclusively so nothing is overwritten;
    - cap at 2000 files / 100 MiB.
-7. Re-read and re-check manifest, version and entry in staging.
-8. Atomically rename staging to `<userRoot>/<id>`.
-9. Persist disabled intent; the new plugin is `Disabled` and its code is **not executed**.
-10. On any failure remove staging; if commit already happened, remove the target too.
+8. Re-read and re-check manifest, version, entry and approved capabilities in staging.
+9. **Persist the approved grants and clear any stale disabled tombstone first**, then atomically rename staging to `<userRoot>/<id>`.
+10. The new plugin is `Enabled`; its hard-dependency closure is enabled and `Kernel.enablePlugin` starts it immediately. A plugin whose own `onStart` fails stays installed and enabled with its health error.
+11. On any failure remove staging; if commit already happened, remove the target, the grants added by this operation and revert to a disabled tombstone.
 
-Installation does not imply activation. The user must press Enable, which runs the full lifecycle, permission grant and dependency resolution.
+Installation now includes activation: capability approval happens before any file is copied, so there is no separate enable-after-install consent step.
 
 ---
 
@@ -109,19 +114,19 @@ Remote installation is split into **inspect → explicit confirmation**, so the 
 
 ### Sources and digests
 
-| Input                                                           | Resolution                                                                                      |
-| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `github.com/<owner>/<repo>/releases/download/<tag>/<asset>.zip` | direct asset; release metadata is still fetched when available to obtain a digest               |
-| `github.com/<owner>/<repo>/releases/tag/<tag>`                  | GitHub API `releases/tags/<tag>`; must contain exactly one `.zip` asset                         |
-| `github.com/<owner>/<repo>` / `.../releases/latest`             | GitHub API `releases/latest`; same single-`.zip` requirement                                    |
-| Any other `https://` link whose path ends in `.zip`             | direct download; version inferred from the filename, **no trusted digest** (`sha256` undefined) |
+| Input                                                           | Resolution                                                                                                                                           |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `github.com/<owner>/<repo>/releases/download/<tag>/<asset>.zip` | direct asset; release metadata is still fetched when available to obtain a digest                                                                    |
+| `github.com/<owner>/<repo>/releases/tag/<tag>`                  | GitHub API `releases/tags/<tag>`; must contain exactly one `.zip` asset                                                                              |
+| `github.com/<owner>/<repo>` / `.../releases/latest`             | GitHub API `releases/latest`; same single-`.zip` requirement                                                                                         |
+| Another allowlisted `https://` asset whose path ends in `.zip`  | direct download; version inferred from the filename, **no trusted digest** (`sha256` undefined); links on other hosts are rejected during resolution |
 
 A digest comes only from the release asset's `digest` field (`sha256:<hex>`) or a sibling `<asset>.sha256` sidecar. When neither exists the inspection returns `undefined`; the digest computed from the download is never presented as a publisher digest.
 
 ### inspect (`plugin.remote.inspect`)
 
 1. Resolve release metadata → `downloadUrl`, version, publish time, notes, publisher digest and size.
-2. Download into `<userData>/plugin-packages/<sha256(downloadUrl)>.zip`; a cache entry younger than 10 minutes is reused. HTTPS only, host must be one of `github.com` / `api.github.com` / `objects.githubusercontent.com` / `release-assets.githubusercontent.com`; redirects are followed manually, protocol downgrades and jumps outside the allowlist are rejected, at most 5 hops; 50 MiB cap and 30 s timeout by default.
+2. Download into `<userData>/plugin-packages/<sha256(downloadUrl [+ "\0" + trusted digest])>.zip`; a known digest participates in the cache key, and a cache entry younger than 10 minutes is reused. HTTPS only, host must be one of `github.com` / `api.github.com` / `objects.githubusercontent.com` / `release-assets.githubusercontent.com`. Production uses an Electron `ClientRequest` adapter (same session/proxy) that walks redirects manually and validates every hop, protocol and the five-redirect limit; 50 MiB cap and 30 s timeout by default.
 3. Verify the digest when metadata provides one.
 4. Extract into a temporary `<userRoot>/.inspect-*` directory: hand-written EOCD + central-directory parser, store/deflate support, CRC32 verification, no zip64/encryption/multi-volume/unknown compression; absolute paths, `..`, backslashes, drive letters, symlinks and special files are rejected; 2000 files / 100 MiB / 25 MiB per file by default.
 5. Read and validate `plugin.json`, entry existence, kernel compatibility and hard-dependency satisfiability (reusing `DependencyResolver`).
@@ -129,11 +134,11 @@ A digest comes only from the release asset's `digest` field (`sha256:<hex>`) or 
 
 ### install (`plugin.install.remote`)
 
-1. A trusted digest is mandatory: `release.sha256` or an explicit caller `sha256`; otherwise `E_DIGEST_MISSING` without downloading.
+1. The request is `{ operationId, url, sha256?, capabilities? }`; `capabilities` are the declarations the user approved in the preview, and they are validated against the extracted manifest (`E_CAPABILITY_INVALID` otherwise). A trusted digest is mandatory: `release.sha256` or an explicit caller `sha256`; otherwise `E_DIGEST_MISSING` without downloading.
 2. An already installed id → `E_DUPLICATE_ID` (updates use their own method).
 3. Download or reuse the cache, then verify the digest (`E_DIGEST_MISMATCH` on failure).
-4. Extract into `<userRoot>/.install-*` → re-check the manifest → atomically rename to `<userRoot>/<id>` → persist disabled intent.
-5. Write provenance on success; any failure removes the committed directory, reverts the disabled intent and deletes this cache entry, so no half-install survives.
+4. Extract into `<userRoot>/.install-*` → re-check the manifest and approved capabilities → **persist the grants and clear any stale disabled tombstone** → atomically rename to `<userRoot>/<id>`.
+5. Write provenance on success, then enable the hard-dependency closure and start the plugin. Any failure removes the committed directory, the grants/provenance added by this operation and this cache entry, then restores a disabled tombstone: if directory cleanup itself fails, the next boot cannot execute a plugin whose install was reported as failed. The success DTO is projected from the verified candidate; a plugin that fails its own lifecycle stays installed and enabled with its health error.
 
 ### Progress and cancellation
 
@@ -156,6 +161,8 @@ A digest comes only from the release asset's `digest` field (`sha256:<hex>`) or 
 | `E_DIGEST_INVALID`    | digest is not 64 hexadecimal characters                                                 |
 | `E_DIGEST_MISMATCH`   | downloaded entity does not match the trusted digest                                     |
 
+Management actions may also return `E_CONFIRMATION_DENIED` (native confirmation cancelled), `E_CONFIRMATION_UNAVAILABLE` (the host cannot ask for consent), `E_TARGET_CHANGED` (the plugin version/digest changed during confirmation), `E_UPDATE_CHANGED` (the release changed after confirmation) or `E_UPDATE_COMMITTED` (the update is durable but its status projection failed).
+
 ---
 
 ## 6. Updates and rollback
@@ -164,20 +171,23 @@ A digest comes only from the release asset's `digest` field (`sha256:<hex>`) or 
 
 - Only user plugins with provenance are compared. Without provenance a bulk check skips them; a targeted check returns `E_PROVENANCE_MISSING`.
 - Comparison reuses kernel semver (`parseVersion` / `compareVersions`); unparsable versions yield `hasUpdate: false`.
-- Bulk checks skip one unreachable source; a targeted check reports it.
+- Bulk checks skip one unreachable source but record it in `issues`, so a network failure is never presented as "no update"; a targeted check reports the original error.
+- An available update whose publisher digest is missing is reported in `issues` as unusable.
 
-`plugin.update.install` (`{ operationId, pluginId }`) steps:
+`plugin.update.install` (`{ operationId, pluginId, expectedVersion, expectedSha256 }`) steps:
 
 1. Validate provenance and source; if the latest version is not newer → `changed: false`, nothing is written.
-2. Resolve/download/verify/extract/validate the manifest; a missing release digest → `E_DIGEST_MISSING`.
-3. Re-run `DependencyResolver` with the new manifest replacing the old candidate; dropped → `E_DEPENDENCY` and no disk change.
-4. Backup: atomically rename `<userRoot>/<id>` to `<userRoot>/.backup-<id>-<ts>` (same volume).
-5. Install the new version (staging → rename) and merge `config/` and `data/` from the backup, **never overwriting files the user already has**.
-6. Keep the existing `enabled` intent; when the plugin was running, call `Kernel.restartPlugins(state.ids())` and require `Active` / `Degraded`.
-7. Any failure, or the new version failing to start: delete the new directory, rename the backup back, run `restartPlugins` again to restore runtime, keep the old provenance, and return `E_UPDATE_FAILED`. If rollback itself fails → `E_ROLLBACK_FAILED` with both errors in the message.
-8. On success: delete the backup, update provenance, return `restartRequired` (`false` for plugins that were not running).
+2. **Bind the confirmation**: the re-resolved version and digest must equal `expectedVersion` / `expectedSha256`; a release changed since the check → `E_UPDATE_CHANGED` without downloading.
+3. Download/verify/extract/validate the manifest; a missing release digest → `E_DIGEST_MISSING`; a manifest version different from the release → `E_MANIFEST_INVALID`.
+4. Re-run `DependencyResolver` with the new manifest replacing the old candidate; dropped → `E_DEPENDENCY` and no disk change.
+5. Backup: write `<userData>/plugin-transactions/<id>.json` with stage, backup/work names, previous disabled intent and old/new provenance, then atomically rename `<userRoot>/<id>` to `<userRoot>/.backup-<id>-<ts>` (same volume).
+6. Install the new version (staging → rename) and copy `config/`/`data/` from the backup **over** the new package defaults, so **user files always win**. A symlink or special `config`/`data` entry fails the update with `E_UNSAFE_TREE` before any destructive step.
+7. Keep the existing `enabled` intent; when the plugin was running, call `Kernel.restartPlugins(state.ids())` and require `Active` / `Degraded`. If the new manifest declares ungranted capabilities, install it `Disabled` and require explicit approval instead of starting with reduced authority.
+8. Any pre-commit failure, or the new version failing to start: delete the new directory, rename the backup back, restore the previous disabled intent and provenance, run `restartPlugins`, and return `E_UPDATE_FAILED`. If rollback itself fails → `E_ROLLBACK_FAILED`; the journal remains for startup retry.
+9. On success: update provenance and write the `committed` stage. A backup/journal cleanup failure is only a warning. A post-commit status projection failure returns `E_UPDATE_COMMITTED` and never deletes the only valid directory.
+10. On startup, `prepare()` runs before `kernel.start()`: uncommitted journal entries restore the old directory/provenance; committed entries remove leftovers; orphan `.backup-*`/staging directories are recovered or cleaned. **A journal record is deleted only after its recovery completes**; a failed backup deletion keeps the record so the next start retries it.
 
-Concurrency: every management operation is serialized; one `operationId` cannot be registered twice, and one plugin cannot run concurrent update/install (the `pendingByPlugin` guard).
+Concurrency: mutations are serialized; one `operationId` cannot be registered twice. Cancellation handles are registered before queueing, so queued operations can be cancelled; once the `installing` commit section starts, cancellation returns `cancelled: false`. `plugin.list` / `plugin.detail` retry across commit sections and never observe a missing plugin or mixed old/new origin.
 
 ---
 
@@ -225,8 +235,8 @@ Explicit grant flow:
 1. The detail DTO exposes the current `permissions` `{ granted, denied }`; persisted grants override policy denials.
 2. `plugin.permission.grant` (`{ pluginId, capabilities }`) accepts only capabilities declared in the manifest `requires`; undeclared → `E_CAPABILITY_INVALID`; built-ins → `E_BUILTIN_PROTECTED`.
 3. Grants persist atomically to `<userData>/plugin-grants.json`. On startup the kernel applies them after the trust-policy decision, and only for declared capabilities — a grant file cannot escalate a plugin beyond its own manifest.
-4. Grants apply on the next start: a freshly installed plugin stays `Disabled`, so grant and then Enable; a `Failed` plugin is unloaded and restarted by Enable.
-5. Uninstall removes the plugin's grants, so a reinstall asks again.
+4. Grants are approved at install time: both install paths read the manifest first and ask for explicit consent listing the declared capabilities. Approving persists the grant and installs the plugin enabled, so the plugin starts with all approved capabilities on the first try. `plugin.enable { pluginId, capabilities }` remains the one-step grant-and-enable fallback for a plugin that is already installed and still denied (for example one installed before install-time approval). A `Failed` plugin is unloaded and restarted by Enable after approval.
+5. Uninstall removes grants before deleting code. If cleanup fails, uninstall fails and the plugin stays disabled, so a reinstall cannot inherit stale grants.
 
 ---
 
@@ -257,10 +267,14 @@ So "restart" never recreates the main process or the window — only plugin code
 
 1. Only `source === 'user'` is accepted; built-ins return `E_BUILTIN_PROTECTED`.
 2. Any installed hard dependent, enabled or not, blocks with `E_DEPENDENTS`.
-3. Persist disabled intent and stop a running plugin.
-4. Copy `config/` and `data/` to `<userData>/plugin-data/<id>/` without overwriting existing preserved files.
-5. Verify the target `realpath` is still inside the managed user root, then delete that exact directory.
-6. Disabled intent and preserved data remain for a future reinstall.
+3. Verify the target `realpath` is still inside the managed user root **before any side effect**, and that `config/`/`data/` are real directories or absent.
+4. A symlink or special `config`/`data` entry returns `E_UNSAFE_TREE` without following or deleting it, preventing loss of the link target.
+5. Persist disabled intent and stop a running plugin.
+6. Copy `config/` and `data/` to `<userData>/plugin-data/<id>/`, **overwriting the previous preserved snapshot** so repeated uninstalls retain the newest configuration.
+7. Before deleting code, write a record to `<userData>/plugin-removed.json`: manifest snapshot, install source (remote records the URL and digest; directory installs are marked as local directory) and removal time.
+8. Remove grants and provenance. A cleanup failure fails the uninstall, removes this removal record and leaves the plugin disabled, so it can be retried safely.
+9. Delete the exact directory. Disabled intent and preserved data remain for a future reinstall.
+10. **The plugin does not disappear from the list**: the uninstalled entry stays as `NotInstalled` with an Install action. Remote records reinstall the exact recorded URL + digest (capabilities are approved again during install); directory records reopen the folder chooser (`plugin.install.directory`). A successful reinstall removes the record.
 
 Deletion never touches built-ins, the state file or `plugin-data/`, and renderer-supplied paths are never used.
 
@@ -268,26 +282,27 @@ Deletion never touches built-ins, the state file or `plugin-data/`, and renderer
 
 ## 12. IPC and UI
 
-Thirteen exact allowlisted methods cover plugin management: `plugin.list`, `plugin.detail`, `plugin.install.directory`, `plugin.install.remote`, `plugin.remote.inspect`, `plugin.download.cancel`, `plugin.update.check`, `plugin.update.install`, `plugin.enable`, `plugin.permission.grant`, `plugin.disable`, `plugin.uninstall`, `plugin.restart`.
+Plugin management uses exact allowlisted methods: `plugin.list`, `plugin.detail`, `plugin.install.directory`, `plugin.install.remote`, `plugin.reinstall`, `plugin.remote.inspect`, `plugin.download.cancel`, `plugin.update.check`, `plugin.update.install`, `plugin.enable`, `plugin.permission.grant`, `plugin.disable`, `plugin.uninstall`, `plugin.restart`.
 
-- `plugin.list` / `plugin.install.directory` / `plugin.restart` accept no arguments.
-- Detail and lifecycle methods accept `{ pluginId }` and validate its format at runtime.
-- Remote methods validate HTTPS URLs (≤ 2048 characters), `operationId` (1..64 safe characters) and digests before any network or filesystem work.
+- `plugin.list` / `plugin.install.directory` / `plugin.restart` accept no arguments. The directory install reads the chosen manifest and asks for native confirmation, listing the declared capabilities, before copying anything.
+- Detail and lifecycle methods accept `{ pluginId }` and validate its format at runtime. `plugin.enable` optionally also accepts `capabilities` for the grant-and-enable fallback.
+- Remote methods validate HTTPS URLs (≤ 2048 characters), `operationId` (1..64 safe characters) and digests before any network or filesystem work; `plugin.install.remote` also accepts the approved `capabilities` and checks them against the package manifest. `plugin.reinstall { pluginId }` replays the recorded remote source and digest and asks for native confirmation with the recorded capabilities.
 - Install uses the main-process chooser; cancellation returns `changed: false`.
 - Disable persists intent only; a live plugin stops on the next plugin-service restart.
-- Updates and remote installs never happen silently: the renderer must request them after showing the preview.
+- Updates and remote installs never happen silently: the renderer requests them after showing the preview, and the main process asks for native confirmation again.
+- Renderer dialogs are not a trust boundary. Enable, permission grants, both install paths, reinstall, update and proxy changes call a native confirmation with the validated id, version, source, digest, capabilities or proxy address; direct IPC calls cannot bypass it. Cancellation returns `E_CONFIRMATION_DENIED`; a host that cannot present a dialog fails closed with `E_CONFIRMATION_UNAVAILABLE`. **Uninstall has no confirmation banner or native dialog**: the Uninstall button itself is the consent.
 - Errors carry an optional stable `errorCode`; preload exposes it as `Error.code`.
-- Mutations are serialized inside `LocalPluginManager` to prevent duplicate installs, concurrent toggles and stale state writes.
+- Mutations are serialized inside `LocalPluginManager` to prevent duplicate installs, concurrent toggles and stale state writes. List/detail are read-only snapshots outside that mutation queue.
 
-`PluginManager.svelte` is a host-owned view opened from the top bar. It does not depend on `plugin-inspector`, so the inspector can be disabled and still recovered. The component covers list, detail, loading, empty and error states. Renderer-side DTO guards (`parsePluginList`, `parsePluginOperation`, `parsePluginInspection`, `parsePluginUpdateCheck`, `parseDownloadProgress`) validate every payload again.
+`PluginManager.svelte` is a host-owned view opened from the top bar. It does not depend on `plugin-inspector`, so the inspector can be disabled and still recovered. The component covers list, detail, loading, empty and error states. Renderer-side DTO guards (`parsePluginList`, `parsePluginOperation`, `parsePluginInspection`, `parsePluginUpdateCheck`, `parseDownloadProgress`) validate every payload again. The top-bar **Settings** view is another host view; it edits the system/direct/manual proxy through `settings.proxy.get` / `settings.proxy.set`, and saving applies immediately to the default Electron session, so window requests, plugin downloads and release metadata share one proxy.
 
-Disable has **no confirmation** — one click persists intent. Only uninstall asks for confirmation, because it deletes the installed directory. When `restartRequired` is set, a banner with a "Restart plugins" button appears; it calls `plugin.restart`. The "pending changes" text in that banner is clickable and opens a dialog listing every plugin that is disabled on disk but still running (name, id, current state), so the restart can be reviewed before it happens.
+Disable and uninstall have **no confirmation** — one click persists intent or deletes the installed directory. Enable, grants, both install paths, reinstall, update and proxy changes additionally go through native main-process confirmation. Uninstalled entries stay in the list as `NotInstalled` with an `Install` action; remote records reinstall the same version from the recorded URL + digest, while directory records reopen the folder chooser. When `restartRequired` is set, a banner with a "Restart plugins" button appears; it calls `plugin.restart`. The "pending changes" text in that banner is clickable and opens a dialog listing every plugin that is disabled on disk but still running (name, id, current state), so the restart can be reviewed before it happens.
 
 Remote flow:
 
-- **Install from URL…**: enter a URL → Inspect → the preview shows the source URL, id / name / version, publish time, release notes, declared capabilities, dependencies and SHA-256 (labelled as release metadata) → Confirm install. A progress bar with a Cancel button is shown while downloading; the result or error code is reported afterwards.
+- **Install from URL…**: enter a URL → Inspect → the preview shows the source URL, id / name / version, publish time, release notes, declared capabilities, dependencies and SHA-256 (labelled as release metadata) → Approve capabilities & install / Install & enable. Approval grants the declared capabilities and installs the plugin enabled; the native confirmation lists the same capabilities before anything is copied. A progress bar with a Cancel button is shown while downloading; the result or error code is reported afterwards.
 - **Check updates**: the list shows current → latest, publish time and a notes summary. Each "Update" opens a confirmation dialog (version / source / digest / capabilities) and only that confirmation executes the update — never a silent install.
-- **Capability grants**: the detail page lists each declared capability as granted / denied. When anything is denied, "Grant denied capabilities" calls `plugin.permission.grant` and notes that the grant applies on the next start. Installation still defaults to `Disabled`, so granting and enabling are two explicit steps.
+- **Capability grants**: the detail page lists each declared capability as granted / denied, but no longer offers a separate grant button. Installation approves and grants the declarations; a plugin that is still denied (for example installed before this flow) gets the consent dialog when enabled, and confirming sends one `plugin.enable { pluginId, capabilities }` call.
 - Error mapping: `Error.code` → readable text; `E_DIGEST_MISSING` explicitly says the publisher provided no digest and the install was blocked.
 
 ---
@@ -300,24 +315,26 @@ Remote flow:
 - Installs default to disabled, so installation never executes code.
 - Dependency consistency: disable cascades to loaded dependents; uninstall refuses while an installed plugin hard-depends on the target; enable pulls in the installed dependency closure and only fails when a dependency is truly absent.
 - The permission system constrains kernel capabilities only. It is **not an OS sandbox**: both in-process and worker plugins can import Node APIs. Worker isolation is fault isolation, not a security boundary.
-- Remote installs add: HTTPS + host allowlist only; redirects may not downgrade the protocol or leave the allowlist, at most 5 hops; ZIP only; digests come only from release metadata or an explicit caller value; extraction rejects Zip Slip, absolute paths, `..`, backslashes, symlinks, special files and compression bombs, then re-checks lexical + `realpath` containment after extraction.
+- Remote installs add: HTTPS + host allowlist only; ZIP only with a mandatory publisher digest; digests come only from release metadata or an explicit caller value; extraction rejects Zip Slip, absolute paths, `..`, backslashes, symlinks, special files and compression bombs, then re-checks lexical + `realpath` containment after extraction.
+- Production uses an Electron `ClientRequest` adapter on the configured session/proxy and walks metadata, sidecar and package redirects manually, validating every hop, protocol and the five-redirect limit; if a hop cannot be validated the request fails closed.
 - There is no signature verification, reputation, vulnerability scanning or automatic dependency installation. SHA-256 proves integrity only, not publisher identity; install only trusted plugins.
 
 ---
 
 ## 14. Known limitations
 
-| #   | Limitation                                                                                     | Impact                                                                    |
-| --- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| M1  | Remote installs support ZIP only                                                               | No tar.gz, registry, build or dependency installation                     |
-| M2  | No signatures or malicious-code sandbox                                                        | Users must trust the source                                               |
-| M3  | External manifest edits after install surface as validation issues                             | Reinstall or repair manually                                              |
-| M4  | `config/` and `data/` are intentionally preserved                                              | Manual cleanup is required to erase user data                             |
-| M5  | Restart reloads plugins, not kernel or host memory                                             | Old module instances await GC; this is not a process-level reset          |
-| M6  | Multiple windows refresh independently                                                         | No catalog event yet; state events only cover start/stop                  |
-| R1  | GitHub releases must contain exactly one `.zip` asset                                          | Multi-asset, asset-less or tar.gz-only releases cannot resolve            |
-| R2  | Digests depend on the GitHub API `digest` or a `.sha256` sidecar                               | A publisher offering neither blocks installation by design                |
-| R3  | Direct links have no trusted digest                                                            | The caller must supply `sha256` explicitly                                |
-| R4  | Update checks request each provenance source, with no token/cache                              | Unauthenticated GitHub requests are rate-limited                          |
-| R5  | Updates serialize in the main process, so a long download blocks queue neighbors (list/detail) | Progress events keep the UI informed, but other management calls wait     |
-| R6  | No automatic rollback retry, canary or downgrade path                                          | A failed rollback needs manual directory inspection (`E_ROLLBACK_FAILED`) |
+| #   | Limitation                                                                         | Impact                                                                                      |
+| --- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| M1  | Remote installs support ZIP only                                                   | No tar.gz, registry, build or dependency installation                                       |
+| M2  | No signatures or malicious-code sandbox                                            | Users must trust the source                                                                 |
+| M3  | External manifest edits after install surface as validation issues                 | Reinstall or repair manually                                                                |
+| M4  | `config/` and `data/` are intentionally preserved                                  | Manual cleanup is required to erase user data                                               |
+| M5  | Restart reloads plugins, not kernel or host memory                                 | Old module instances await GC; this is not a process-level reset                            |
+| M6  | Multiple windows refresh independently                                             | No catalog event yet; state events only cover start/stop                                    |
+| R1  | GitHub releases must contain exactly one `.zip` asset                              | Multi-asset, asset-less or tar.gz-only releases cannot resolve                              |
+| R2  | Digests depend on the GitHub API `digest` or a `.sha256` sidecar                   | A publisher offering neither blocks installation by design                                  |
+| R3  | Direct links have no trusted digest                                                | The caller must supply `sha256` explicitly                                                  |
+| R4  | Update checks request each provenance source, with no token/cache                  | Unauthenticated GitHub requests are rate-limited                                            |
+| R5  | Mutations serialize in the main process, so a long download blocks later mutations | List/detail read stable snapshots across commit windows; other mutations wait               |
+| R6  | Native confirmation or directory chooser waits for the user indefinitely           | No IPC timeout, avoiding “renderer failed but host committed later”; closing the app aborts |
+| R7  | No automatic rollback retry, canary or downgrade path                              | A failed rollback needs manual directory inspection (`E_ROLLBACK_FAILED`)                   |

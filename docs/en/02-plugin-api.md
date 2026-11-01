@@ -25,7 +25,7 @@ export default definePlugin(
 )
 ```
 
-Four files, always:
+The directory shape is fixed:
 
 ```
 plugins/my-plugin/
@@ -87,7 +87,7 @@ Constraints:
 
 `manifest-validator` validates the manifest during **discovery**; local installation and remote ZIP packages reuse the same validator, and `manifest.schema.json` is the JSON Schema form of the same rules. Changing validation rules requires changing both.
 
-Install / enable / disable / uninstall, user plugin roots, state and path safety are documented in [`05-plugin-management.md`](05-plugin-management.md). Local installation accepts only pre-built directories and remote installation only ZIP packages with a trusted digest; both default to disabled and never execute plugin code.
+Install / enable / disable / uninstall, user plugin roots, state and path safety are documented in [`05-plugin-management.md`](05-plugin-management.md). Local installation accepts only pre-built directories and remote installation only ZIP packages with a trusted digest; both approve the declared capabilities before installing and enable the plugin afterwards.
 
 ### 3.1 Why `entry` must be `dist/index.js`
 
@@ -159,7 +159,7 @@ ctx.extensions.contribute('command.provide', {
 })
 ```
 
-### 6.1 The 12 extension points
+### 6.1 Extension points
 
 | id                  | Contract                 | Slot   | Conflict                           | capability         |
 | ------------------- | ------------------------ | ------ | ---------------------------------- | ------------------ |
@@ -217,7 +217,7 @@ export const GreeterToken = defineToken<Greeter>({
 - Services **do not leak** to the parent container by default: to share, call `ctx.api.export(token)`.
 - A sibling plugin can only resolve a service after the owner `export`s it; the root container must be `shareable: true` for child containers to resolve its entries.
 
-Kernel-provided tokens live in `KernelTokens` (16 in total): `EventBus` / `Config` / `ConfigService` / `Log` / `Metrics` / `Tracer` / `Health` / `Permissions` / `Plugins` / `Scheduler` / `Resolver` / `Discovery` / `Loader` / `CapabilityGuard` / `Extensions` / `UiThemeRegistry`.
+Kernel-provided tokens live in `KernelTokens`: `EventBus` / `Config` / `ConfigService` / `Log` / `Metrics` / `Tracer` / `Health` / `Permissions` / `Plugins` / `Scheduler` / `Resolver` / `Discovery` / `Loader` / `CapabilityGuard` / `Extensions` / `UiThemeRegistry`.
 
 ---
 

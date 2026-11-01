@@ -23,40 +23,40 @@ pnpm install
 
 ## 2. 命令矩阵
 
-| 命令                          | 作用                                                               | 何时用                   |
-| ----------------------------- | ------------------------------------------------------------------ | ------------------------ |
-| `pnpm dev`                    | 终端形态启动内核（`tsx src/host/cli/run.ts`），`predev` 会先 build | 内核 / 插件开发主形态    |
-| `pnpm dev --exit-after-start` | 启动后立刻退出，打印 loadOrder / started / degraded / failed       | 冒烟                     |
-| `pnpm dev --log-level debug`  | 调日志级别                                                         | 排查加载 / 生命周期问题  |
-| `pnpm start`                  | Electron 桌面应用（`electron-forge start`）                        | 宿主 / 前端 / IPC 开发   |
-| `pnpm build`                  | `build:kernel` + `build:plugins` + `build:external`                | 改内核或插件后           |
-| `pnpm build:kernel`           | `tsc -p tsconfig.build.json` → `dist/kernel/**`                    | 只要 `.d.ts` 或内核产物  |
-| `pnpm build:plugins`          | esbuild 逐插件 → `plugins-dist/<id>/dist/index.js`                 | 改内置插件源码后         |
-| `pnpm build:external`         | 构建同级 `REM2-plugins` → `plugins-external-dist/`                 | 改外部插件 / 打发布包时  |
-| `pnpm build:renderer`         | 单独构建 renderer                                                  | 调试前端产物             |
-| `pnpm typecheck:all`          | `typecheck` + `typecheck:electron` + `typecheck:frontend`          | 提交前                   |
-| `pnpm test:run`               | 全量测试（一次）                                                   | 提交前                   |
-| `pnpm test:watch`             | 监听模式                                                           | 开发中                   |
-| `pnpm lint` / `pnpm lint:fix` | oxlint + oxfmt 检查 / 修复                                         | 提交前                   |
-| `pnpm cli scaffold <id>`      | 生成插件骨架                                                       | 新建插件                 |
-| `pnpm cli validate <path>`    | 校验 `plugin.json`                                                 | 新建 / 改清单后          |
-| `pnpm cli list`               | 列出发现的插件                                                     | 确认发现结果             |
-| `pnpm verify:render`          | 用 Electron 离屏跑一次 renderer 验证挂载                           | renderer 白屏时          |
-| `pnpm package` / `pnpm make`  | 打包 / 出安装包（`premake` 会先 build）                            | 分发                     |
+| 命令                          | 作用                                                               | 何时用                  |
+| ----------------------------- | ------------------------------------------------------------------ | ----------------------- |
+| `pnpm dev`                    | 终端形态启动内核（`tsx src/host/cli/run.ts`），`predev` 会先 build | 内核 / 插件开发主形态   |
+| `pnpm dev --exit-after-start` | 启动后立刻退出，打印 loadOrder / started / degraded / failed       | 冒烟                    |
+| `pnpm dev --log-level debug`  | 调日志级别                                                         | 排查加载 / 生命周期问题 |
+| `pnpm start`                  | Electron 桌面应用（`electron-forge start`）                        | 宿主 / 前端 / IPC 开发  |
+| `pnpm build`                  | `build:kernel` + `build:plugins` + `build:external`                | 改内核或插件后          |
+| `pnpm build:kernel`           | `tsc -p tsconfig.build.json` → `dist/kernel/**`                    | 只要 `.d.ts` 或内核产物 |
+| `pnpm build:plugins`          | esbuild 逐插件 → `plugins-dist/<id>/dist/index.js`                 | 改内置插件源码后        |
+| `pnpm build:external`         | 构建同级 `REM2-plugins` → `plugins-external-dist/`                 | 改外部插件 / 打发布包时 |
+| `pnpm build:renderer`         | 单独构建 renderer                                                  | 调试前端产物            |
+| `pnpm typecheck:all`          | `typecheck` + `typecheck:electron` + `typecheck:frontend`          | 提交前                  |
+| `pnpm test:run`               | 全量测试（一次）                                                   | 提交前                  |
+| `pnpm test:watch`             | 监听模式                                                           | 开发中                  |
+| `pnpm lint` / `pnpm lint:fix` | oxlint + oxfmt 检查 / 修复                                         | 提交前                  |
+| `pnpm cli scaffold <id>`      | 生成插件骨架                                                       | 新建插件                |
+| `pnpm cli validate <path>`    | 校验 `plugin.json`                                                 | 新建 / 改清单后         |
+| `pnpm cli list`               | 列出发现的插件                                                     | 确认发现结果            |
+| `pnpm verify:render`          | 用 Electron 离屏跑一次 renderer 验证挂载                           | renderer 白屏时         |
+| `pnpm package` / `pnpm make`  | 打包 / 出安装包（`premake` 会先 build）                            | 分发                    |
 
-终态验证基线（当前代码）：
+终态验证基线：
 
 ```
-pnpm typecheck:all    → 0 错误（3 份 tsconfig）
-pnpm test:run         → 50 文件 / 479 用例全绿（约 20s）
-pnpm dev --exit-after-start → started=7 failed=0
+pnpm typecheck:all    → 全部 tsconfig 零错误
+pnpm test:run         → 全量测试全绿
+pnpm dev --exit-after-start → 全部插件启动、failed=0
 ```
 
 ---
 
 ## 3. 构建与打包规格
 
-### 3.1 三条产线与产物路径
+### 3.1 构建产线与产物路径
 
 | 产线 | 输入                                                              | 执行                                     | 输出                                                                                       |
 | ---- | ----------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------ |
@@ -73,27 +73,27 @@ plugins-dist                  →  resources/plugins-dist/（extraResource，★
 
 ### 3.2 「产物 ↔ 路径 ↔ 解析规则」对照
 
-| 产物                 | 磁盘位置                                | 谁解析                                                     | 解析规则 / 约束                                                                |
-| -------------------- | --------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| 内核库               | `dist/kernel/index.js` + `.d.ts`        | `package.json` → `exports["."]`                            | `types` → `.d.ts`，`default` → `.js`。`./src` 子路径导出仅供本仓库开发期使用   |
-| 内核（开发期裸包名） | `src/kernel/index.ts`                   | `package.json` → `imports` + tsconfig `paths` + vite alias | 三处必须指向同一文件；插件 tsconfig 的 `paths` 单独声明一次                    |
-| 插件入口             | `plugins-dist/<id>/dist/index.js`       | 内核 `loader` 的 `import()`                                | `entry` 恒为 `dist/index.js`；只允许 `.js` / `.mjs`；`assertInsideRoot` 防逃逸 |
-| 主进程               | `.vite/build/main.cjs`                  | `package.json` → `main`                                    | CJS；`import.meta.url` 为 `undefined`，路径解析要回退 `__dirname`              |
-| preload              | `.vite/build/preload.cjs`               | `host/electron/window.ts` 硬编码文件名                     | 必须是 CJS 且必须叫 `preload.cjs`                                              |
-| renderer             | `.vite/renderer/main_window/index.html` | `window.ts` 的 `loadFile`                                  | 目录名来自渲染进程名大写化（`MAIN_WINDOW_VITE_NAME`）                          |
-| 插件（打包态）       | `resources/plugins-dist/`               | `builtinPluginsRoot()`                                     | `extraResource` 目标名取路径末段，**不是** `rem2-plugins/`                     |
+| 产物                 | 磁盘位置                                | 谁解析                                 | 解析规则 / 约束                                                                |
+| -------------------- | --------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------ |
+| 内核库               | `dist/kernel/index.js` + `.d.ts`        | `package.json` → `exports["."]`        | `types` → `.d.ts`，`default` → `.js`。`./src` 子路径导出仅供本仓库开发期使用   |
+| 内核（开发期裸包名） | `src/kernel/index.ts`                   | tsconfig `paths` + vite alias          | 两处必须指向同一文件；插件 tsconfig 的 `paths` 单独声明一次                    |
+| 插件入口             | `plugins-dist/<id>/dist/index.js`       | 内核 `loader` 的 `import()`            | `entry` 恒为 `dist/index.js`；只允许 `.js` / `.mjs`；`assertInsideRoot` 防逃逸 |
+| 主进程               | `.vite/build/main.cjs`                  | `package.json` → `main`                | CJS；`import.meta.url` 为 `undefined`，路径解析要回退 `__dirname`              |
+| preload              | `.vite/build/preload.cjs`               | `host/electron/window.ts` 硬编码文件名 | 必须是 CJS 且必须叫 `preload.cjs`                                              |
+| renderer             | `.vite/renderer/main_window/index.html` | `window.ts` 的 `loadFile`              | 目录名来自渲染进程名大写化（`MAIN_WINDOW_VITE_NAME`）                          |
+| 插件（打包态）       | `resources/plugins-dist/`               | `builtinPluginsRoot()`                 | `extraResource` 目标名取路径末段，**不是** `rem2-plugins/`                     |
 
 ### 3.3 tsconfig 职责
 
-五份配置 = 一份基线 + 三份特化 + 一份转发壳，`strict` / `noUnused*` 全局一致。
+tsconfig 由基线、按运行形态特化的配置与转发壳组成，`strict` / `noUnused*` 全局一致。
 
-| 配置                     | `include`                                                                                 | `lib` / `types`                                      | `moduleResolution` | 为什么这样切                                                                                                                                                |
-| ------------------------ | ----------------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tsconfig.json`（基线）  | `src/kernel/**`、`src/host/{cli,ipc}/**`、`plugins/*/src/**`、`tests/**`、`*.ts`、`*.mts` | `ESNext` + `types: ["node"]`                         | `NodeNext`         | 内核与 CLI / IPC 是纯 Node 库，不需要 DOM；同时覆盖插件与测试，保证三者对同一份契约的类型判断一致                                                           |
-| `tsconfig.electron.json` | `src/{main,preload}.ts`、`src/host/electron/**`、`src/declarations.d.ts`                  | `ESNext` + `DOM` + `DOM.Iterable`，`types: ["node"]` | `NodeNext`（继承） | 主进程与 preload 需要 DOM（`BrowserWindow`）与 node 同时在场                                                                                                |
-| `tsconfig.frontend.json` | `src/frontend/**`、`src/declarations.d.ts`                                                | `ESNext` + `DOM`，**`types: []`**                    | **`Bundler`**      | ① 刻意不给 node 类型：renderer 在 `contextIsolation + sandbox` 下本就无 Node 能力，把约束落到类型层；② `Bundler` 是 svelte 插件解析 `./X.svelte` 的必要条件 |
-| `tsconfig.build.json`    | 仅 `src/kernel/**`                                                                        | 同基线                                               | `NodeNext`         | **唯一 `noEmit: false`**：`declaration: true` + `outDir: dist` + `rootDir: src`；host 与 frontend 不进 dist                                                 |
-| `tsconfig.shell.json`    | —                                                                                         | —                                                    | —                  | 转发壳（`extends: ./tsconfig.electron.json`），保留是为了不破坏既有验收脚本                                                                                 |
+| 配置                     | `include`                                                                                                  | `lib` / `types`                                      | `moduleResolution` | 为什么这样切                                                                                                                                                |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tsconfig.json`（基线）  | `src/kernel/**`、`src/host/{cli,ipc,plugins,settings}/**`、`plugins/*/src/**`、`tests/**`、`*.ts`、`*.mts` | `ESNext` + `types: ["node"]`                         | `NodeNext`         | 内核与 CLI / IPC / 设置服务是纯 Node 库，不需要 DOM；同时覆盖插件与测试，保证三者对同一份契约的类型判断一致                                                 |
+| `tsconfig.electron.json` | `src/{main,preload}.ts`、`src/host/electron/**`、`src/declarations.d.ts`                                   | `ESNext` + `DOM` + `DOM.Iterable`，`types: ["node"]` | `NodeNext`（继承） | 主进程与 preload 需要 DOM（`BrowserWindow`）与 node 同时在场                                                                                                |
+| `tsconfig.frontend.json` | `src/frontend/**`、`src/declarations.d.ts`                                                                 | `ESNext` + `DOM`，**`types: []`**                    | **`Bundler`**      | ① 刻意不给 node 类型：renderer 在 `contextIsolation + sandbox` 下本就无 Node 能力，把约束落到类型层；② `Bundler` 是 svelte 插件解析 `./X.svelte` 的必要条件 |
+| `tsconfig.build.json`    | 仅 `src/kernel/**`                                                                                         | 同基线                                               | `NodeNext`         | **唯一 `noEmit: false`**：`declaration: true` + `outDir: dist` + `rootDir: src`；host 与 frontend 不进 dist                                                 |
+| `tsconfig.shell.json`    | —                                                                                                          | —                                                    | —                  | 转发壳（`extends: ./tsconfig.electron.json`），保留是为了不破坏既有验收脚本                                                                                 |
 
 插件侧 `plugins/*/tsconfig.json` 独立，只声明 `paths: { "rem2-kernel": ["../../src/kernel/index.ts"] }`，不继承根配置。
 

@@ -6,7 +6,7 @@
 >
 > The kernel does only 7 things; everything else (logging, config, business logic, ops, UI) is a plugin.
 
-![tests](https://img.shields.io/badge/tests-478%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-passing-brightgreen)
 
 ![kernel deps](https://img.shields.io/badge/kernel%20deps-0-blue)
 
@@ -90,9 +90,11 @@ Type a command in the window (default `hello`) and click "Execute"; the command 
 
 to the kernel event bus through the IPC bridge. The top-bar **Plugins** view lists, installs,
 
-enables, disables and uninstalls local plugins; new installs are disabled by default and user
+enables, disables and uninstalls local plugins; installs approve the declared capabilities up front and enable the plugin, and user
 
-data is preserved.
+data is preserved. **Settings** switches between the system proxy, a direct connection or a
+
+manual proxy; saving applies immediately to window requests and plugin downloads.
 
 > **Why the host runs TypeScript via tsx**: the host's own entry (`src/host/cli/run.ts` for the
 >
@@ -184,7 +186,7 @@ export default definePlugin(
 }
 ```
 
-7-stage lifecycle (all optional): `onDiscover` → `onLoad` → `onConfigure` → `onStart` →
+Lifecycle hooks (all optional): `onDiscover` → `onLoad` → `onConfigure` → `onStart` →
 
 `onStop` → `onUnload` → `onDispose`
 
@@ -194,7 +196,7 @@ Full API reference: **[docs/02-plugin-api.md](docs/02-plugin-api.md)** (English:
 
 ---
 
-## Example plugins (6 built-in + 1 installable)
+## Example plugins (built-in + installable)
 
 | Plugin                                         | Proves what                                                                                     | Depends on              |
 | ---------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------- |
@@ -210,15 +212,15 @@ Full API reference: **[docs/02-plugin-api.md](docs/02-plugin-api.md)** (English:
 bundled as a built-in: `pnpm build:external` builds it into
 `plugins-external-dist` (git-ignored, not part of `resources/plugins-dist`).
 Install it from its GitHub release with **Plugins → Install from URL…**, then
-grant its declared UI capabilities in the plugin detail before enabling it —
-user plugins are sandboxed and sensitive capabilities are denied by default.
-Set `REM2_EXTERNAL_PLUGINS_DIR` to use another checkout location.
+press Enable: the consent dialog lists its declared UI capabilities and
+approving grants them together with enabling. Set `REM2_EXTERNAL_PLUGINS_DIR`
+to use another checkout location.
 
 ---
 
 ## Kernel boundary
 
-The kernel has **zero third-party runtime dependencies** and uses only 4 Node built-ins:
+The kernel has **zero third-party runtime dependencies** and uses only Node built-ins:
 
 ```
 $ grep -rhoP "from '\K[^']+" src/kernel --include=*.ts | grep -v "^\.\|^node:" | sort -u
@@ -241,12 +243,12 @@ pnpm test:coverage   # coverage
 pnpm typecheck:all   # kernel + electron + frontend type checks
 ```
 
-| Layer       | Files                    | Coverage                                                                                                                                                                                                                                                                                                                                                                                   |
-| ----------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Unit        | 26                       | semver / topological sort / cycle detection / DI container / container isolation / event bus / lifecycle / manifest validation / permissions / config service / health service / command dispatcher / DTO guards / route→panel resolution / builtin plugins root / plugin state store / integrity / remote download / ZIP extraction / release source / provenance store / version compare |
-| Integration | 19                       | startup order / soft-dep fallback / hard-dep cascade / fault isolation / config plugin / observability / hot reload / unload cascade / security boundary / worker isolation / command chain / theme chain / UI chain / inspector data chain / local plugin manager / remote install, update and rollback                                                                                   |
-| Contract    | 5                        | plugin import boundary / kernel dependency whitelist / extension-point catalog consistency / svelte built as browser bundle / IPC whitelist vs kernel Topics                                                                                                                                                                                                                               |
-| **Total**   | **50 files / 479 cases** |                                                                                                                                                                                                                                                                                                                                                                                            |
+| Layer       | Focus                      | Coverage                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ----------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit        | module behavior            | semver / topological sort / cycle detection / DI container / container isolation / event bus / lifecycle / manifest validation / permissions / config service / health service / command dispatcher / DTO guards / route→panel resolution / builtin plugins root / plugin state store / integrity / remote download / ZIP extraction / release source / provenance store / proxy settings / version compare |
+| Integration | cross-module collaboration | startup order / soft-dep fallback / hard-dep cascade / fault isolation / config plugin / observability / hot reload / unload cascade / security boundary / worker isolation / command chain / theme chain / UI chain / inspector data chain / local plugin manager / remote install, update and rollback                                                                                                    |
+| Contract    | architectural boundaries   | plugin import boundary / kernel dependency whitelist / extension-point catalog consistency / svelte built as browser bundle / IPC whitelist vs kernel Topics                                                                                                                                                                                                                                                |
+| **Full**    | **layered coverage**       |                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 ---
 
@@ -256,14 +258,14 @@ Documents are numbered in **reading order** (`01` first). Full index:
 
 **[docs/INDEX.md](docs/INDEX.md)** (English: **[docs/en/INDEX.md](docs/en/INDEX.md)**).
 
-| #   | Document                                                            | Content                                                                                                                                                                                                                                              |
-| --- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| —   | **[docs/INDEX.md](docs/INDEX.md)**                                  | **Doc index & reading path** (start here)                                                                                                                                                                                                            |
-| 01  | **[01-architecture-overview.md](docs/01-architecture-overview.md)** | **Architecture (authoritative)**: layering & dependency direction, per-file responsibilities, two-layer lifecycle, 12 extension points, isolation & permissions, call chains, data flows, build artifacts, 9 decisions, extension flow, known limits |
-| 02  | **[02-plugin-api.md](docs/02-plugin-api.md)**                       | **Plugin development guide**: `definePlugin`, `plugin.json` fields, lifecycle hooks, `PluginContext`, extension points, service tokens, command chain, isolation modes, error codes                                                                  |
-| 03  | **[03-frontend-ipc.md](docs/03-frontend-ipc.md)**                   | **Frontend & IPC contract**: process/build boundaries, 20 methods + 6 events allowlist, DTOs, store↔event bridge, theme path, vite/CSP constraints                                                                                                   |
-| 04  | **[04-development-guide.md](docs/04-development-guide.md)**         | **Development guide**: environment, command matrix, build & packaging spec, tsconfig boundaries, extension flow, debugging, pitfalls, code conventions                                                                                               |
-| 05  | **[05-plugin-management.md](docs/05-plugin-management.md)**         | **Plugin management**: manifest checks, local and remote installs, updates and rollback, provenance, directories and states, path safety, data preservation, IPC/UI, known limits                                                                    |
+| #   | Document                                                            | Content                                                                                                                                                                                                                                                    |
+| --- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| —   | **[docs/INDEX.md](docs/INDEX.md)**                                  | **Doc index & reading path** (start here)                                                                                                                                                                                                                  |
+| 01  | **[01-architecture-overview.md](docs/01-architecture-overview.md)** | **Architecture (authoritative)**: layering & dependency direction, per-file responsibilities, two-layer lifecycle, extension points, isolation & permissions, call chains, data flows, build artifacts, key design decisions, extension flow, known limits |
+| 02  | **[02-plugin-api.md](docs/02-plugin-api.md)**                       | **Plugin development guide**: `definePlugin`, `plugin.json` fields, lifecycle hooks, `PluginContext`, extension points, service tokens, command chain, isolation modes, error codes                                                                        |
+| 03  | **[03-frontend-ipc.md](docs/03-frontend-ipc.md)**                   | **Frontend & IPC contract**: process/build boundaries, method and event allowlists, DTOs, store↔event bridge, theme path, vite/CSP constraints                                                                                                             |
+| 04  | **[04-development-guide.md](docs/04-development-guide.md)**         | **Development guide**: environment, command matrix, build & packaging spec, tsconfig boundaries, extension flow, debugging, pitfalls, code conventions                                                                                                     |
+| 05  | **[05-plugin-management.md](docs/05-plugin-management.md)**         | **Plugin management**: manifest checks, local and remote installs, updates and rollback, provenance, directories and states, path safety, data preservation, IPC/UI, known limits                                                                          |
 
 Architecture diagrams: [class-diagram-v2.mermaid](docs/class-diagram-v2.mermaid) ·
 [sequence-diagram-v2.mermaid](docs/sequence-diagram-v2.mermaid)
@@ -278,7 +280,7 @@ Architecture diagrams: [class-diagram-v2.mermaid](docs/class-diagram-v2.mermaid)
 src/
 ├── kernel/               # minimal kernel (zero third-party runtime deps, hard-asserted by contract tests)
 │   ├── contracts/        # pure-type contracts + defineToken / definePlugin factories
-│   ├── extensions/       # declarations & slots for the 12 extension points (the only mount surface)
+│   ├── extensions/       # declarations & slots for the extension points (the only mount surface)
 │   ├── di/               # DI container (parent ref hidden in a module-private WeakMap)
 │   ├── discovery/        # candidate discovery + manifest validation
 │   ├── dependency/       # dependency graph / topological sort / cycle detection
@@ -296,7 +298,7 @@ src/
 │   ├── context/          # PluginContext & PluginApi construction
 │   ├── util/
 │   ├── composition.ts    # the single KernelDeps assembly point (Kernel never news impls)
-│   ├── state-machine.ts  # 7-stage logical state machine
+│   ├── state-machine.ts  # logical state machine
 │   ├── define-plugin.ts  # the single plugin shape entry
 │   └── index.ts          # the single public entry (rem2-kernel)
 ├── host/                 # host adaptation layer (outside the kernel, alongside it)
@@ -308,7 +310,7 @@ src/
 │   └── lib/              # ipc-client / bridge-types / nav-link / dto-guards / stores / theme
 ├── main.ts               # Electron Forge main-process entry (forwarding shell)
 └── preload.ts            # Forge preload entry (forwarding shell)
-plugins/                  # 6 built-in plugins (theme-switcher is installed from REM2-plugins releases)
+plugins/                  # built-in plugins (theme-switcher is installed from REM2-plugins releases)
 plugins-dist/             # built-in plugin artifacts only (esbuild ESM bundle, into extraResource)
 plugins-external-dist/    # external plugin artifacts for release packaging/tests (not bundled)
 dist/                     # kernel artifacts (tsc, includes .d.ts)

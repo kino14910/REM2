@@ -41,7 +41,7 @@ graph LR
 | B3   | renderer **不得**直接 import 内核   | `tests/contract/plugin-contract.test.ts` R6 扫描 `src/frontend/**`，命中 `rem2-kernel` 或 `src/kernel` 即红 |
 | B4   | 主进程是内核的**宿主**，不是权威    | 宿主默认实现只经扩展点注册；`main.ts` 不 import 任何插件源码、不含任何插件 id                               |
 
-`window.rem2` 的形状（`preload.ts` → `Rem2Bridge`）只有两个方法：
+`window.rem2` 的形状（`preload.ts` → `Rem2Bridge`）：
 
 ```ts
 interface Rem2Bridge {
@@ -58,7 +58,7 @@ interface Rem2Bridge {
 src/frontend/
 ├── entry-client.ts              # 渲染进程入口：import './app/global.css' + mount(App)；只做挂载
 ├── app/
-│   ├── App.svelte               # 首屏编排：四个 store 并行 load，订阅主题 / 插件状态事件；$effect 决议激活面板
+│   ├── App.svelte               # 首屏编排：各 store 并行 load，订阅主题 / 插件状态事件；$effect 决议激活面板
 │   ├── Shell.svelte             # 布局：左导航（RouteHost）+ 主区（PanelHost）+ 底栏（HealthBadge）
 │   ├── PanelHost.svelte         # ★ ui.panel 插槽：渲染面板列表、维护激活态（error / notice / loading 显式优先级）
 │   ├── RouteHost.svelte         # ★ ui.route 插槽：由路由声明派生导航项（顶部显式 error 行）
@@ -101,33 +101,36 @@ export const Ipc = {
 
 响应与事件拆成两个通道，前端 `subscribe` 只需监听一个 channel。请求 / 响应配对沿用 id 匹配（preload 内完成），不依赖 `ipcRenderer.invoke` 的自动配对。
 
-### 3.2 方法白名单（21 个，穷举）
+### 3.2 方法白名单（穷举）
 
-| #   | method（`channels.*`）     | payload                         | 响应                                       | 宿主落点                                                                                          |
-| --- | -------------------------- | ------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| 1   | `ui.panel.list`            | —                               | `PanelDto[]`                               | `kernel.extensions.listAll('ui.panel')`                                                           |
-| 2   | `ui.panel.data`            | `{ panelId }`                   | `unknown`（由插件定义）                    | 按面板声明的 `command` 走 `bus.request`                                                           |
-| 3   | `ui.route.list`            | —                               | `RouteDto[]`                               | `kernel.extensions.listAll('ui.route')`                                                           |
-| 4   | `ui.theme.list`            | —                               | `ThemeCatalogDto`（`{themes, activeId?}`） | `ThemeRegistry.list()` + `.active()`（读前 pull 同步扩展点）                                      |
-| 5   | `ui.theme.set`             | `{ themeId }`                   | `{ ok }`                                   | `ThemeRegistry.activate()`；**仅激活项真变化时** emit                                             |
-| 6   | `ui.event`                 | `{ panelId, kind, payload? }`   | `{ ok }`                                   | 路由到面板声明的 `command`                                                                        |
-| 7   | `command.execute`          | `{ command, args? }`            | `CommandResultDto`                         | **`null`** —— 分发在内核 `CommandDispatcher`（读 `command.provide` 槽），宿主不实现               |
-| 8   | `health.report`            | —                               | `HealthDto`                                | `kernel.health()` + 裁剪                                                                          |
-| 9   | `plugin.list`              | —                               | `PluginListDto`                            | `LocalPluginManager.list()`；扫描安装目录 + 运行态 + 禁用意图                                     |
-| 10  | `plugin.detail`            | `{ pluginId }`                  | `PluginDetailDto`                          | `LocalPluginManager.detail()`（含 `origin`）                                                      |
-| 11  | `plugin.install.directory` | —                               | `PluginOperationResultDto`                 | 主进程原生目录选择 → 校验 → 暂存复制 → 原子提交；默认禁用                                         |
-| 12  | `plugin.enable`            | `{ pluginId }`                  | `PluginOperationResultDto`                 | 持久启用意图（含已安装的硬依赖闭包）→ `Kernel.enablePlugin()`（含依赖拓扑）                       |
-| 13  | `plugin.permission.grant` | `{ pluginId, capabilities }`    | `PluginOperationResultDto`                 | 仅 user 来源且能力必须在 manifest `requires` 内 → 原子写 `plugin-grants.json`；下次启动生效       |
-| 14  | `plugin.disable`           | `{ pluginId }`                  | `PluginOperationResultDto`                 | 级联禁用已加载依赖者 → 持久禁用意图；运行中的插件需重启插件服务才停止                             |
-| 15  | `plugin.uninstall`         | `{ pluginId }`                  | `PluginOperationResultDto`                 | 仅 user 来源；停止、保留 config/data、精确删除                                                    |
-| 16  | `plugin.restart`           | —                               | `PluginOperationResultDto`                 | `Kernel.restartPlugins()`：停全部插件 → 按禁用集重新发现/解析/启动；内核与主进程不动              |
-| 17  | `plugin.remote.inspect`    | `{ url, operationId? }`         | `PluginRemoteInspectionDto`                | 解析发布元数据 → 下载（可取消/带进度）→ 摘要校验 → 临时解压 → manifest/依赖预检；**不写插件目录** |
-| 18  | `plugin.install.remote`    | `{ operationId, url, sha256? }` | `PluginOperationResultDto`                 | 复用 inspect 缓存 → 可信摘要校验 → 暂存 → 原子 rename → 写禁用意图 + provenance                   |
-| 19  | `plugin.download.cancel`   | `{ operationId }`               | `{ ok: true, cancelled }`                  | `LocalPluginManager.cancelDownload()`：按 operationId 中止 `AbortController`；重复取消幂等        |
-| 20  | `plugin.update.check`      | `{ pluginId? }`                 | `PluginUpdateCheckDto`                     | 按 provenance 的发布源解析最新 release，与已安装版本比较；`hasUpdate` 为假表示无更新              |
-| 21  | `plugin.update.install`    | `{ operationId, pluginId }`     | `PluginOperationResultDto`                 | 下载/校验/解压 → 依赖预检 → 备份旧目录 → 安装新版本 → 保留 config/data → 必要时重启；失败回滚     |
+| #   | method（`channels.*`）     | payload                                                      | 响应                                       | 宿主落点                                                                                                 |
+| --- | -------------------------- | ------------------------------------------------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| 1   | `ui.panel.list`            | —                                                            | `PanelDto[]`                               | `kernel.extensions.listAll('ui.panel')`                                                                  |
+| 2   | `ui.panel.data`            | `{ panelId }`                                                | `unknown`（由插件定义）                    | 按面板声明的 `command` 走 `bus.request`                                                                  |
+| 3   | `ui.route.list`            | —                                                            | `RouteDto[]`                               | `kernel.extensions.listAll('ui.route')`                                                                  |
+| 4   | `ui.theme.list`            | —                                                            | `ThemeCatalogDto`（`{themes, activeId?}`） | `ThemeRegistry.list()` + `.active()`（读前 pull 同步扩展点）                                             |
+| 5   | `ui.theme.set`             | `{ themeId }`                                                | `{ ok }`                                   | `ThemeRegistry.activate()`；**仅激活项真变化时** emit                                                    |
+| 6   | `ui.event`                 | `{ panelId, kind, payload? }`                                | `{ ok }`                                   | 路由到面板声明的 `command`                                                                               |
+| 7   | `command.execute`          | `{ command, args? }`                                         | `CommandResultDto`                         | **`null`** —— 分发在内核 `CommandDispatcher`（读 `command.provide` 槽），宿主不实现                      |
+| 8   | `health.report`            | —                                                            | `HealthDto`                                | `kernel.health()` + 裁剪                                                                                 |
+| 9   | `plugin.list`              | —                                                            | `PluginListDto`                            | `LocalPluginManager.list()`；扫描安装目录 + 运行态 + 禁用意图                                            |
+| 10  | `plugin.detail`            | `{ pluginId }`                                               | `PluginDetailDto`                          | `LocalPluginManager.detail()`（含 `origin`）                                                             |
+| 11  | `plugin.install.directory` | —                                                            | `PluginOperationResultDto`                 | 主进程原生目录选择 → 读 manifest 确认能力 → 校验 → 暂存复制 → 原子提交并启用                             |
+| 12  | `plugin.enable`            | `{ pluginId, capabilities? }`                                | `PluginOperationResultDto`                 | 可选先持久化授权；再持久启用意图（含依赖闭包）→ `Kernel.enablePlugin()`                                  |
+| 13  | `plugin.permission.grant`  | `{ pluginId, capabilities }`                                 | `PluginOperationResultDto`                 | 仅 user 来源且能力必须在 manifest `requires` 内 → 原子写 `plugin-grants.json`；下次启动生效              |
+| 14  | `plugin.disable`           | `{ pluginId }`                                               | `PluginOperationResultDto`                 | 级联禁用已加载依赖者 → 持久禁用意图；运行中的插件需重启插件服务才停止                                    |
+| 15  | `plugin.uninstall`         | `{ pluginId }`                                               | `PluginOperationResultDto`                 | 仅 user 来源；停止、保留 config/data、精确删除                                                           |
+| 16  | `plugin.restart`           | —                                                            | `PluginOperationResultDto`                 | `Kernel.restartPlugins()`：停全部插件 → 按禁用集重新发现/解析/启动；内核与主进程不动                     |
+| 17  | `plugin.remote.inspect`    | `{ url, operationId? }`                                      | `PluginRemoteInspectionDto`                | 解析发布元数据 → 下载（可取消/带进度）→ 摘要校验 → 临时解压 → manifest/依赖预检；**不写插件目录**        |
+| 18  | `plugin.install.remote`    | `{ operationId, url, sha256?, capabilities? }`               | `PluginOperationResultDto`                 | 复用 inspect 缓存 → 可信摘要校验 → 校验已批准能力 → 写授权/启用意图 → 原子 rename + provenance + 启动    |
+| 19  | `plugin.download.cancel`   | `{ operationId }`                                            | `{ ok: true, cancelled }`                  | `LocalPluginManager.cancelDownload()`：排队中与下载中的 operation 都可中止；重复取消幂等                 |
+| 20  | `plugin.update.check`      | `{ pluginId? }`                                              | `PluginUpdateCheckDto`                     | 按 provenance 解析最新 release；结果含 `updates` 和逐来源 `issues`，失败不再伪装成无更新                 |
+| 21  | `plugin.update.install`    | `{ operationId, pluginId, expectedVersion, expectedSha256 }` | `PluginOperationResultDto`                 | 复核确认的版本/摘要 → 下载/校验/解压 → 依赖预检 → 备份 → 安装 → 保留 config/data → 必要时重启；失败回滚  |
+| 22  | `settings.proxy.get`       | —                                                            | `ProxySettingsDto`                         | 读 `proxy-settings.json` + `session.resolveProxy()` 诊断（不触碰网络、不返回路径）                       |
+| 23  | `settings.proxy.set`       | `{ mode, address?, bypass? }`                                | `ProxySettingsDto`                         | 校验地址 → 主进程确认 → `session.setProxy()` → 原子写 `proxy-settings.json`；仅接受 system/direct/manual |
+| 24  | `plugin.reinstall`         | `{ pluginId }`                                               | `PluginOperationResultDto`                 | 读取卸载记录 → 主进程确认能力 → 按记录 URL + 摘要重装并启用；目录来源返回 `E_SOURCE_INVALID`             |
 
-### 3.3 事件白名单（6 个）
+### 3.3 事件白名单
 
 | #   | event（`events.*`）        | topic（内核 `Topics`）          | payload                                               | 用途                                              |
 | --- | -------------------------- | ------------------------------- | ----------------------------------------------------- | ------------------------------------------------- |
@@ -140,14 +143,14 @@ export const Ipc = {
 
 ### 3.4 明确禁止的能力
 
-| 禁止                                                   | 理由                                                                           |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| 任意 `bus.request(method)` 直通                        | 前缀匹配等于交出整个命名空间；判定必须是 20 个方法名的精确集合                 |
-| 读配置（任何 `config.*`）                              | 配置可能含敏感值。面板需要配置时，由插件在 `ui.panel.data` 的响应里决定给什么  |
-| 读内核服务（`services.*` / `kernel.*`）                | renderer 只与 DTO 打交道，不与内核对象图打交道                                 |
-| 任意生命周期方法（`plugin.start` / `stop` / `unload`） | 生命周期是内核 / 宿主特权；只允许 §3.2 中受参数校验与依赖保护的管理方法        |
-| 订阅任意内核事件                                       | 只允许 §3.3 的 6 个；内核其余 topic（如 `config.changed`）含内部状态，不得外泄 |
-| 收到插件侧原始事件（如 `ui.theme.registered`）         | 只认 DTO 化后的语义事件                                                        |
+| 禁止                                                   | 理由                                                                              |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| 任意 `bus.request(method)` 直通                        | 前缀匹配等于交出整个命名空间；判定必须是方法白名单的精确集合                      |
+| 读配置（任何 `config.*`）                              | 配置可能含敏感值。面板需要配置时，由插件在 `ui.panel.data` 的响应里决定给什么     |
+| 读内核服务（`services.*` / `kernel.*`）                | renderer 只与 DTO 打交道，不与内核对象图打交道                                    |
+| 任意生命周期方法（`plugin.start` / `stop` / `unload`） | 生命周期是内核 / 宿主特权；只允许 §3.2 中受参数校验与依赖保护的管理方法           |
+| 订阅任意内核事件                                       | 只允许 §3.3 列出的事件；内核其余 topic（如 `config.changed`）含内部状态，不得外泄 |
+| 收到插件侧原始事件（如 `ui.theme.registered`）         | 只认 DTO 化后的语义事件                                                           |
 
 **强制点**：`IpcBridge.handleInvoke` 在 `bus.request` **之前**做 `allowedMethods.has(method)`（`Set` 精确匹配）。不在集合内 → 直接 reply `{ok:false,error}`，**不进入事件总线**。
 
@@ -213,6 +216,7 @@ interface PluginDetailDto {
   dependencies: Record<string, string>
   optionalDependencies: Record<string, string>
   requires: string[]
+  permissions: { granted: string[]; denied: string[] }
   compatibility: { minKernel; maxKernel?; contractVersion }
   canUninstall: boolean
   restartRequired: boolean
@@ -246,6 +250,7 @@ interface PluginUpdateDto {
 }
 interface PluginUpdateCheckDto {
   updates: PluginUpdateDto[]
+  issues: string[] // per-source failures and unusable updates
 }
 interface PluginDownloadProgressDto {
   operationId
@@ -256,6 +261,7 @@ interface PluginDownloadProgressDto {
 interface PluginListDto {
   plugins: PluginDetailDto[]
   issues: string[]
+  restartRequired: boolean
 }
 interface PluginOperationResultDto {
   ok: true
@@ -264,9 +270,15 @@ interface PluginOperationResultDto {
   plugin?: PluginDetailDto
   message?: string
 }
+interface ProxySettingsDto {
+  mode: 'system' | 'direct' | 'manual'
+  address?: string // manual: normalized http(s)://host:port
+  bypass?: string
+  resolved?: string // runtime diagnostic, never persisted
+}
 ```
 
-插件管理 DTO **不含** `rootDir`、绝对路径、container、permissions 或原始 manifest；renderer 侧再由 `parsePluginList` / `parsePluginOperation` / `parsePluginInspection` / `parsePluginUpdateCheck` / `parseDownloadProgress` 逐字段校验。`origin`、检查结果与更新条目都是严格对象：任一字段类型不符即丢弃（列表项计入 issues，单个对象直接抛错），不会渲染半截数据。管理错误在 `IpcResponse.errorCode` 中携带稳定代码，preload 将其挂到 `Error.code`；远程操作的 `operationId` 由 renderer 生成，进度事件按它过滤，取消也按它定位。
+插件管理 DTO **不含** `rootDir`、绝对路径、container 内部权限集或原始 manifest；`permissions` 是显式的 `{ granted, denied }` 投影。renderer 侧再由 `parsePluginList` / `parsePluginOperation` / `parsePluginInspection` / `parsePluginUpdateCheck` / `parseDownloadProgress` 逐字段校验。`origin`、检查结果与更新条目都是严格对象：任一字段类型不符即丢弃（列表项计入 issues，单个对象直接抛错），不会渲染半截数据。管理错误在 `IpcResponse.errorCode` 中携带稳定代码，preload 将其挂到 `Error.code`；远程操作的 `operationId` 由 renderer 生成，进度事件按它过滤，取消也按它定位。启用、授权、两种安装方式、更新和代理修改在 renderer 确认之外，还必须通过主进程原生确认；卸载不需要任何确认，直接调用 IPC 也不能绕过原生确认，取消返回 `E_CONFIRMATION_DENIED`，没有确认能力时返回 `E_CONFIRMATION_UNAVAILABLE`。代理设置由 `parseProxySettings` 校验：模式必须是三档之一，manual 必须有非空地址，任何字段超长或类型不符都会让设置页进入错误态而不是半填表单。
 
 DTO 是**显式投影白名单**，不是「内核类型改个名字」。`CommandResultDto` 的字段名必须与命令插件真实返回一致：`IpcBridge` 把插件返回值原样放进 `reply.result`，preload 解包 `payload.result`，所以前端 `invoke` 拿到的就是插件原始返回对象（`{ok, output}`）。字段名写错时类型不报错、UI 空白、console 干净 —— 这是本项目最典型的静默缺陷形态。
 
@@ -278,11 +290,11 @@ DTO 是**显式投影白名单**，不是「内核类型改个名字」。`Comma
 
 ## 4. store ↔ 事件桥
 
-| 方向                | 允许                                  | 实现                                                                 |
-| ------------------- | ------------------------------------- | -------------------------------------------------------------------- |
-| 内核 → renderer     | ✅ 单向推送，且只推 §3.3 的 6 个事件  | `IpcBridge` 订阅 topic → `toDto` → `Ipc.Event`                       |
-| renderer → 内核     | ✅ 单向请求，且只走 §3.2 的 20 个方法 | `ipc.request`                                                        |
-| renderer ↔ 内核总线 | ❌ **不代理**                         | 代理总线等于让 renderer 能 `emit` / 订阅任意 topic，能力守卫全部失效 |
+| 方向                | 允许                            | 实现                                                                 |
+| ------------------- | ------------------------------- | -------------------------------------------------------------------- |
+| 内核 → renderer     | ✅ 单向推送，且只推 §3.3 的事件 | `IpcBridge` 订阅 topic → `toDto` → `Ipc.Event`                       |
+| renderer → 内核     | ✅ 单向请求，且只走 §3.2 的方法 | `ipc.request`                                                        |
+| renderer ↔ 内核总线 | ❌ **不代理**                   | 代理总线等于让 renderer 能 `emit` / 订阅任意 topic，能力守卫全部失效 |
 
 两条红线：
 
@@ -304,7 +316,7 @@ onMount(() => {
 
   const offTheme = ipc.subscribe(events.themeChanged, (p) => theme.applyRemote(p as ThemeDto))
   // 任何插件状态变化都可能新增（Active）或回收（Stopped / Failed）贡献：
-  // 无条件重拉三份列表，按状态集过滤会漏掉晚到的 Active。
+  // 无条件重拉相关列表，按状态集过滤会漏掉晚到的 Active。
   const offPluginState = ipc.subscribe(events.pluginStateChanged, () => {
     void panels.load()
     void routes.load()
@@ -313,7 +325,7 @@ onMount(() => {
   return () => { offTheme(); offPluginState() }
 })
 
-// 路由是激活面板的唯一真相源；四路 load 并行到达，任一路后到都重触发决议。
+// 路由是激活面板的唯一真相源；各路 load 并行到达，任一路后到都重触发决议。
 $effect(() => {
   const res = resolveActivePanel(routes.active, panels.items, !panels.loading)
   panels.applyResolution(res)
@@ -399,7 +411,7 @@ const SPACING_KEYS = ['xs', 'sm', 'md', 'lg'] as const
 
 这类缺陷只存在于「浏览器条件 × 打包产物」的交叉点：`tsc` 无线索，vitest（`environment: 'node'`）也是对的。判据必须用**模块图事实**：`tests/contract/build-artifact.test.ts` 断言 sourcemap 含 `index-client.js`、不含 `index-server.js`。
 
-### 6.2 三个 config 的必备项
+### 6.2 各 config 的必备项
 
 | 配置                       | 必备                                                                                                 |
 | -------------------------- | ---------------------------------------------------------------------------------------------------- |

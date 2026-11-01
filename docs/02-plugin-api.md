@@ -25,7 +25,7 @@ export default definePlugin(
 )
 ```
 
-目录固定四件：
+目录固定为：
 
 ```
 plugins/my-plugin/
@@ -87,7 +87,7 @@ plugins/my-plugin/
 
 `manifest-validator` 在**发现阶段**校验清单，本地安装与远程 ZIP 包复用同一校验器；`manifest.schema.json` 是同一套规则的 JSON Schema 版本。改校验规则必须同时改两处。
 
-安装 / 启停 / 卸载、用户插件目录、状态与路径安全见 [`05-plugin-management.md`](05-plugin-management.md)。本地安装只接受已构建目录，远程安装只接受带可信摘要的 ZIP 包；两者都默认禁用，不执行插件代码。
+安装 / 启停 / 卸载、用户插件目录、状态与路径安全见 [`05-plugin-management.md`](05-plugin-management.md)。本地安装只接受已构建目录，远程安装只接受带可信摘要的 ZIP 包；两者都在安装前确认并授予声明能力，装完即启用。
 
 ### 3.1 `entry` 为什么必须是 `dist/index.js`
 
@@ -159,7 +159,7 @@ ctx.extensions.contribute('command.provide', {
 })
 ```
 
-### 6.1 12 个扩展点
+### 6.1 扩展点清单
 
 | id                  | 契约                     | 槽     | 冲突裁决                         | capability         |
 | ------------------- | ------------------------ | ------ | -------------------------------- | ------------------ |
@@ -217,7 +217,7 @@ export const GreeterToken = defineToken<Greeter>({
 - 服务默认**不泄漏**到父容器：要给别人用必须 `ctx.api.export(token)`。
 - 兄弟插件只有在对方 `export` 后才解析得到；root 容器用 `shareable: true` 才能被子容器解析。
 
-内核自带令牌见 `KernelTokens`（共 16 个）：`EventBus` / `Config` / `ConfigService` / `Log` / `Metrics` / `Tracer` / `Health` / `Permissions` / `Plugins` / `Scheduler` / `Resolver` / `Discovery` / `Loader` / `CapabilityGuard` / `Extensions` / `UiThemeRegistry`。
+内核自带令牌见 `KernelTokens`：`EventBus` / `Config` / `ConfigService` / `Log` / `Metrics` / `Tracer` / `Health` / `Permissions` / `Plugins` / `Scheduler` / `Resolver` / `Discovery` / `Loader` / `CapabilityGuard` / `Extensions` / `UiThemeRegistry`。
 
 ---
 

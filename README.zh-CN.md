@@ -5,7 +5,7 @@
 > **Kernel + Everything-as-Plugin** 的独立从零实现。
 > 内核只做 7 件事，其余一切（日志、配置、业务、运维、UI）都是插件。
 
-[![tests](https://img.shields.io/badge/tests-478%20passing-brightgreen)](#测试)
+[![tests](https://img.shields.io/badge/tests-passing-brightgreen)](#测试)
 [![kernel deps](https://img.shields.io/badge/kernel%20deps-0-blue)](#内核边界)
 [![typescript](https://img.shields.io/badge/TypeScript-strict-blue)](#)
 
@@ -75,7 +75,7 @@ health    : healthy
 pnpm start
 ```
 
-窗口里输入命令（默认 `hello`）点「执行」，命令会经 IPC 桥转发到内核事件总线。顶栏 **Plugins** 打开本地插件管理，可安装、查看、启停和卸载插件；安装默认禁用，用户数据默认保留。
+窗口里输入命令（默认 `hello`）点「执行」，命令会经 IPC 桥转发到内核事件总线。顶栏 **Plugins** 打开本地插件管理，可安装、查看、启停和卸载插件；安装前会确认并授予声明能力，安装完成即启用，用户数据默认保留。顶栏 **Settings** 可选择系统代理、直连或手动代理，保存后立即作用于窗口请求与插件下载。
 
 > **为什么宿主用 tsx 跑 TypeScript**：宿主自身的入口（终端形态 `src/host/cli/run.ts`、桌面外壳 `src/host/electron/main.ts`）用 TypeScript 编写，开发期由 tsx 直接执行。但**插件运行时并不以原始 `.ts` 加载**——每个插件已由 esbuild 预编译为自包含 ESM bundle，落在 `dist/index.js`（及 `plugins-dist/<id>/dist/index.js`），内核用动态 `import()` 加载。`tsx` 属 `devDependencies`：内核与 `dependencies` 仍零第三方依赖。打包产物若需加载 `.ts` 插件，需自行把 tsx 提为运行时依赖。
 
@@ -150,14 +150,14 @@ export default definePlugin(
 }
 ```
 
-7 阶段生命周期（全部可选）：`onDiscover` → `onLoad` → `onConfigure` → `onStart` → `onStop` → `onUnload` → `onDispose`
+生命周期钩子（全部可选）：`onDiscover` → `onLoad` → `onConfigure` → `onStart` → `onStop` → `onUnload` → `onDispose`
 
 完整 API 参考见 **[docs/02-plugin-api.md](docs/02-plugin-api.md)**（英文版：
 **[docs/en/02-plugin-api.md](docs/en/02-plugin-api.md)**）。
 
 ---
 
-## 示例插件（6 个内置 + 1 个可安装）
+## 示例插件（内置 + 可安装）
 
 | 插件                                           | 证明什么                                                                | 依赖                  |
 | ---------------------------------------------- | ----------------------------------------------------------------------- | --------------------- |
@@ -172,14 +172,14 @@ export default definePlugin(
 `theme-switcher` 的源码位于同级 `REM2-plugins` 仓库，**不再作为内置插件打包**：
 `pnpm build:external` 把它构建到 `plugins-external-dist`（git 忽略，不进
 `resources/plugins-dist`）。请从它的 GitHub Release 通过 **插件 → Install from
-URL…** 安装，然后在插件详情里授予其声明的 UI 能力，再启用——用户插件默认处于
-沙箱策略下，敏感能力会被拒绝。可用 `REM2_EXTERNAL_PLUGINS_DIR` 指向其他位置。
+URL…** 安装，然后点击 Enable：授权弹窗会列出它声明的 UI 能力，同意后即授予并启用。
+可用 `REM2_EXTERNAL_PLUGINS_DIR` 指向其他位置。
 
 ---
 
 ## 内核边界
 
-内核**零第三方运行时依赖**，只用 4 个 Node 内置模块：
+内核**零第三方运行时依赖**，只用 Node 内置模块：
 
 ```
 $ grep -rhoP "from '\K[^']+" src/kernel --include=*.ts | grep -v "^\.\|^node:" | sort -u
@@ -197,15 +197,15 @@ $ grep -rhoP "from '\K[^']+" src/kernel --include=*.ts | grep -v "^\.\|^node:" |
 ```bash
 pnpm test:run        # 全量测试
 pnpm test:coverage   # 覆盖率
-pnpm typecheck:all   # 内核 + Electron + 前端三份类型检查
+pnpm typecheck:all   # 内核 + Electron + 前端类型检查
 ```
 
-| 层次     | 文件数                 | 覆盖内容                                                                                                                                                                                                                                                                                                              |
-| -------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 单元     | 26                     | semver / 拓扑排序 / 环检测 / DI 容器 / 容器隔离 / 事件总线 / 生命周期 / manifest 校验 / 权限 / 配置服务 / 健康服务 / **命令分发器** / **DTO 校验** / **路由→面板决议** / **插件根路径解析** / **插件状态存储** / **摘要与完整性** / **远程下载** / **ZIP 解包** / **发布源解析** / **provenance 存储** / **版本比较** |
-| 集成     | 19                     | 启动顺序 / 软依赖降级 / 硬依赖级联 / 故障隔离 / 配置插件 / 可观测性 / 热重载 / 卸载级联 / 安全边界 / Worker 隔离 / **命令链路** / **主题链路** / **UI 链路** / **inspector 数据链** / **本地插件管理** / **远程安装、更新与回滚**                                                                                     |
-| 契约     | 5                      | 插件导入边界 / 内核依赖白名单 / 扩展点清单一致性 / **构建产物为浏览器版 svelte** / **IPC 白名单与内核 Topics 一致**                                                                                                                                                                                                   |
-| **合计** | **50 文件 / 479 用例** |                                                                                                                                                                                                                                                                                                                       |
+| 层次     | 关注点       | 覆盖内容                                                                                                                                                                                                                                                                                                                             |
+| -------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 单元     | 模块行为     | semver / 拓扑排序 / 环检测 / DI 容器 / 容器隔离 / 事件总线 / 生命周期 / manifest 校验 / 权限 / 配置服务 / 健康服务 / **命令分发器** / **DTO 校验** / **路由→面板决议** / **插件根路径解析** / **插件状态存储** / **摘要与完整性** / **远程下载** / **ZIP 解包** / **发布源解析** / **provenance 存储** / **代理设置** / **版本比较** |
+| 集成     | 跨模块协作   | 启动顺序 / 软依赖降级 / 硬依赖级联 / 故障隔离 / 配置插件 / 可观测性 / 热重载 / 卸载级联 / 安全边界 / Worker 隔离 / **命令链路** / **主题链路** / **UI 链路** / **inspector 数据链** / **本地插件管理** / **远程安装、更新与回滚**                                                                                                    |
+| 契约     | 架构边界     | 插件导入边界 / 内核依赖白名单 / 扩展点清单一致性 / **构建产物为浏览器版 svelte** / **IPC 白名单与内核 Topics 一致**                                                                                                                                                                                                                  |
+| **全量** | **分层覆盖** |                                                                                                                                                                                                                                                                                                                                      |
 
 ---
 
@@ -213,14 +213,14 @@ pnpm typecheck:all   # 内核 + Electron + 前端三份类型检查
 
 文档按**阅读顺序**编号（`01` 最先读），完整索引见 **[docs/INDEX.md](docs/INDEX.md)**（英文索引：**[docs/en/INDEX.md](docs/en/INDEX.md)**）。
 
-| #   | 文档                                                                | 内容                                                                                                                                                  |
-| --- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| —   | **[docs/INDEX.md](docs/INDEX.md)**                                  | **文档索引与阅读路径**（从这里开始）                                                                                                                  |
-| 01  | **[01-architecture-overview.md](docs/01-architecture-overview.md)** | **架构（权威）**：分层与依赖方向、全量文件职责、生命周期两层模型、12 个扩展点、隔离与权限、调用链路、数据通路、构建产物、9 条决策、扩展流程、已知限制 |
-| 02  | **[02-plugin-api.md](docs/02-plugin-api.md)**                       | **插件开发指南**：`definePlugin`、`plugin.json` 字段、生命周期钩子、`PluginContext`、扩展点表、服务令牌、命令链路、隔离模式、错误码                   |
-| 03  | **[03-frontend-ipc.md](docs/03-frontend-ipc.md)**                   | **前端与 IPC 契约**：进程/构建边界、20 方法 + 6 事件白名单、DTO、store↔事件桥、主题通路、vite/CSP 约束                                                |
-| 04  | **[04-development-guide.md](docs/04-development-guide.md)**         | **开发指南**：环境、命令矩阵、构建与打包规格、tsconfig 边界、扩展流程、调试、已知坑、代码约定                                                         |
-| 05  | **[05-plugin-management.md](docs/05-plugin-management.md)**         | **插件管理**：manifest 校验、本地与远程安装、更新与回滚、provenance、目录与状态、路径安全、数据保留、IPC/UI、已知限制                                 |
+| #   | 文档                                                                | 内容                                                                                                                                                     |
+| --- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| —   | **[docs/INDEX.md](docs/INDEX.md)**                                  | **文档索引与阅读路径**（从这里开始）                                                                                                                     |
+| 01  | **[01-architecture-overview.md](docs/01-architecture-overview.md)** | **架构（权威）**：分层与依赖方向、全量文件职责、生命周期两层模型、扩展点机制、隔离与权限、调用链路、数据通路、构建产物、关键设计决策、扩展流程、已知限制 |
+| 02  | **[02-plugin-api.md](docs/02-plugin-api.md)**                       | **插件开发指南**：`definePlugin`、`plugin.json` 字段、生命周期钩子、`PluginContext`、扩展点表、服务令牌、命令链路、隔离模式、错误码                      |
+| 03  | **[03-frontend-ipc.md](docs/03-frontend-ipc.md)**                   | **前端与 IPC 契约**：进程/构建边界、方法与事件白名单、DTO、store↔事件桥、主题通路、vite/CSP 约束                                                         |
+| 04  | **[04-development-guide.md](docs/04-development-guide.md)**         | **开发指南**：环境、命令矩阵、构建与打包规格、tsconfig 边界、扩展流程、调试、已知坑、代码约定                                                            |
+| 05  | **[05-plugin-management.md](docs/05-plugin-management.md)**         | **插件管理**：manifest 校验、本地与远程安装、更新与回滚、provenance、目录与状态、路径安全、数据保留、IPC/UI、已知限制                                    |
 
 架构图：[class-diagram-v2.mermaid](docs/class-diagram-v2.mermaid) · [sequence-diagram-v2.mermaid](docs/sequence-diagram-v2.mermaid)
 （英文架构图：[docs/en/class-diagram-v2.mermaid](docs/en/class-diagram-v2.mermaid) · [docs/en/sequence-diagram-v2.mermaid](docs/en/sequence-diagram-v2.mermaid)）。
@@ -233,7 +233,7 @@ pnpm typecheck:all   # 内核 + Electron + 前端三份类型检查
 src/
 ├── kernel/               # 极小内核（零第三方运行时依赖，契约测试硬断言）
 │   ├── contracts/        # 纯类型契约 + defineToken / definePlugin 工厂
-│   ├── extensions/       # 12 个扩展点的声明与槽位（唯一挂载面）
+│   ├── extensions/       # 扩展点的声明与槽位（唯一挂载面）
 │   ├── di/               # DI 容器（父引用藏模块私有 WeakMap）
 │   ├── discovery/        # 候选发现 + manifest 校验
 │   ├── dependency/       # 依赖图 / 拓扑排序 / 环检测
@@ -251,7 +251,7 @@ src/
 │   ├── context/          # PluginContext 与 PluginApi 构造
 │   ├── util/
 │   ├── composition.ts    # KernelDeps 唯一装配点（Kernel 不 new 实现类）
-│   ├── state-machine.ts  # 7 阶段逻辑状态机
+│   ├── state-machine.ts  # 逻辑状态机
 │   ├── define-plugin.ts  # 唯一插件形态入口
 │   └── index.ts          # 唯一公共出口（rem2-kernel）
 ├── host/                 # 宿主适配层（内核之外，与内核并列）
@@ -263,7 +263,7 @@ src/
 │   └── lib/              # ipc-client / bridge-types / nav-link / dto-guards / stores / theme
 ├── main.ts               # Electron Forge 主进程入口（转发壳）
 └── preload.ts            # Forge preload 入口（转发壳）
-plugins/                  # 6 个内置插件（theme-switcher 从 REM2-plugins Release 安装）
+plugins/                  # 内置插件（theme-switcher 从 REM2-plugins Release 安装）
 plugins-dist/             # 仅内置插件构建产物（esbuild ESM bundle，进 extraResource）
 plugins-external-dist/    # 外部插件构建产物（用于发布打包与测试，不随应用分发）
 dist/                     # 内核产物（tsc，含 .d.ts）

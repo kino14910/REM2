@@ -47,16 +47,16 @@ pnpm install
 Current verification baseline:
 
 ```
-pnpm typecheck:all    → 0 errors (3 tsconfigs)
-pnpm test:run         → 50 files / 479 cases green (~20s)
-pnpm dev --exit-after-start → started=7 failed=0
+pnpm typecheck:all    → all tsconfigs report zero errors
+pnpm test:run         → full suite green
+pnpm dev --exit-after-start → all plugins started, failed=0
 ```
 
 ---
 
 ## 3. Build and packaging specs
 
-### 3.1 Three production lines and artifact paths
+### 3.1 Production lines and artifact paths
 
 | Line    | Input                                                             | Command                                 | Output                                                                                     |
 | ------- | ----------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------ |
@@ -73,27 +73,27 @@ plugins-dist                  →  resources/plugins-dist/ (extraResource, ★ o
 
 ### 3.2 "Artifact ↔ path ↔ resolution rule" table
 
-| Artifact                  | Location                                | Resolved by                                                | Rule / constraint                                                                                    |
-| ------------------------- | --------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Kernel library            | `dist/kernel/index.js` + `.d.ts`        | `package.json` → `exports["."]`                            | `types` → `.d.ts`, `default` → `.js`. The `./src` subpath export exists only for in-repo development |
-| Kernel (bare name in dev) | `src/kernel/index.ts`                   | `package.json` → `imports` + tsconfig `paths` + vite alias | all three must point at the same file; plugin tsconfigs declare `paths` separately                   |
-| Plugin entry              | `plugins-dist/<id>/dist/index.js`       | kernel `loader`'s `import()`                               | `entry` always `dist/index.js`; only `.js` / `.mjs`; `assertInsideRoot` blocks escapes               |
-| Main process              | `.vite/build/main.cjs`                  | `package.json` → `main`                                    | CJS; `import.meta.url` is `undefined`, so path resolution must fall back to `__dirname`              |
-| preload                   | `.vite/build/preload.cjs`               | hardcoded filename in `host/electron/window.ts`            | must be CJS and must be named `preload.cjs`                                                          |
-| renderer                  | `.vite/renderer/main_window/index.html` | `loadFile` in `window.ts`                                  | directory name is the uppercased renderer process name (`MAIN_WINDOW_VITE_NAME`)                     |
-| Plugins (packaged)        | `resources/plugins-dist/`               | `builtinPluginsRoot()`                                     | `extraResource` derives the target name from the last segment, **not** `rem2-plugins/`               |
+| Artifact                  | Location                                | Resolved by                                     | Rule / constraint                                                                                    |
+| ------------------------- | --------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Kernel library            | `dist/kernel/index.js` + `.d.ts`        | `package.json` → `exports["."]`                 | `types` → `.d.ts`, `default` → `.js`. The `./src` subpath export exists only for in-repo development |
+| Kernel (bare name in dev) | `src/kernel/index.ts`                   | tsconfig `paths` + vite alias                   | both must point at the same file; plugin tsconfigs declare `paths` separately                        |
+| Plugin entry              | `plugins-dist/<id>/dist/index.js`       | kernel `loader`'s `import()`                    | `entry` always `dist/index.js`; only `.js` / `.mjs`; `assertInsideRoot` blocks escapes               |
+| Main process              | `.vite/build/main.cjs`                  | `package.json` → `main`                         | CJS; `import.meta.url` is `undefined`, so path resolution must fall back to `__dirname`              |
+| preload                   | `.vite/build/preload.cjs`               | hardcoded filename in `host/electron/window.ts` | must be CJS and must be named `preload.cjs`                                                          |
+| renderer                  | `.vite/renderer/main_window/index.html` | `loadFile` in `window.ts`                       | directory name is the uppercased renderer process name (`MAIN_WINDOW_VITE_NAME`)                     |
+| Plugins (packaged)        | `resources/plugins-dist/`               | `builtinPluginsRoot()`                          | `extraResource` derives the target name from the last segment, **not** `rem2-plugins/`               |
 
 ### 3.3 tsconfig responsibilities
 
-Five configs = one baseline + three specializations + one forwarder; `strict` / `noUnused*` are global.
+The tsconfig set is a baseline plus per-runtime specializations and a forwarder; `strict` / `noUnused*` are global.
 
-| Config                     | `include`                                                                                 | `lib` / `types`                                      | `moduleResolution`     | Why                                                                                                                                                                                                           |
-| -------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tsconfig.json` (baseline) | `src/kernel/**`, `src/host/{cli,ipc}/**`, `plugins/*/src/**`, `tests/**`, `*.ts`, `*.mts` | `ESNext` + `types: ["node"]`                         | `NodeNext`             | kernel and CLI/IPC are pure Node libraries with no DOM need; also covers plugins and tests so all three judge the same contracts identically                                                                  |
-| `tsconfig.electron.json`   | `src/{main,preload}.ts`, `src/host/electron/**`, `src/declarations.d.ts`                  | `ESNext` + `DOM` + `DOM.Iterable`, `types: ["node"]` | `NodeNext` (inherited) | main and preload need DOM (`BrowserWindow`) and node at the same time                                                                                                                                         |
-| `tsconfig.frontend.json`   | `src/frontend/**`, `src/declarations.d.ts`                                                | `ESNext` + `DOM`, **`types: []`**                    | **`Bundler`**          | ① deliberately no node types: the renderer has no Node capability under `contextIsolation + sandbox`, so the constraint lives in types; ② `Bundler` is required for the svelte plugin to resolve `./X.svelte` |
-| `tsconfig.build.json`      | `src/kernel/**` only                                                                      | same as baseline                                     | `NodeNext`             | **the only config with `noEmit: false`**: `declaration: true` + `outDir: dist` + `rootDir: src`; host and frontend never enter dist                                                                           |
-| `tsconfig.shell.json`      | —                                                                                         | —                                                    | —                      | forwarder (`extends: ./tsconfig.electron.json`) kept so existing verification scripts do not break                                                                                                            |
+| Config                     | `include`                                                                                                  | `lib` / `types`                                      | `moduleResolution`     | Why                                                                                                                                                                                                           |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tsconfig.json` (baseline) | `src/kernel/**`, `src/host/{cli,ipc,plugins,settings}/**`, `plugins/*/src/**`, `tests/**`, `*.ts`, `*.mts` | `ESNext` + `types: ["node"]`                         | `NodeNext`             | kernel, CLI/IPC and the settings service are pure Node libraries with no DOM need; also covers plugins and tests so all three judge the same contracts identically                                            |
+| `tsconfig.electron.json`   | `src/{main,preload}.ts`, `src/host/electron/**`, `src/declarations.d.ts`                                   | `ESNext` + `DOM` + `DOM.Iterable`, `types: ["node"]` | `NodeNext` (inherited) | main and preload need DOM (`BrowserWindow`) and node at the same time                                                                                                                                         |
+| `tsconfig.frontend.json`   | `src/frontend/**`, `src/declarations.d.ts`                                                                 | `ESNext` + `DOM`, **`types: []`**                    | **`Bundler`**          | ① deliberately no node types: the renderer has no Node capability under `contextIsolation + sandbox`, so the constraint lives in types; ② `Bundler` is required for the svelte plugin to resolve `./X.svelte` |
+| `tsconfig.build.json`      | `src/kernel/**` only                                                                                       | same as baseline                                     | `NodeNext`             | **the only config with `noEmit: false`**: `declaration: true` + `outDir: dist` + `rootDir: src`; host and frontend never enter dist                                                                           |
+| `tsconfig.shell.json`      | —                                                                                                          | —                                                    | —                      | forwarder (`extends: ./tsconfig.electron.json`) kept so existing verification scripts do not break                                                                                                            |
 
 Plugin tsconfigs (`plugins/*/tsconfig.json`) are standalone, declaring only `paths: { "rem2-kernel": ["../../src/kernel/index.ts"] }`, and do not extend the root config.
 
