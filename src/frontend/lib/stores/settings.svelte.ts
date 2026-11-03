@@ -1,7 +1,7 @@
-import { channels } from '../../../shared/ipc-contract'
-import type { ProxySettingsDto } from '../../../shared/ipc-contract'
-import { parseProxySettings } from '../dto-guards'
-import { ipc } from '../ipc-client'
+import { channels } from '@/shared/ipc-contract'
+import type { ProxySettingsDto } from '@/shared/ipc-contract'
+import { parseProxySettings } from '@/frontend/lib/dto-guards'
+import { ipc } from '@/frontend/lib/ipc-client'
 
 /** Stable host codes -> readable text; the raw code stays in the message. */
 const SETTINGS_ERROR_TEXT: Record<string, string> = {

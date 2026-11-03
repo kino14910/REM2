@@ -3,11 +3,11 @@
  * at compile time; in a plain `.ts` they silently have no effect.
  */
 
-import { ipc } from '../ipc-client'
-import { channels } from '../../../shared/ipc-contract'
-import type { PanelDto } from '../bridge-types'
-import { parsePanelList } from '../dto-guards'
-import type { PanelResolution } from '../nav-link'
+import { ipc } from '@/frontend/lib/ipc-client'
+import { channels } from '@/shared/ipc-contract'
+import type { PanelDto } from '@/frontend/lib/bridge-types'
+import { parsePanelList } from '@/frontend/lib/dto-guards'
+import type { PanelResolution } from '@/frontend/lib/nav-link'
 
 class PanelsStore {
   items = $state<PanelDto[]>([])

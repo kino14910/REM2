@@ -1,116 +1,67 @@
 <!--
   Light/dark switch.
 
-  Rendered only when the catalog holds both modes (`theme.canSwitchMode`), i.e. only
-  while a plugin that contributes both token sets is loaded. A single-mode catalog
-  leaves nothing to switch to, so the host chrome stays empty instead of showing a
-  dead control.
+  Two sources of truth, in priority order:
+    1. A host theme catalog (theme-switcher plugin): selection is persisted by
+       the host through `ui.theme.set`, and the `System` option exists only when
+       the catalog ships a follow-system entry.
+    2. No catalog: the Skeleton theme is still fully light/dark capable, so the
+       switch drives `data-mode` locally. The choice is persisted by the host
+       (`settings.appearance.set`) and restored on the next start.
 -->
 <script lang="ts">
-  import { theme } from '../../lib/stores/theme.svelte'
+  import { theme } from '@/frontend/lib/stores/theme.svelte'
+  import SegmentedControl from '@/frontend/lib/ui/SegmentedControl.svelte'
+  import type { SegmentOption } from '@/frontend/lib/ui/types'
+
+  /** Nothing to switch when a loaded catalog is single-mode. */
+  const available = $derived(theme.canSwitchMode || theme.list.length === 0)
+
+  const options = $derived<SegmentOption[]>(
+    theme.canSwitchMode && !theme.system
+      ? [
+          { value: 'light', label: 'Light' },
+          { value: 'dark', label: 'Dark' },
+        ]
+      : [
+          { value: 'system', label: 'System' },
+          { value: 'light', label: 'Light' },
+          { value: 'dark', label: 'Dark' },
+        ],
+  )
+
+  const mode = $derived(
+    theme.canSwitchMode
+      ? theme.active?.followSystem
+        ? 'system'
+        : (theme.active?.mode ?? '')
+      : theme.colorMode,
+  )
+
+  function setMode(next: string): void {
+    if (next === 'system') {
+      if (theme.canSwitchMode && theme.system) {
+        theme.setActive(theme.system)
+        return
+      }
+      theme.setColorMode('system')
+      return
+    }
+    if (next !== 'light' && next !== 'dark') return
+    if (theme.canSwitchMode) {
+      theme.setMode(next)
+      return
+    }
+    theme.setColorMode(next)
+  }
 </script>
 
-{#if theme.canSwitchMode}
-  <div class="mode-switch" role="group" aria-label="Color mode">
-    {#if theme.system}
-      <button
-        type="button"
-        class="mode-switch__option"
-        aria-label="System theme"
-        aria-pressed={theme.activeId === theme.system.id}
-        onclick={() => theme.setActive(theme.system!)}
-      >
-        <svg
-          viewBox="0 0 16 16"
-          width="14"
-          height="14"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.3"
-          aria-hidden="true"
-        >
-          <rect x="2" y="2.5" width="12" height="9" rx="1" />
-          <path d="M6 13.5h4" />
-        </svg>
-      </button>
-    {/if}
-    <button
-      type="button"
-      class="mode-switch__option"
-      aria-label="Light mode"
-      aria-pressed={!theme.active?.followSystem && theme.active?.mode === 'light'}
-      onclick={() => theme.setMode('light')}
-    >
-      <svg
-        viewBox="0 0 16 16"
-        width="14"
-        height="14"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.3"
-        stroke-linecap="round"
-        aria-hidden="true"
-      >
-        <circle cx="8" cy="8" r="3" />
-        <path
-          d="M8 1.4v1.5M8 13.1v1.5M1.4 8h1.5M13.1 8h1.5M3.3 3.3l1.1 1.1M11.6 11.6l1.1 1.1M12.7 3.3l-1.1 1.1M4.4 11.6l-1.1 1.1"
-        />
-      </svg>
-    </button>
-    <button
-      type="button"
-      class="mode-switch__option"
-      aria-label="Dark mode"
-      aria-pressed={!theme.active?.followSystem && theme.active?.mode === 'dark'}
-      onclick={() => theme.setMode('dark')}
-    >
-      <svg
-        viewBox="0 0 16 16"
-        width="14"
-        height="14"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.3"
-        stroke-linejoin="round"
-        aria-hidden="true"
-      >
-        <path d="M13.2 9.7A5.6 5.6 0 0 1 6.3 2.8a5.6 5.6 0 1 0 6.9 6.9Z" />
-      </svg>
-    </button>
-  </div>
+{#if available}
+  <SegmentedControl
+    value={mode}
+    options={options}
+    label="Color mode"
+    size="sm"
+    onValueChange={setMode}
+  />
 {/if}
-
-<style>
-  .mode-switch {
-    display: inline-flex;
-    border: 1px solid var(--rem2-color-border);
-    border-radius: 6px;
-    background: var(--rem2-color-surface);
-    overflow: hidden;
-  }
-
-  .mode-switch__option {
-    display: inline-flex;
-    align-items: center;
-    padding: var(--rem2-space-xs) var(--rem2-space-sm);
-    border: 0;
-    background: transparent;
-    color: var(--rem2-color-text-muted);
-    cursor: pointer;
-  }
-
-  .mode-switch__option:hover {
-    color: var(--rem2-color-text);
-  }
-
-  .mode-switch__option[aria-pressed='true'] {
-    background: var(--rem2-color-accent);
-    /* Inverted against the accent: readable on both palettes without a third token. */
-    color: var(--rem2-color-background);
-  }
-
-  .mode-switch__option:focus-visible {
-    outline: 2px solid var(--rem2-color-accent);
-    outline-offset: -2px;
-  }
-</style>

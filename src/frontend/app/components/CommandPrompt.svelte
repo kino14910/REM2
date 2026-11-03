@@ -5,7 +5,10 @@
   No command completion or history navigation.
 -->
 <script lang="ts">
-  import { command } from '../../lib/stores/command.svelte'
+  import { command } from '@/frontend/lib/stores/command.svelte'
+  import Button from '@/frontend/lib/ui/Button.svelte'
+  import TextField from '@/frontend/lib/ui/TextField.svelte'
+  import { cn } from '@/frontend/lib/ui/cn'
 
   let input = $state('')
 
@@ -25,53 +28,33 @@
   })
 </script>
 
-<form onsubmit={submit}>
-  <input
+<form class="flex min-w-0 flex-1 items-center gap-2" onsubmit={submit}>
+  <TextField
     bind:value={input}
+    aria-label="Command"
     placeholder="Type a command and press Enter"
     disabled={command.running}
+    class="min-w-0 flex-1"
+    autocomplete="off"
+    spellcheck="false"
   />
-  <button type="submit" disabled={command.running || input.trim() === ''}>Run</button>
+  <Button
+    type="submit"
+    size="sm"
+    loading={command.running}
+    loadingLabel="Running…"
+    disabled={input.trim() === ''}
+  >
+    Run
+  </Button>
   {#if command.last}
-    <span class="result" class:err={!command.last.ok}>{resultText}</span>
+    <span
+      class={cn(
+        'max-w-64 truncate font-mono text-xs',
+        command.last.ok ? 'text-surface-600-400' : 'text-error-500',
+      )}
+    >
+      {resultText}
+    </span>
   {/if}
 </form>
-
-<style>
-  form {
-    display: flex;
-    gap: var(--rem2-space-sm);
-    align-items: center;
-    flex: 1;
-  }
-  input {
-    flex: 1;
-    padding: var(--rem2-space-xs) var(--rem2-space-sm);
-    background: var(--rem2-color-surface);
-    color: var(--rem2-color-text);
-    border: 1px solid var(--rem2-color-border);
-    border-radius: 4px;
-    font: inherit;
-  }
-  button {
-    padding: var(--rem2-space-xs) var(--rem2-space-md);
-    background: var(--rem2-color-accent);
-    color: var(--rem2-color-background);
-    border: 0;
-    border-radius: 4px;
-    cursor: pointer;
-    font: inherit;
-  }
-  button:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .result {
-    font-family: var(--rem2-font-mono);
-    font-size: 12px;
-    color: var(--rem2-color-text-muted);
-  }
-  .result.err {
-    color: #ff6b6b;
-  }
-</style>

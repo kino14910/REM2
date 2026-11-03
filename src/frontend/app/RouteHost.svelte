@@ -5,57 +5,29 @@
   Like PanelHost, no plugin id appears here.
 -->
 <script lang="ts">
-  import { routes } from '../lib/stores/routes.svelte'
+  import { routes } from '@/frontend/lib/stores/routes.svelte'
+  import Button from '@/frontend/lib/ui/Button.svelte'
 
   function onSelect(path: string): void {
     routes.navigate(path)
   }
 </script>
 
-<nav class="route-host">
+<nav class="flex flex-col gap-1 p-2" aria-label="Routes">
   {#if routes.error}
-    <p class="empty error">{routes.error}</p>
+    <p class="px-3 py-2 text-xs text-error-500">{routes.error}</p>
   {/if}
   {#each routes.ordered as route (route.path)}
-    <button
-      type="button"
-      class:active={route.path === routes.activePath}
+    <Button
+      variant={route.path === routes.activePath ? 'tonal' : 'ghost'}
+      size="sm"
+      class="w-full justify-start"
+      aria-current={route.path === routes.activePath ? 'page' : undefined}
       onclick={() => onSelect(route.path)}
     >
       {route.title}
-    </button>
+    </Button>
   {:else}
-    <p class="empty">No routes available</p>
+    <p class="px-3 py-2 text-xs text-surface-600-400">No routes available</p>
   {/each}
 </nav>
-
-<style>
-  .route-host {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: var(--rem2-space-sm);
-  }
-  button {
-    text-align: left;
-    padding: var(--rem2-space-xs) var(--rem2-space-sm);
-    background: transparent;
-    color: var(--rem2-color-text-muted);
-    border: 0;
-    border-radius: 4px;
-    cursor: pointer;
-    font: inherit;
-  }
-  button.active {
-    background: var(--rem2-color-surface);
-    color: var(--rem2-color-text);
-  }
-  .empty {
-    color: var(--rem2-color-text-muted);
-    font-size: 12px;
-    padding: var(--rem2-space-xs);
-  }
-  .error {
-    color: #ff6b6b;
-  }
-</style>

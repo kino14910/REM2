@@ -10,6 +10,8 @@
 
 import type { PanelDto, PanelFormDto, RouteDto } from './bridge-types.js'
 import type {
+  AppearanceSettingsDto,
+  ColorModeDto,
   PluginDetailDto,
   PluginDownloadPhase,
   PluginDownloadProgressDto,
@@ -19,7 +21,7 @@ import type {
   PluginUpdateDto,
   ProxyModeDto,
   ProxySettingsDto,
-} from '../../shared/ipc-contract.js'
+} from '@/shared/ipc-contract.js'
 
 /** Upper bound for rendered panel data (keeps a rogue plugin from freezing the UI). */
 const MAX_PANEL_DATA_CHARS = 32768
@@ -664,6 +666,25 @@ export function parseProxySettings(value: unknown): ProxySettingsDto {
     ...(typeof value.bypass === 'string' ? { bypass: value.bypass } : {}),
     ...(typeof value.resolved === 'string' ? { resolved: value.resolved } : {}),
   }
+}
+
+const COLOR_MODES = new Set<ColorModeDto>(['light', 'dark', 'system'])
+
+/** Validates the host appearance payload; an unknown mode throws instead of changing the UI silently. */
+export function parseAppearanceSettings(value: unknown): AppearanceSettingsDto {
+  if (!isRecord(value)) {
+    throw new Error('invalid appearance settings: expected an object')
+  }
+  const colorMode = value.colorMode
+  if (
+    typeof colorMode !== 'string' ||
+    !COLOR_MODES.has(colorMode as ColorModeDto)
+  ) {
+    throw new Error(
+      'invalid appearance settings: colorMode must be "light", "dark" or "system"',
+    )
+  }
+  return { colorMode: colorMode as ColorModeDto }
 }
 
 function isByteCount(value: unknown): value is number {

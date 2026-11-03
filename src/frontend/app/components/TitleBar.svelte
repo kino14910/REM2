@@ -11,37 +11,15 @@
   Content is centered on purpose: on macOS the traffic lights are overlaid on
   the top-left and there is no Web API to reserve their space, so anything
   left-aligned would collide with them.
--->
-<header class="titlebar">
-  <span class="brand">rem2-kernel</span>
-  <span class="divider" aria-hidden="true">·</span>
-  <span class="subtitle">Kernel Console</span>
-</header>
 
-<style>
-  .titlebar {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--rem2-space-sm);
-    /* Must match TITLE_BAR_HEIGHT in host/electron/window.ts (native overlay height). */
-    height: env(titlebar-area-height, var(--rem2-titlebar-height));
-    width: env(titlebar-area-width, 100%);
-    margin-left: env(titlebar-area-x, 0);
-    box-sizing: border-box;
-    background: var(--rem2-color-surface);
-    border-bottom: 1px solid var(--rem2-color-border);
-    color: var(--rem2-color-text-muted);
-    font-size: 12px;
-    user-select: none;
-    app-region: drag;
-  }
-  .brand {
-    color: var(--rem2-color-text);
-    font-weight: 600;
-    letter-spacing: 0.4px;
-  }
-  .divider {
-    opacity: 0.5;
-  }
-</style>
+  The resolved bar colors are reported to the host (`lib/theme/vars.ts`) so the
+  OS-painted window-controls overlay follows the same theme.
+-->
+<header
+  data-titlebar
+  class="flex h-[env(titlebar-area-height,var(--rem2-titlebar-height))] w-[env(titlebar-area-width,100%)] ml-[env(titlebar-area-x,0px)] items-center justify-center gap-2 border-b border-surface-200-800 bg-surface-100-900 text-xs text-surface-600-400 select-none [app-region:drag]"
+>
+  <span class="font-semibold tracking-wide text-surface-950-50">rem2-kernel</span>
+  <span class="opacity-50" aria-hidden="true">·</span>
+  <span>Kernel Console</span>
+</header>

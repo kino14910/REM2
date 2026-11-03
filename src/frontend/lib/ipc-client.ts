@@ -12,7 +12,7 @@
  * 'ui.panel.lst') fails at compile time instead of being rejected at runtime.
  */
 
-import type { AllowedEvent, AllowedMethod } from '../../shared/ipc-contract'
+import type { AllowedEvent, AllowedMethod } from '@/shared/ipc-contract'
 
 /** Shape of the object exposed by preload via contextBridge (kept in sync with host/electron/preload.ts). */
 export interface Rem2Bridge {

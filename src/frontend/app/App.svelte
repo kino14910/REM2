@@ -8,20 +8,24 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte'
+  import type { Component } from 'svelte'
   import Shell from './Shell.svelte'
   import TitleBar from './components/TitleBar.svelte'
   import CommandPrompt from './components/CommandPrompt.svelte'
-  import ThemeToggle from './components/ThemeToggle.svelte'
   import PluginManager from './components/PluginManager.svelte'
   import SettingsView from './components/SettingsView.svelte'
-  import { ipc } from '../lib/ipc-client'
-  import { events } from '../../shared/ipc-contract'
-  import { panels } from '../lib/stores/panels.svelte'
-  import { routes } from '../lib/stores/routes.svelte'
-  import { theme } from '../lib/stores/theme.svelte'
-  import { health } from '../lib/stores/health.svelte'
-  import { resolveActivePanel } from '../lib/nav-link'
-  import type { ThemeDto } from '../lib/bridge-types'
+  import { Navigation } from '@skeletonlabs/skeleton-svelte'
+  import { Terminal, Blocks, Settings } from '@lucide/svelte'
+  import type { LucideProps } from '@lucide/svelte'
+  import { ipc } from '@/frontend/lib/ipc-client'
+  import { events } from '@/shared/ipc-contract'
+  import { panels } from '@/frontend/lib/stores/panels.svelte'
+  import { routes } from '@/frontend/lib/stores/routes.svelte'
+  import { theme } from '@/frontend/lib/stores/theme.svelte'
+  import { health } from '@/frontend/lib/stores/health.svelte'
+  import { resolveActivePanel } from '@/frontend/lib/nav-link'
+  import { initThemeMode } from '@/frontend/lib/theme/vars'
+  import type { ThemeDto } from '@/frontend/lib/bridge-types'
 
   type View = 'main' | 'plugins' | 'settings'
 
@@ -38,12 +42,14 @@
   })
 
   onMount(() => {
+    // Start from the OS preference; a theme pushed by the host overrides it.
+    initThemeMode()
     void panels.load()
     void routes.load()
     void theme.load()
     void health.load()
 
-    // Theme change event -> reapply theme (updates CSS variables).
+    // Theme change event -> reapply theme (updates CSS variables and mode).
     const offTheme = ipc.subscribe(events.themeChanged, (payload) => {
       theme.applyRemote(payload as ThemeDto)
     })
@@ -73,60 +79,57 @@
   })
 </script>
 
-<div class="app">
-  <TitleBar />
-  <header class="topbar">
-    <CommandPrompt />
-    <button
-      type="button"
-      class:active={view === 'plugins'}
-      aria-pressed={view === 'plugins'}
-      onclick={() => (view = view === 'plugins' ? 'main' : 'plugins')}
-    >
-      Plugins
-    </button>
-    <button
-      type="button"
-      class:active={view === 'settings'}
-      aria-pressed={view === 'settings'}
-      onclick={() => (view = view === 'settings' ? 'main' : 'settings')}
-    >
-      Settings
-    </button>
-    <ThemeToggle />
-  </header>
-  {#if view === 'plugins'}
-    <PluginManager />
-  {:else if view === 'settings'}
-    <SettingsView />
-  {:else}
-    <Shell />
-  {/if}
-</div>
+{#snippet railTrigger(
+  target: View,
+  label: string,
+  Icon: Component<LucideProps>,
+)}
+  <Navigation.Trigger
+    aria-label={label}
+    title={label}
+    aria-current={view === target ? 'page' : undefined}
+    class="cursor-pointer p-0.75 hover:text-surface-700-300 
+    {view === target
+      ? 'text-surface-700-300 bg-surface-300-700 hover:filter-none'
+      : 'text-surface-500'}"
+    onclick={() => (view = target)}
+  >
+    <Icon size={24} class="size-6" />
+  </Navigation.Trigger>
+{/snippet}
 
-<style>
-  .app {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-  }
-  .topbar {
-    display: flex;
-    gap: var(--rem2-space-sm);
-    align-items: center;
-    padding: var(--rem2-space-sm) var(--rem2-space-md);
-    border-bottom: 1px solid var(--rem2-color-border);
-  }
-  .topbar > button {
-    padding: 6px 10px;
-    border: 1px solid var(--rem2-color-border);
-    border-radius: 4px;
-    background: var(--rem2-color-surface);
-    color: var(--rem2-color-text);
-    font: inherit;
-    cursor: pointer;
-  }
-  .topbar > button.active {
-    border-color: var(--rem2-color-accent);
-  }
-</style>
+<div class="flex h-screen flex-col bg-surface-50-950 text-surface-950-50">
+  <TitleBar />
+  <div class="flex min-h-0 flex-1">
+    <Navigation
+      layout="rail"
+      role="navigation"
+      aria-label="Workspace view"
+      class="shrink-0 border-r border-surface-200-800 max-w-12 p-1"
+    >
+      <Navigation.Content>
+        <Navigation.Menu>
+          {@render railTrigger('main', 'Console', Terminal)}
+          {@render railTrigger('plugins', 'Plugins', Blocks)}
+        </Navigation.Menu>
+      </Navigation.Content>
+      <Navigation.Footer>
+        {@render railTrigger('settings', 'Settings', Settings)}
+      </Navigation.Footer>
+    </Navigation>
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+      <header
+        class="flex flex-wrap items-center gap-2 border-b border-surface-200-800 px-4 py-2"
+      >
+        <CommandPrompt />
+      </header>
+      {#if view === 'plugins'}
+        <PluginManager />
+      {:else if view === 'settings'}
+        <SettingsView />
+      {:else}
+        <Shell />
+      {/if}
+    </div>
+  </div>
+</div>

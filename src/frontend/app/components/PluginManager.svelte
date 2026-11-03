@@ -1,9 +1,22 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { plugins } from '../../lib/stores/plugins.svelte'
-  import { ipc } from '../../lib/ipc-client'
-  import { events } from '../../../shared/ipc-contract'
-  import type { PluginDetailDto } from '../../../shared/ipc-contract'
+  import { plugins } from '@/frontend/lib/stores/plugins.svelte'
+  import { ipc } from '@/frontend/lib/ipc-client'
+  import { events } from '@/shared/ipc-contract'
+  import type { PluginDetailDto } from '@/shared/ipc-contract'
+  import Alert from '@/frontend/lib/ui/Alert.svelte'
+  import Badge from '@/frontend/lib/ui/Badge.svelte'
+  import Button from '@/frontend/lib/ui/Button.svelte'
+  import Card from '@/frontend/lib/ui/Card.svelte'
+  import Dialog from '@/frontend/lib/ui/Dialog.svelte'
+  import EmptyState from '@/frontend/lib/ui/EmptyState.svelte'
+  import Field from '@/frontend/lib/ui/Field.svelte'
+  import IconButton from '@/frontend/lib/ui/IconButton.svelte'
+  import Menu from '@/frontend/lib/ui/Menu.svelte'
+  import Progress from '@/frontend/lib/ui/Progress.svelte'
+  import TextField from '@/frontend/lib/ui/TextField.svelte'
+  import { cn } from '@/frontend/lib/ui/cn'
+  import type { BadgeTone, MenuItem } from '@/frontend/lib/ui/types'
 
   const pendingPlugins = $derived(
     plugins.items.filter(item => item.restartRequired),
@@ -20,16 +33,10 @@
   let showPending = $state(false)
   let showRemote = $state(false)
   let showUpdates = $state(false)
-  let showMore = $state(false)
   let query = $state('')
-  let moreMenuEl = $state<HTMLDivElement | undefined>(undefined)
   let remoteUrl = $state('')
   let updateTarget = $state<string | undefined>(undefined)
   let grantTargetId = $state<string | undefined>(undefined)
-  let dialogEl = $state<HTMLDivElement | undefined>(undefined)
-  let remoteDialogEl = $state<HTMLDivElement | undefined>(undefined)
-  let updatesDialogEl = $state<HTMLDivElement | undefined>(undefined)
-  let grantDialogEl = $state<HTMLDivElement | undefined>(undefined)
 
   const filteredPlugins = $derived.by(() => {
     const needle = query.trim().toLowerCase()
@@ -53,31 +60,33 @@
     if (showPending && pendingPlugins.length === 0) showPending = false
   })
 
-  $effect(() => {
-    if (showPending) dialogEl?.focus()
-  })
-
-  $effect(() => {
-    if (showRemote) remoteDialogEl?.focus()
-  })
-
-  $effect(() => {
-    if (showUpdates) updatesDialogEl?.focus()
-  })
-
-  $effect(() => {
-    if (grantTargetId) grantDialogEl?.focus()
-  })
-
-  // The overflow menu closes on any pointer press outside its trigger + panel.
-  $effect(() => {
-    if (!showMore) return
-    const onPointerDown = (event: PointerEvent): void => {
-      if (!moreMenuEl?.contains(event.target as Node)) showMore = false
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    return () => document.removeEventListener('pointerdown', onPointerDown)
-  })
+  const menuItems = $derived<MenuItem[]>([
+    {
+      label:
+        plugins.remotePending === 'checking'
+          ? 'Checking…'
+          : 'Check for updates',
+      detail: activeUpdates.length > 0 ? String(activeUpdates.length) : undefined,
+      disabled: Boolean(plugins.remotePending),
+      onSelect: () => {
+        showUpdates = true
+        void plugins.checkUpdates()
+      },
+    },
+    {
+      label: 'Install from URL…',
+      disabled: Boolean(plugins.remotePending),
+      onSelect: () => (showRemote = true),
+    },
+    {
+      label:
+        plugins.pending?.action === 'installFromDirectory'
+          ? 'Installing…'
+          : 'Install from folder…',
+      disabled: Boolean(plugins.pending),
+      onSelect: () => void plugins.installFromDirectory(),
+    },
+  ])
 
   function closePending(): void {
     showPending = false
@@ -92,32 +101,11 @@
   function closeUpdates(): void {
     if (plugins.remotePending) return
     showUpdates = false
-    updateTarget = undefined
   }
 
   function closeGrant(): void {
     if (plugins.pending) return
     grantTargetId = undefined
-  }
-
-  function onKeydown(event: KeyboardEvent): void {
-    if (event.key !== 'Escape') return
-    if (updateTarget) updateTarget = undefined
-    else if (showRemote) closeRemote()
-    else if (showUpdates) closeUpdates()
-    else if (grantTargetId) closeGrant()
-    else if (showPending) closePending()
-    else if (showMore) showMore = false
-  }
-
-  /** Menu entries act once and dismiss the menu before opening their dialog. */
-  function runFromMenu(action: () => void): void {
-    showMore = false
-    action()
-  }
-
-  function stopPropagation(event: MouseEvent): void {
-    event.stopPropagation()
   }
 
   /** Progress events are only meaningful while a remote operation is running. */
@@ -160,10 +148,10 @@
     }
   }
 
-  function progressPercent(): number {
+  function progressPercent(): number | undefined {
     const progress = plugins.progress
     if (!progress?.totalBytes || progress.receivedBytes === undefined) {
-      return 0
+      return undefined
     }
     return Math.min(
       100,
@@ -175,6 +163,21 @@
     if (!notes) return ''
     const single = notes.replace(/\s+/g, ' ').trim()
     return single.length > 140 ? `${single.slice(0, 140)}…` : single
+  }
+
+  /** State -> semantic badge tone (failed/dropped are errors, degraded warns). */
+  function stateTone(state: string): BadgeTone {
+    switch (state) {
+      case 'Active':
+        return 'success'
+      case 'Failed':
+      case 'Dropped':
+        return 'error'
+      case 'Degraded':
+        return 'warning'
+      default:
+        return 'neutral'
+    }
   }
 
   onMount(() => {
@@ -248,235 +251,234 @@
   }
 
   function enableLabel(plugin: PluginDetailDto): string {
-    if (plugins.pending?.action === 'enable' && plugins.pending.pluginId === plugin.id) {
-      return 'Enabling…'
-    }
-    return plugin.state === 'Failed' || plugin.state === 'Dropped' ? 'Retry' : 'Enable'
+    if (plugin.state === 'Failed' || plugin.state === 'Dropped') return 'Retry'
+    return 'Enable'
   }
 </script>
 
-<svelte:window onkeydown={onKeydown} />
-
-<section class="manager">
-  <div class="content">
-    <div class="side">
-      <div class="top">
-        <header class="toolbar">
-          <h2>Plugins</h2>
-          <div class="toolbar-actions">
-            <button
-              type="button"
-              class="icon-button"
-              aria-label={plugins.loading ? 'Refreshing…' : 'Refresh'}
-              title="Refresh"
-              onclick={() => void plugins.load()}
-              disabled={plugins.loading}
+<!--
+  Two independent scroll areas: the list column and the detail card each own
+  their scrollbar. Above 760px the section itself never scrolls; below it the
+  panes stack and the section becomes the single scroller.
+-->
+<section class="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 min-[760px]:overflow-hidden">
+  <!-- Same shape as before the redesign: search + list left, details right; it only
+       stacks below 760px, matching the old media query. -->
+  <div
+    class="grid min-h-0 flex-1 grid-cols-[minmax(13.75rem,18.75rem)_1fr] grid-rows-[minmax(0,1fr)] gap-4 max-[760px]:grid-cols-1 max-[760px]:grid-rows-[auto_auto]"
+  >
+    <aside class="flex min-h-0 flex-col gap-4 overflow-y-auto pr-1">
+      <header class="flex items-center justify-between gap-2">
+        <h2 class="text-base font-semibold">Plugins</h2>
+        <div class="flex items-center gap-1">
+          <IconButton
+            label={plugins.loading ? 'Refreshing…' : 'Refresh'}
+            disabled={plugins.loading}
+            onclick={() => void plugins.load()}
+          >
+            <svg
+              viewBox="0 0 16 16"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
             >
+              <path d="M13.4 8a5.4 5.4 0 1 1-1.6-3.8" />
+              <path d="M13.4 2.6v3h-3" />
+            </svg>
+          </IconButton>
+          <Menu items={menuItems} triggerLabel="More actions">
+            {#snippet trigger()}
               <svg
                 viewBox="0 0 16 16"
                 width="16"
                 height="16"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.3"
-                stroke-linecap="round"
-                stroke-linejoin="round"
+                fill="currentColor"
                 aria-hidden="true"
               >
-                <path d="M13.4 8a5.4 5.4 0 1 1-1.6-3.8" />
-                <path d="M13.4 2.6v3h-3" />
+                <circle cx="3.2" cy="8" r="1.25" />
+                <circle cx="8" cy="8" r="1.25" />
+                <circle cx="12.8" cy="8" r="1.25" />
               </svg>
-            </button>
-            <div class="more" bind:this={moreMenuEl}>
-              <button
-                type="button"
-                class="icon-button"
-                aria-label="More actions"
-                aria-haspopup="menu"
-                aria-expanded={showMore}
-                title="More…"
-                onclick={() => (showMore = !showMore)}
-              >
-                <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true">
-                  <circle cx="3.2" cy="8" r="1.25" />
-                  <circle cx="8" cy="8" r="1.25" />
-                  <circle cx="12.8" cy="8" r="1.25" />
-                </svg>
-                {#if activeUpdates.length > 0}<span class="dot" aria-hidden="true"></span>{/if}
-              </button>
-              {#if showMore}
-                <div class="menu" role="menu">
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onclick={() =>
-                      runFromMenu(() => {
-                        showUpdates = true
-                        void plugins.checkUpdates()
-                      })}
-                    disabled={!!plugins.remotePending}
-                  >
-                    <span>{plugins.remotePending === 'checking' ? 'Checking…' : 'Check for updates'}</span>
-                    {#if activeUpdates.length > 0}<span class="badge">{activeUpdates.length}</span>{/if}
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onclick={() => runFromMenu(() => (showRemote = true))}
-                    disabled={!!plugins.remotePending}
-                  >
-                    Install from URL…
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onclick={() => runFromMenu(() => void plugins.installFromDirectory())}
-                    disabled={!!plugins.pending}
-                  >
-                    {plugins.pending?.action === 'installFromDirectory' ? 'Installing…' : 'Install from folder…'}
-                  </button>
-                </div>
+              {#if activeUpdates.length > 0}
+                <span
+                  class="absolute right-1 top-1 size-1.5 rounded-full bg-brand-light dark:bg-brand-dark"
+                  aria-hidden="true"
+                ></span>
               {/if}
-            </div>
-          </div>
-        </header>
-
-        <div class="search">
-          <svg
-            viewBox="0 0 16 16"
-            width="14"
-            height="14"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.3"
-            stroke-linecap="round"
-            aria-hidden="true"
-          >
-            <circle cx="6.8" cy="6.8" r="4.2" />
-            <path d="M10 10l3.6 3.6" />
-          </svg>
-          <input
-            type="search"
-            bind:value={query}
-            placeholder="Search plugins"
-            aria-label="Search plugins"
-            autocomplete="off"
-            spellcheck="false"
-          />
+            {/snippet}
+          </Menu>
         </div>
-      </div>
+      </header>
+
+      <TextField
+        bind:value={query}
+        placeholder="Search plugins"
+        aria-label="Search plugins"
+        autocomplete="off"
+        spellcheck="false"
+      />
 
       {#if plugins.loadError}
-        <div class="message error" role="alert">
-          <span>{plugins.loadError}</span>
-          <button type="button" onclick={() => void plugins.load()}>Retry</button>
-        </div>
+        <Alert tone="error">
+          <span class="flex items-center justify-between gap-2">
+            <span>{plugins.loadError}</span>
+            <Button variant="link" size="sm" onclick={() => void plugins.load()}>
+              Retry
+            </Button>
+          </span>
+        </Alert>
       {/if}
       {#if plugins.actionError}
-        <p class="message error" role="alert">{plugins.actionError}</p>
+        <Alert tone="error">{plugins.actionError}</Alert>
       {/if}
       {#if plugins.notice}
-        <p class="message notice">{plugins.notice}</p>
+        <Alert tone="info">{plugins.notice}</Alert>
       {/if}
       {#if plugins.restartRequired}
-        <div class="message warning" role="status">
+        <Alert tone="warning">
           <span>
             Restart the plugin service to apply
-            <button type="button" class="link" onclick={() => (showPending = true)}>
+            <button
+              type="button"
+              class="text-primary-500 underline underline-offset-2 hover:text-primary-400"
+              onclick={() => (showPending = true)}
+            >
               pending changes
             </button>.
           </span>
-          <button
-            type="button"
-            onclick={() => void plugins.restart()}
-            disabled={!!plugins.pending}
-          >
-            {plugins.pending?.action === 'restart' ? 'Restarting…' : 'Restart plugins'}
-          </button>
-        </div>
+          {#snippet actions()}
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={plugins.pending?.action === 'restart'}
+              loadingLabel="Restarting…"
+              disabled={Boolean(plugins.pending)}
+              onclick={() => void plugins.restart()}
+            >
+              Restart plugins
+            </Button>
+          {/snippet}
+        </Alert>
       {/if}
 
       {#if plugins.issues.length > 0}
-        <details class="issues">
+        <details class="text-xs text-surface-600-400">
           <summary>{plugins.issues.length} discovery or validation issue(s)</summary>
           {#each plugins.issues as issue}
-            <p>{issue}</p>
+            <p class="mt-1">{issue}</p>
           {/each}
         </details>
       {/if}
 
       {#if plugins.loading && plugins.items.length === 0 && !plugins.loadError}
-        <div class="empty">Loading plugins…</div>
+        <p class="text-sm text-surface-600-400">Loading plugins…</p>
       {:else if plugins.items.length === 0 && !plugins.loadError}
-        <div class="empty">
-          <p>No plugins installed.</p>
-          <button
-            type="button"
-            class="primary"
-            onclick={() => void plugins.installFromDirectory()}
-            disabled={!!plugins.pending}
-          >
-            Install from folder…
-          </button>
-        </div>
+        <EmptyState
+          title="No plugins installed."
+          description="Install a plugin from a folder or a release URL."
+        >
+          {#snippet action()}
+            <Button
+              variant="secondary"
+              loading={plugins.pending?.action === 'installFromDirectory'}
+              loadingLabel="Installing…"
+              disabled={Boolean(plugins.pending)}
+              onclick={() => void plugins.installFromDirectory()}
+            >
+              Install from folder…
+            </Button>
+          {/snippet}
+        </EmptyState>
       {:else if plugins.items.length > 0}
-        <div class="list" aria-label="Installed plugins">
+        <div class="flex flex-col gap-1" aria-label="Installed plugins">
           {#each filteredPlugins as plugin (plugin.id)}
+            <!--
+              The card surface IS the interactive element: the whole row is the
+              target, and Skeleton's `card` utility already supplies the button
+              hover treatment. Nesting a button inside a Card would shrink the
+              click area to the content and add a second interactive element.
+            -->
             <button
               type="button"
-              class="plugin-row"
-              class:selected={plugin.id === plugins.selectedId}
+              class={cn(
+                'card flex flex-col items-stretch gap-1 border px-3 py-2 text-left transition-colors',
+                plugin.id === plugins.selectedId
+                  ? 'border-brand-light bg-surface-50-950 dark:border-brand-dark'
+                  : 'border-surface-200-800 bg-surface-100-900 hover:preset-tonal',
+              )}
               onclick={() => plugins.select(plugin.id)}
             >
-              <span class="plugin-name">{plugin.name}</span>
-              <span class="plugin-id">{plugin.id}</span>
-              <span class="row-meta">
-                <span>{plugin.version}</span>
-                <span class="state" data-state={plugin.state}>{plugin.state}</span>
+              <span class="flex items-start justify-between gap-2">
+                <span class="min-w-0 flex-1 truncate text-sm font-semibold"
+                  >{plugin.name}</span
+                >
+                <Badge tone={stateTone(plugin.state)}>{plugin.state}</Badge>
               </span>
+              {#if plugin.author}
+                <span class="truncate text-[11px] text-surface-600-400">
+                  {plugin.author}
+                </span>
+              {/if}
+              {#if plugin.description}
+                <span class="line-clamp-2 text-xs leading-snug text-surface-600-400">
+                  {plugin.description}
+                </span>
+              {/if}
             </button>
           {/each}
           {#if filteredPlugins.length === 0}
-            <div class="empty">No plugins match your search.</div>
+            <EmptyState
+              title="No plugins match your search."
+              description="Try a different name or plugin id."
+            />
           {/if}
         </div>
       {/if}
-    </div>
+    </aside>
 
-    <div class="detail">
+    <Card class="flex min-h-0 flex-col gap-4 overflow-y-auto">
       {#if plugins.selected}
         {@const selected = plugins.selected}
-        <header class="detail-head">
-          <div>
-            <h3>{selected.name}</h3>
-            <code>{selected.id}</code>
+        <header class="flex items-start justify-between gap-4">
+          <div class="min-w-0">
+            <h3 class="text-base font-semibold">{selected.name}</h3>
+            <code class="break-all font-mono text-xs text-surface-600-400"
+              >{selected.id}</code
+            >
           </div>
-          <span class="state" data-state={selected.state}>{selected.state}</span>
+          <Badge tone={stateTone(selected.state)}>{selected.state}</Badge>
         </header>
 
         {#if selected.description}
-          <p>{selected.description}</p>
+          <p class="text-sm">{selected.description}</p>
         {/if}
         {#if selected.error}
-          <p class="message error">{selected.error}</p>
+          <Alert tone="error">{selected.error}</Alert>
         {/if}
         {#if selected.state === 'NotInstalled'}
-          <p class="message notice">
+          <Alert tone="warning">
             This plugin is uninstalled. Its saved configuration and data are
             preserved; install it again to restore it.
-          </p>
+          </Alert>
         {/if}
 
-        <dl class="metadata">
-          <dt>Version</dt><dd>{selected.version}</dd>
-          <dt>Source</dt><dd>{selected.source}</dd>
+        <dl class="grid grid-cols-[6.5rem_1fr] gap-x-4 gap-y-1 text-xs">
+          <dt class="text-surface-600-400">Version</dt>
+          <dd>{selected.version}</dd>
+          <dt class="text-surface-600-400">Source</dt>
+          <dd>{selected.source}</dd>
           {#if selected.origin}
-            <dt>Origin</dt>
+            <dt class="text-surface-600-400">Origin</dt>
             <dd>
               {#if selected.origin.kind === 'remote'}
-                <code>{selected.origin.url}</code>
+                <code class="break-all font-mono">{selected.origin.url}</code>
                 {#if selected.origin.sha256}
-                  <p class="muted">
+                  <p class="text-surface-600-400">
                     sha256 {selected.origin.sha256.slice(0, 12)}…
                   </p>
                 {/if}
@@ -485,42 +487,57 @@
               {/if}
             </dd>
           {/if}
-          <dt>Entry</dt><dd><code>{selected.entry}</code></dd>
-          <dt>Kernel</dt><dd>{selected.compatibility.minKernel}</dd>
-          <dt>Contract</dt><dd>{selected.compatibility.contractVersion}</dd>
-          {#if selected.author}<dt>Author</dt><dd>{selected.author}</dd>{/if}
+          <dt class="text-surface-600-400">Entry</dt>
+          <dd><code class="font-mono">{selected.entry}</code></dd>
+          <dt class="text-surface-600-400">Kernel</dt>
+          <dd>{selected.compatibility.minKernel}</dd>
+          <dt class="text-surface-600-400">Contract</dt>
+          <dd>{selected.compatibility.contractVersion}</dd>
+          {#if selected.author}
+            <dt class="text-surface-600-400">Author</dt>
+            <dd>{selected.author}</dd>
+          {/if}
         </dl>
 
-        <div class="requirements">
+        <div class="grid grid-cols-2 gap-4 max-[760px]:grid-cols-1">
           <section>
-            <h4>Dependencies</h4>
+            <h4
+              class="mb-2 text-xs font-semibold uppercase tracking-wider text-surface-600-400"
+            >
+              Dependencies
+            </h4>
             {#each Object.entries(selected.dependencies) as [id, range]}
-              <p><code>{id}</code> <span>{range}</span></p>
-            {:else}<p class="muted">None</p>{/each}
+              <p class="text-xs"><code class="font-mono">{id}</code> <span>{range}</span></p>
+            {:else}
+              <p class="text-xs text-surface-600-400">None</p>
+            {/each}
           </section>
           <section>
-            <h4>Required capabilities</h4>
+            <h4
+              class="mb-2 text-xs font-semibold uppercase tracking-wider text-surface-600-400"
+            >
+              Required capabilities
+            </h4>
             {#each selected.requires as capability}
-              <p>
-                <code>{capability}</code>
+              <p class="mb-1 flex items-center gap-2 text-xs">
+                <code class="font-mono">{capability}</code>
                 {#if !selected.builtin}
-                  <span
-                    class:denied={selected.permissions.denied.includes(
-                      capability,
-                    )}
-                    class:granted={selected.permissions.granted.includes(
-                      capability,
-                    )}
+                  <Badge
+                    tone={selected.permissions.denied.includes(capability)
+                      ? 'warning'
+                      : 'success'}
                   >
                     {selected.permissions.denied.includes(capability)
                       ? 'denied'
                       : 'granted'}
-                  </span>
+                  </Badge>
                 {/if}
               </p>
-            {:else}<p class="muted">None</p>{/each}
+            {:else}
+              <p class="text-xs text-surface-600-400">None</p>
+            {/each}
             {#if !selected.builtin && selected.permissions.denied.length > 0}
-              <p class="muted">
+              <p class="mt-2 text-xs text-surface-600-400">
                 {#if selected.state === 'NotInstalled'}
                   These capabilities are approved when the plugin is installed
                   again.
@@ -533,564 +550,447 @@
           </section>
         </div>
 
-        <div class="actions">
+        <div class="flex flex-wrap items-center gap-2 border-t border-surface-200-800 pt-4">
           {#if selected.state === 'NotInstalled'}
-            <button
-              type="button"
-              class="primary"
+            <Button
+              loading={plugins.pending?.action === 'reinstall' && plugins.pending.pluginId === selected.id}
+              loadingLabel="Installing…"
+              disabled={Boolean(plugins.pending)}
               onclick={() => installRemoved(selected)}
-              disabled={!!plugins.pending}
             >
-              {plugins.pending?.action === 'reinstall' && plugins.pending.pluginId === selected.id ? 'Installing…' : 'Install'}
-            </button>
+              Install
+            </Button>
           {:else if canDisable(selected)}
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              loading={plugins.pending?.action === 'disable' && plugins.pending.pluginId === selected.id}
+              loadingLabel="Disabling…"
+              disabled={Boolean(plugins.pending)}
               onclick={() => void plugins.disable(selected.id)}
-              disabled={!!plugins.pending}
             >
-              {plugins.pending?.action === 'disable' && plugins.pending.pluginId === selected.id ? 'Disabling…' : 'Disable'}
-            </button>
+              Disable
+            </Button>
           {:else}
-            <button
-              type="button"
-              class="primary"
+            <Button
+              loading={plugins.pending?.action === 'enable' && plugins.pending.pluginId === selected.id}
+              loadingLabel="Enabling…"
+              disabled={Boolean(plugins.pending)}
               onclick={() => requestEnable(selected)}
-              disabled={!!plugins.pending}
             >
               {enableLabel(selected)}
-            </button>
+            </Button>
           {/if}
           {#if selected.canUninstall}
-            <button
-              type="button"
-              class="danger"
+            <Button
+              variant="danger"
+              loading={plugins.pending?.action === 'uninstall' && plugins.pending.pluginId === selected.id}
+              loadingLabel="Uninstalling…"
+              disabled={Boolean(plugins.pending)}
               onclick={() => void plugins.uninstall(selected.id)}
-              disabled={!!plugins.pending}
             >
-              {plugins.pending?.action === 'uninstall' && plugins.pending.pluginId === selected.id ? 'Uninstalling…' : 'Uninstall'}
-            </button>
+              Uninstall
+            </Button>
           {/if}
         </div>
       {:else}
-        <div class="empty">Select a plugin to view details.</div>
+        <EmptyState
+          title="Select a plugin to view details."
+          description="The list on the left lists built-in and installed plugins."
+        />
       {/if}
-    </div>
+    </Card>
   </div>
 
-  {#if showPending}
-    <!-- Backdrop click closes; clicks inside the dialog stop at the panel. -->
-    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-    <div class="backdrop" role="presentation" onclick={closePending}>
-      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div
-        class="dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="pending-title"
-        tabindex="-1"
-        bind:this={dialogEl}
-        onclick={stopPropagation}
+  <Dialog
+    bind:open={showPending}
+    title="Pending changes"
+    description="These plugins are disabled on disk but still running. Restart the plugin service to stop them."
+  >
+    <ul class="flex list-none flex-col gap-1 p-0">
+      {#each pendingPlugins as plugin (plugin.id)}
+        <li
+          class="flex items-center gap-3 border-b border-surface-200-800 py-1 text-xs last:border-b-0"
+        >
+          <span class="flex-1 font-semibold">{plugin.name}</span>
+          <code class="font-mono text-surface-600-400">{plugin.id}</code>
+          <Badge tone={stateTone(plugin.state)}>{plugin.state}</Badge>
+        </li>
+      {/each}
+    </ul>
+    {#snippet footer()}
+      <Button variant="secondary" onclick={closePending}>Close</Button>
+      <Button
+        loading={plugins.pending?.action === 'restart'}
+        loadingLabel="Restarting…"
+        disabled={Boolean(plugins.pending)}
+        onclick={() => void plugins.restart()}
       >
-        <h3 id="pending-title">Pending changes</h3>
-        <p class="muted">
-          These plugins are disabled on disk but still running. Restart the
-          plugin service to stop them.
-        </p>
-        <ul class="pending-list">
-          {#each pendingPlugins as plugin (plugin.id)}
-            <li>
-              <span class="plugin-name">{plugin.name}</span>
-              <code>{plugin.id}</code>
-              <span class="state" data-state={plugin.state}>{plugin.state}</span>
-            </li>
-          {/each}
-        </ul>
-        <div class="actions">
-          <button type="button" onclick={closePending}>Close</button>
-          <button
-            type="button"
-            class="primary"
-            onclick={() => void plugins.restart()}
-            disabled={!!plugins.pending}
-          >
-            {plugins.pending?.action === 'restart' ? 'Restarting…' : 'Restart plugins'}
-          </button>
-        </div>
-      </div>
-    </div>
-  {/if}
-  {#if showRemote}
-    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-    <div class="backdrop" role="presentation" onclick={closeRemote}>
-      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div
-        class="dialog wide"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="remote-title"
-        tabindex="-1"
-        bind:this={remoteDialogEl}
-        onclick={stopPropagation}
-      >
-        <h3 id="remote-title">Install from URL</h3>
-        <p class="muted">
-          Only HTTPS release URLs on the allowlist (GitHub) are accepted. The
-          package is downloaded and inspected first; approving the capabilities
-          installs and enables the plugin in one step.
-        </p>
-        <label class="field">
-          <span>Release URL</span>
-          <input
-            bind:value={remoteUrl}
-            placeholder="https://github.com/owner/repo/releases/tag/v1.0.0"
-            disabled={!!plugins.remotePending}
-          />
-        </label>
-        <div class="actions">
-          <button
-            type="button"
-            onclick={closeRemote}
-            disabled={!!plugins.remotePending}
-          >
-            Close
-          </button>
-          <button
-            type="button"
-            class="primary"
-            onclick={() => void plugins.inspectRemote(remoteUrl.trim())}
-            disabled={!remoteUrl.trim() || !!plugins.remotePending}
-          >
-            {plugins.remotePending === 'inspecting' ? 'Inspecting…' : 'Inspect'}
-          </button>
-        </div>
+        Restart plugins
+      </Button>
+    {/snippet}
+  </Dialog>
 
-        {#if remoteBusy || plugins.cancelling}
-          <div class="progress" role="status">
-            <div class="progress-meta">
-              <span>{phaseLabel()}</span>
-              <span>{progressLabel()}</span>
-            </div>
-            <div class="progress-track">
-              <div
-                class="progress-fill"
-                style:width={`${progressPercent()}%`}
-              ></div>
-            </div>
-            {#if plugins.remotePending !== 'updating' && plugins.progress?.phase !== 'installing'}
-              <button
-                type="button"
-                onclick={() => void plugins.cancelDownload()}
-                disabled={plugins.cancelling}
-              >
-                {plugins.cancelling ? 'Cancelling…' : 'Cancel download'}
-              </button>
-            {/if}
-          </div>
-        {/if}
+  <Dialog
+    bind:open={showRemote}
+    size="lg"
+    closeable={!plugins.remotePending}
+    title="Install from URL"
+    description="Only HTTPS release URLs on the allowlist (GitHub) are accepted. The package is downloaded and inspected first; approving the capabilities installs and enables the plugin in one step."
+  >
+    <Field label="Release URL" forId="remote-url">
+      <TextField
+        id="remote-url"
+        bind:value={remoteUrl}
+        placeholder="https://github.com/owner/repo/releases/tag/v1.0.0"
+        disabled={Boolean(plugins.remotePending)}
+        autocomplete="off"
+        spellcheck="false"
+      />
+    </Field>
 
-        {#if plugins.remoteError}
-          <p class="message error" role="alert">{plugins.remoteError}</p>
-        {/if}
-
-        {#if plugins.inspection}
-          {@const inspection = plugins.inspection}
-          <section class="preview">
-            <h4>Package preview</h4>
-            <dl class="metadata">
-              <dt>Source</dt><dd><code>{inspection.url}</code></dd>
-              <dt>Asset</dt><dd><code>{inspection.downloadUrl}</code></dd>
-              <dt>Id</dt><dd><code>{inspection.id}</code></dd>
-              <dt>Name</dt><dd>{inspection.name}</dd>
-              <dt>Version</dt><dd>{inspection.version}</dd>
-              {#if inspection.publishedAt}
-                <dt>Published</dt><dd>{inspection.publishedAt}</dd>
-              {/if}
-              {#if inspection.size !== undefined}
-                <dt>Size</dt><dd>{formatBytes(inspection.size)}</dd>
-              {/if}
-              <dt>SHA-256</dt>
-              <dd>
-                {#if inspection.sha256}
-                  <code class="digest">{inspection.sha256}</code>
-                  <span class="trusted">from release metadata</span>
-                {:else}
-                  <span class="warning">Not published</span>
-                {/if}
-              </dd>
-            </dl>
-            {#if inspection.notes}
-              <p class="notes">{notesSummary(inspection.notes)}</p>
-            {/if}
-            <div class="requirements">
-              <section>
-                <h4>Capabilities approved on install</h4>
-                {#each inspection.requires as capability}
-                  <p><code>{capability}</code></p>
-                {:else}<p class="muted">None</p>{/each}
-              </section>
-              <section>
-                <h4>Dependencies</h4>
-                {#each Object.entries(inspection.dependencies) as [id, range]}
-                  <p><code>{id}</code> <span>{range}</span></p>
-                {:else}<p class="muted">None</p>{/each}
-              </section>
-            </div>
-            <p class="disclaimer">
-              Declared capabilities are permissions, not a sandbox. Approving
-              them grants exactly these capabilities and enables the plugin
-              right after installation. SHA-256 only proves integrity, not who
-              published the package: there is no signature verification.
-            </p>
-            {#if !inspection.sha256}
-              <p class="message error" role="alert">
-                The publisher did not provide a SHA-256 digest, so installation
-                is blocked.
-              </p>
-            {/if}
-            <div class="actions">
-              <button
-                type="button"
-                class="primary"
-                onclick={() => void plugins.installRemote()}
-                disabled={!inspection.sha256 || !!plugins.remotePending}
-              >
-                {plugins.remotePending === 'installing'
-                  ? 'Installing…'
-                  : inspection.requires.length > 0
-                    ? 'Approve capabilities & install'
-                    : 'Install & enable'}
-              </button>
-            </div>
-          </section>
+    {#if remoteBusy || plugins.cancelling}
+      <div class="flex flex-col items-start gap-2">
+        <Progress
+          class="w-full"
+          value={progressPercent()}
+          label={phaseLabel()}
+          detail={progressLabel()}
+        />
+        {#if plugins.remotePending !== 'updating' && plugins.progress?.phase !== 'installing'}
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={plugins.cancelling}
+            loadingLabel="Cancelling…"
+            onclick={() => void plugins.cancelDownload()}
+          >
+            Cancel download
+          </Button>
         {/if}
       </div>
-    </div>
-  {/if}
+    {/if}
 
-  {#if showUpdates}
-    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-    <div class="backdrop" role="presentation" onclick={closeUpdates}>
-      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div
-        class="dialog wide"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="updates-title"
-        tabindex="-1"
-        bind:this={updatesDialogEl}
-        onclick={stopPropagation}
-      >
-        <h3 id="updates-title">Plugin updates</h3>
-        <p class="muted">
-          Installed remote plugins are compared with their recorded release
-          source. Nothing installs until you confirm a specific version.
-        </p>
-        {#if plugins.updateError}
-          <p class="message error" role="alert">{plugins.updateError}</p>
-        {/if}
-        {#if plugins.remotePending === 'checking'}
-          <p class="muted">Checking…</p>
-        {:else if activeUpdates.length === 0}
-          <p class="muted">
-            {plugins.updateError
-              ? 'No applicable updates found; resolve the source issues above and check again.'
-              : 'No updates available.'}
-          </p>
-        {:else}
-          <ul class="update-list">
-            {#each activeUpdates as update (update.pluginId)}
-              <li>
-                <div>
-                  <strong>
-                    {plugins.items.find((item) => item.id === update.pluginId)
-                      ?.name ?? update.pluginId}
-                  </strong>
-                  <code>{update.pluginId}</code>
-                  <p class="version">
-                    {update.currentVersion} → {update.latestVersion}
-                  </p>
-                  {#if update.publishedAt}
-                    <p class="muted">Published {update.publishedAt}</p>
-                  {/if}
-                  {#if update.notes}
-                    <p class="muted">{notesSummary(update.notes)}</p>
-                  {/if}
-                </div>
-                <button
-                  type="button"
-                  onclick={() => (updateTarget = update.pluginId)}
-                  disabled={!!plugins.remotePending}
-                >
-                  Update
-                </button>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-        <div class="actions">
-          <button
-            type="button"
-            onclick={closeUpdates}
-            disabled={!!plugins.remotePending}
-          >
-            Close
-          </button>
-          <button
-            type="button"
-            onclick={() => void plugins.checkUpdates()}
-            disabled={!!plugins.remotePending}
-          >
-            Re-check
-          </button>
-        </div>
-      </div>
-    </div>
-  {/if}
+    {#if plugins.remoteError}
+      <Alert tone="error">{plugins.remoteError}</Alert>
+    {/if}
 
-  {#if updateTargetEntry}
-    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-    <div class="backdrop" role="presentation" onclick={() => (updateTarget = undefined)}>
-      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div
-        class="dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="update-title"
-        tabindex="-1"
-        onclick={stopPropagation}
-      >
-        <h3 id="update-title">Update plugin</h3>
-        <p>
-          Update
-          <strong>{updateTargetPlugin?.name ?? updateTargetEntry.pluginId}</strong>
-          from <code>{updateTargetEntry.currentVersion}</code> to
-          <code>{updateTargetEntry.latestVersion}</code>?
-        </p>
-        <dl class="metadata">
-          <dt>Source</dt><dd><code>{updateTargetEntry.url}</code></dd>
-          <dt>SHA-256</dt>
+    {#if plugins.inspection}
+      {@const inspection = plugins.inspection}
+      <section class="flex flex-col gap-3 border-t border-surface-200-800 pt-4">
+        <h4 class="text-sm font-semibold">Package preview</h4>
+        <dl class="grid grid-cols-[6.5rem_1fr] gap-x-4 gap-y-1 text-xs">
+          <dt class="text-surface-600-400">Source</dt>
+          <dd><code class="break-all font-mono">{inspection.url}</code></dd>
+          <dt class="text-surface-600-400">Asset</dt>
+          <dd><code class="break-all font-mono">{inspection.downloadUrl}</code></dd>
+          <dt class="text-surface-600-400">Id</dt>
+          <dd><code class="font-mono">{inspection.id}</code></dd>
+          <dt class="text-surface-600-400">Name</dt>
+          <dd>{inspection.name}</dd>
+          <dt class="text-surface-600-400">Version</dt>
+          <dd>{inspection.version}</dd>
+          {#if inspection.publishedAt}
+            <dt class="text-surface-600-400">Published</dt>
+            <dd>{inspection.publishedAt}</dd>
+          {/if}
+          {#if inspection.size !== undefined}
+            <dt class="text-surface-600-400">Size</dt>
+            <dd>{formatBytes(inspection.size)}</dd>
+          {/if}
+          <dt class="text-surface-600-400">SHA-256</dt>
           <dd>
-            {#if updateTargetEntry.sha256}
-              <code class="digest">{updateTargetEntry.sha256}</code>
+            {#if inspection.sha256}
+              <code class="break-all font-mono text-[11px]">{inspection.sha256}</code>
+              <span class="block text-xs text-success-600-400">from release metadata</span>
             {:else}
-              <span class="warning">Not published — update blocked</span>
+              <span class="text-xs text-warning-600-400">Not published</span>
             {/if}
-          </dd>
-          <dt>Capabilities</dt>
-          <dd>
-            {#each updateTargetPlugin?.requires ?? [] as capability}
-              <code>{capability}</code>
-            {:else}<span class="muted">None declared</span>{/each}
           </dd>
         </dl>
-        {#if remoteBusy || plugins.cancelling}
-          <div class="progress" role="status">
-            <div class="progress-meta">
-              <span>{phaseLabel()}</span>
-              <span>{progressLabel()}</span>
-            </div>
-            <div class="progress-track">
-              <div
-                class="progress-fill"
-                style:width={`${progressPercent()}%`}
-              ></div>
-            </div>
-          </div>
+        {#if inspection.notes}
+          <p class="text-xs text-surface-600-400">{notesSummary(inspection.notes)}</p>
         {/if}
-        <p class="disclaimer">
-          Capabilities shown belong to the installed version. If the new package
-          declares additional capabilities, it is installed disabled and you
-          must approve them before it can run. The old version is backed up and
-          restored automatically if the update fails. SHA-256 proves integrity
-          only; it does not prove who published this package.
-        </p>
-        <div class="actions">
-          <button
-            type="button"
-            onclick={() => (updateTarget = undefined)}
-            disabled={!!plugins.remotePending}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="primary"
-            onclick={() => {
-              const update = updateTargetEntry
-              updateTarget = undefined
-              if (update) void plugins.applyUpdate(update)
-            }}
-            disabled={!updateTargetEntry.sha256 || !!plugins.remotePending}
-          >
-            Confirm update
-          </button>
+        <div class="grid grid-cols-2 gap-4 max-[760px]:grid-cols-1">
+          <section>
+            <h4
+              class="mb-2 text-xs font-semibold uppercase tracking-wider text-surface-600-400"
+            >
+              Capabilities approved on install
+            </h4>
+            {#each inspection.requires as capability}
+              <p class="text-xs"><code class="font-mono">{capability}</code></p>
+            {:else}
+              <p class="text-xs text-surface-600-400">None</p>
+            {/each}
+          </section>
+          <section>
+            <h4
+              class="mb-2 text-xs font-semibold uppercase tracking-wider text-surface-600-400"
+            >
+              Dependencies
+            </h4>
+            {#each Object.entries(inspection.dependencies) as [id, range]}
+              <p class="text-xs"><code class="font-mono">{id}</code> <span>{range}</span></p>
+            {:else}
+              <p class="text-xs text-surface-600-400">None</p>
+            {/each}
+          </section>
         </div>
-      </div>
-    </div>
+        <p class="text-xs text-warning-600-400">
+          Declared capabilities are permissions, not a sandbox. Approving them
+          grants exactly these capabilities and enables the plugin right after
+          installation. SHA-256 only proves integrity, not who published the
+          package: there is no signature verification.
+        </p>
+        {#if !inspection.sha256}
+          <Alert tone="error">
+            The publisher did not provide a SHA-256 digest, so installation is
+            blocked.
+          </Alert>
+        {/if}
+        <div class="flex justify-end">
+          <Button
+            loading={plugins.remotePending === 'installing'}
+            loadingLabel="Installing…"
+            disabled={!inspection.sha256 || Boolean(plugins.remotePending)}
+            onclick={() => void plugins.installRemote()}
+          >
+            {inspection.requires.length > 0
+              ? 'Approve capabilities & install'
+              : 'Install & enable'}
+          </Button>
+        </div>
+      </section>
+    {/if}
+
+    {#snippet footer()}
+      <Button
+        variant="secondary"
+        disabled={Boolean(plugins.remotePending)}
+        onclick={closeRemote}
+      >
+        Close
+      </Button>
+      <Button
+        loading={plugins.remotePending === 'inspecting'}
+        loadingLabel="Inspecting…"
+        disabled={!remoteUrl.trim() || Boolean(plugins.remotePending)}
+        onclick={() => void plugins.inspectRemote(remoteUrl.trim())}
+      >
+        Inspect
+      </Button>
+    {/snippet}
+  </Dialog>
+
+  <Dialog
+    bind:open={showUpdates}
+    size="lg"
+    closeable={!plugins.remotePending}
+    title="Plugin updates"
+    description="Installed remote plugins are compared with their recorded release source. Nothing installs until you confirm a specific version."
+  >
+    {#if plugins.updateError}
+      <Alert tone="error">{plugins.updateError}</Alert>
+    {/if}
+    {#if plugins.remotePending === 'checking'}
+      <p class="text-sm text-surface-600-400">Checking…</p>
+    {:else if activeUpdates.length === 0}
+      <p class="text-sm text-surface-600-400">
+        {plugins.updateError
+          ? 'No applicable updates found; resolve the source issues above and check again.'
+          : 'No updates available.'}
+      </p>
+    {:else}
+      <ul class="flex list-none flex-col gap-2 p-0">
+        {#each activeUpdates as update (update.pluginId)}
+          <li
+            class="flex items-start justify-between gap-3 rounded-base border border-surface-200-800 p-3"
+          >
+            <div class="min-w-0">
+              <strong class="text-sm">
+                {plugins.items.find((item) => item.id === update.pluginId)
+                  ?.name ?? update.pluginId}
+              </strong>
+              <code class="ml-2 font-mono text-xs text-surface-600-400"
+                >{update.pluginId}</code
+              >
+              <p class="mt-1 font-mono text-xs text-primary-500">
+                {update.currentVersion} → {update.latestVersion}
+              </p>
+              {#if update.publishedAt}
+                <p class="text-xs text-surface-600-400">
+                  Published {update.publishedAt}
+                </p>
+              {/if}
+              {#if update.notes}
+                <p class="text-xs text-surface-600-400">
+                  {notesSummary(update.notes)}
+                </p>
+              {/if}
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={Boolean(plugins.remotePending)}
+              onclick={() => (updateTarget = update.pluginId)}
+            >
+              Update
+            </Button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+
+    {#snippet footer()}
+      <Button
+        variant="secondary"
+        disabled={Boolean(plugins.remotePending)}
+        onclick={closeUpdates}
+      >
+        Close
+      </Button>
+      <Button
+        loading={plugins.remotePending === 'checking'}
+        loadingLabel="Checking…"
+        disabled={Boolean(plugins.remotePending)}
+        onclick={() => void plugins.checkUpdates()}
+      >
+        Re-check
+      </Button>
+    {/snippet}
+  </Dialog>
+
+  {#if updateTargetEntry}
+    {@const entry = updateTargetEntry}
+    <Dialog
+      open={true}
+      title="Update plugin"
+      onOpenChange={(next) => {
+        if (!next) updateTarget = undefined
+      }}
+    >
+      <p class="text-sm">
+        Update
+        <strong>{updateTargetPlugin?.name ?? entry.pluginId}</strong>
+        from <code class="font-mono">{entry.currentVersion}</code> to
+        <code class="font-mono">{entry.latestVersion}</code>?
+      </p>
+      <dl class="grid grid-cols-[6.5rem_1fr] gap-x-4 gap-y-1 text-xs">
+        <dt class="text-surface-600-400">Source</dt>
+        <dd><code class="break-all font-mono">{entry.url}</code></dd>
+        <dt class="text-surface-600-400">SHA-256</dt>
+        <dd>
+          {#if entry.sha256}
+            <code class="break-all font-mono text-[11px]">{entry.sha256}</code>
+          {:else}
+            <span class="text-xs text-warning-600-400">
+              Not published — update blocked
+            </span>
+          {/if}
+        </dd>
+        <dt class="text-surface-600-400">Capabilities</dt>
+        <dd class="flex flex-wrap gap-1">
+          {#each updateTargetPlugin?.requires ?? [] as capability}
+            <code class="font-mono">{capability}</code>
+          {:else}
+            <span class="text-surface-600-400">None declared</span>
+          {/each}
+        </dd>
+      </dl>
+      {#if remoteBusy || plugins.cancelling}
+        <Progress
+          value={progressPercent()}
+          label={phaseLabel()}
+          detail={progressLabel()}
+        />
+      {/if}
+      <p class="text-xs text-warning-600-400">
+        Capabilities shown belong to the installed version. If the new package
+        declares additional capabilities, it is installed disabled and you must
+        approve them before it can run. The old version is backed up and
+        restored automatically if the update fails. SHA-256 proves integrity
+        only; it does not prove who published this package.
+      </p>
+      {#snippet footer()}
+        <Button
+          variant="secondary"
+          disabled={Boolean(plugins.remotePending)}
+          onclick={() => (updateTarget = undefined)}
+        >
+          Cancel
+        </Button>
+        <Button
+          loading={plugins.remotePending === 'updating'}
+          loadingLabel="Updating…"
+          disabled={!entry.sha256 || Boolean(plugins.remotePending)}
+          onclick={() => {
+            const update = entry
+            updateTarget = undefined
+            void plugins.applyUpdate(update)
+          }}
+        >
+          Confirm update
+        </Button>
+      {/snippet}
+    </Dialog>
   {/if}
 
   {#if grantTarget}
-    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-    <div class="backdrop" role="presentation" onclick={closeGrant}>
-      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div
-        class="dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="grant-title"
-        tabindex="-1"
-        bind:this={grantDialogEl}
-        onclick={stopPropagation}
-      >
-        <h3 id="grant-title">Approve plugin capabilities</h3>
-        <p>
-          <strong>{grantTarget.name}</strong> is user-installed and runs inside
-          the sandbox. Enabling it requires these declared capabilities:
-        </p>
-        <ul class="grant-list">
-          {#each grantTarget.requires as capability}
-            <li>
-              <code>{capability}</code>
-              <span
-                class:granted={grantTarget.permissions.granted.includes(
-                  capability,
-                )}
-                class:denied={grantTarget.permissions.denied.includes(
-                  capability,
-                )}
-              >
-                {grantTarget.permissions.denied.includes(capability)
-                  ? 'denied'
-                  : 'granted'}
-              </span>
-            </li>
-          {:else}
-            <li><span class="muted">None declared</span></li>
-          {/each}
-        </ul>
-        <p class="disclaimer">
-          Approving grants only these declared capabilities to this plugin.
-          They apply when the plugin starts; this flow enables it immediately.
-          Other plugins remain sandboxed, and a grant never exceeds the
-          manifest.
-        </p>
-        <div class="actions">
-          <button
-            type="button"
-            onclick={closeGrant}
-            disabled={!!plugins.pending}
+    {@const target = grantTarget}
+    <Dialog
+      open={true}
+      closeable={!plugins.pending}
+      title="Approve plugin capabilities"
+      onOpenChange={(next) => {
+        if (!next) closeGrant()
+      }}
+    >
+      <p class="text-sm">
+        <strong>{target.name}</strong> is user-installed and runs inside the
+        sandbox. Enabling it requires these declared capabilities:
+      </p>
+      <ul class="flex list-none flex-col gap-1 p-0">
+        {#each target.requires as capability}
+          <li
+            class="flex items-center justify-between gap-3 border-b border-surface-200-800 py-1 text-xs last:border-b-0"
           >
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="primary"
-            onclick={confirmGrantAndEnable}
-            disabled={!!plugins.pending || grantDenied.length === 0}
-          >
-            Agree and enable
-          </button>
-        </div>
-      </div>
-    </div>
+            <code class="font-mono">{capability}</code>
+            <Badge
+              tone={target.permissions.denied.includes(capability)
+                ? 'warning'
+                : 'success'}
+            >
+              {target.permissions.denied.includes(capability)
+                ? 'denied'
+                : 'granted'}
+            </Badge>
+          </li>
+        {:else}
+          <li class="text-xs text-surface-600-400">None declared</li>
+        {/each}
+      </ul>
+      <p class="text-xs text-warning-600-400">
+        Approving grants only these declared capabilities to this plugin. They
+        apply when the plugin starts; this flow enables it immediately. Other
+        plugins remain sandboxed, and a grant never exceeds the manifest.
+      </p>
+      {#snippet footer()}
+        <Button
+          variant="secondary"
+          disabled={Boolean(plugins.pending)}
+          onclick={closeGrant}
+        >
+          Cancel
+        </Button>
+        <Button
+          loading={Boolean(plugins.pending)}
+          loadingLabel="Enabling…"
+          disabled={Boolean(plugins.pending) || grantDenied.length === 0}
+          onclick={confirmGrantAndEnable}
+        >
+          Agree and enable
+        </Button>
+      {/snippet}
+    </Dialog>
   {/if}
-
 </section>
-
-<style>
-  .manager { display: flex; flex-direction: column; gap: var(--rem2-space-md); padding: var(--rem2-space-md); min-height: 0; flex: 1; overflow: auto; }
-  .top { display: flex; flex-direction: column; gap: var(--rem2-space-sm); }
-  .toolbar, .toolbar-actions, .detail-head, .actions { display: flex; align-items: center; gap: var(--rem2-space-sm); }
-  .toolbar, .detail-head { justify-content: space-between; }
-  h2, h3, h4, p { margin-top: 0; }
-  h2 { margin: 0; font-size: 16px; }
-  h3 { margin-bottom: var(--rem2-space-xs); font-size: 16px; }
-  h4 { margin-bottom: var(--rem2-space-sm); font-size: 12px; color: var(--rem2-color-text-muted); }
-  button { padding: 6px 10px; border: 1px solid var(--rem2-color-border); border-radius: 4px; background: var(--rem2-color-surface); color: var(--rem2-color-text); font: inherit; cursor: pointer; }
-  button:disabled { opacity: 0.5; cursor: default; }
-  .icon-button { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--rem2-color-text-muted); }
-  .icon-button:hover:not(:disabled) { background: var(--rem2-color-surface); color: var(--rem2-color-text); }
-  .icon-button:focus-visible { outline: 2px solid var(--rem2-color-accent); outline-offset: -2px; }
-  .dot { position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--rem2-color-accent); }
-  .more { position: relative; }
-  .menu { position: absolute; top: calc(100% + 4px); right: 0; z-index: 20; display: flex; flex-direction: column; min-width: 210px; padding: var(--rem2-space-xs); border: 1px solid var(--rem2-color-border); border-radius: 6px; background: var(--rem2-color-surface); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35); }
-  .menu button { display: flex; align-items: center; justify-content: space-between; gap: var(--rem2-space-md); padding: 6px 8px; border: 0; border-radius: 4px; background: transparent; font-size: 13px; text-align: left; }
-  .menu button:hover:not(:disabled) { background: var(--rem2-color-background); }
-  .menu button:focus-visible { outline: 2px solid var(--rem2-color-accent); outline-offset: -2px; }
-  .search { display: flex; align-items: center; gap: var(--rem2-space-sm); padding: 5px 10px; border: 1px solid var(--rem2-color-border); border-radius: 6px; background: var(--rem2-color-surface); color: var(--rem2-color-text-muted); }
-  .search:focus-within { border-color: var(--rem2-color-accent); }
-  .search input { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--rem2-color-text); font: inherit; font-size: 13px; }
-  .search input:focus { outline: none; }
-  button.primary { border-color: var(--rem2-color-accent); }
-  button.danger, .error { color: #ff6b6b; }
-  .message { margin: 0; padding: var(--rem2-space-sm); border: 1px solid var(--rem2-color-border); border-radius: 4px; }
-  .message.error { display: flex; justify-content: space-between; align-items: center; }
-  .message.warning { display: flex; align-items: center; gap: var(--rem2-space-sm); }
-  .message.warning span { flex: 1; }
-  .notice { color: var(--rem2-color-accent); }
-  .warning { color: #e5c07b; }
-  .issues { color: var(--rem2-color-text-muted); font-size: 12px; }
-  .issues p { margin: var(--rem2-space-xs) 0; }
-  .content { display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: var(--rem2-space-md); min-height: 0; }
-  .side { display: flex; flex-direction: column; gap: var(--rem2-space-md); min-width: 0; }
-  .list { display: flex; flex-direction: column; gap: var(--rem2-space-xs); }
-  .plugin-row { display: flex; flex-direction: column; align-items: stretch; gap: 3px; text-align: left; }
-  .plugin-row.selected { border-color: var(--rem2-color-accent); background: var(--rem2-color-background); }
-  .plugin-name { font-weight: 600; }
-  .plugin-id { color: var(--rem2-color-text-muted); font: 11px var(--rem2-font-mono); overflow-wrap: anywhere; }
-  .row-meta { display: flex; justify-content: space-between; color: var(--rem2-color-text-muted); font-size: 11px; }
-  .state { padding: 1px 5px; border: 1px solid var(--rem2-color-border); border-radius: 3px; color: var(--rem2-color-text-muted); font-size: 11px; }
-  .state[data-state='Active'] { color: #98c379; }
-  .state[data-state='Failed'], .state[data-state='Dropped'] { color: #ff6b6b; }
-  .state[data-state='Degraded'] { color: #e5c07b; }
-  .detail { padding: var(--rem2-space-md); border: 1px solid var(--rem2-color-border); border-radius: 6px; background: var(--rem2-color-surface); }
-  code { font-family: var(--rem2-font-mono); overflow-wrap: anywhere; }
-  .metadata { display: grid; grid-template-columns: 90px 1fr; gap: var(--rem2-space-xs) var(--rem2-space-md); font-size: 12px; }
-  .metadata dt { color: var(--rem2-color-text-muted); }
-  .metadata dd { margin: 0; }
-  .requirements { display: grid; grid-template-columns: 1fr 1fr; gap: var(--rem2-space-md); }
-  .requirements p { margin-bottom: var(--rem2-space-xs); font-size: 12px; }
-  .requirements p span { color: var(--rem2-color-text-muted); }
-  .requirements .granted { color: #98c379; }
-  .requirements .denied { color: #e5c07b; }
-  .muted { color: var(--rem2-color-text-muted); }
-  button.link { padding: 0; border: none; background: none; color: var(--rem2-color-accent); text-decoration: underline; font: inherit; }
-  .backdrop { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.55); }
-  .dialog { width: min(420px, calc(100vw - 32px)); max-height: 70vh; overflow: auto; padding: var(--rem2-space-md); border: 1px solid var(--rem2-color-border); border-radius: 6px; background: var(--rem2-color-surface); color: var(--rem2-color-text); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35); }
-  .dialog h3 { margin-bottom: var(--rem2-space-xs); }
-  .dialog:focus { outline: none; }
-  .dialog p { margin-bottom: var(--rem2-space-sm); font-size: 12px; }
-  .pending-list { display: flex; flex-direction: column; gap: var(--rem2-space-xs); margin: 0 0 var(--rem2-space-md); padding: 0; list-style: none; }
-  .pending-list li { display: flex; align-items: center; gap: var(--rem2-space-sm); padding: var(--rem2-space-xs) 0; border-bottom: 1px solid var(--rem2-color-border); font-size: 12px; }
-  .pending-list li:last-child { border-bottom: none; }
-  .pending-list .plugin-name { flex: 1; font-weight: 600; }
-  .pending-list code { color: var(--rem2-color-text-muted); font-size: 11px; }
-  .grant-list { display: flex; flex-direction: column; gap: var(--rem2-space-xs); margin: 0 0 var(--rem2-space-md); padding: 0; list-style: none; }
-  .grant-list li { display: flex; align-items: center; justify-content: space-between; gap: var(--rem2-space-sm); padding: var(--rem2-space-xs) 0; border-bottom: 1px solid var(--rem2-color-border); font-size: 12px; }
-  .grant-list li:last-child { border-bottom: none; }
-  .grant-list code { color: var(--rem2-color-text-muted); font-size: 11px; }
-  .grant-list .granted { color: #98c379; }
-  .grant-list .denied { color: #e5c07b; }
-  .actions { padding-top: var(--rem2-space-md); border-top: 1px solid var(--rem2-color-border); }
-  .empty { padding: var(--rem2-space-lg); text-align: center; color: var(--rem2-color-text-muted); }
-  .badge { margin-left: 4px; padding: 0 4px; border: 1px solid var(--rem2-color-accent); border-radius: 8px; color: var(--rem2-color-accent); font-size: 10px; }
-  .dialog.wide { width: min(640px, calc(100vw - 32px)); }
-  .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: var(--rem2-space-sm); font-size: 12px; }
-  .field span { color: var(--rem2-color-text-muted); }
-  .field input { padding: 6px 8px; border: 1px solid var(--rem2-color-border); border-radius: 4px; background: var(--rem2-color-background); color: var(--rem2-color-text); font: 12px var(--rem2-font-mono); }
-  .preview { margin-top: var(--rem2-space-md); padding-top: var(--rem2-space-md); border-top: 1px solid var(--rem2-color-border); }
-  .digest { font-size: 11px; }
-  .trusted { display: block; color: #98c379; font-size: 11px; }
-  .notes { font-size: 12px; color: var(--rem2-color-text-muted); }
-  .disclaimer { font-size: 11px; color: #e5c07b; }
-  .progress { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: var(--rem2-space-sm); }
-  .progress-meta { display: flex; justify-content: space-between; width: 100%; font-size: 12px; color: var(--rem2-color-text-muted); }
-  .progress-track { width: 100%; height: 6px; border: 1px solid var(--rem2-color-border); border-radius: 3px; background: var(--rem2-color-background); overflow: hidden; }
-  .progress-fill { height: 100%; background: var(--rem2-color-accent); transition: width 120ms linear; }
-  .update-list { display: flex; flex-direction: column; gap: var(--rem2-space-sm); margin: 0; padding: 0; list-style: none; }
-  .update-list li { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--rem2-space-sm); padding: var(--rem2-space-sm); border: 1px solid var(--rem2-color-border); border-radius: 4px; }
-  .update-list li p { margin: 2px 0 0; font-size: 12px; }
-  .update-list .version { color: var(--rem2-color-accent); }
-  @media (max-width: 760px) { .content, .requirements { grid-template-columns: 1fr; } }
-</style>

@@ -1,46 +1,71 @@
 /*
- * Global styles and CSS variable fallbacks.
+ * Global stylesheet.
  *
- * Every variable has a compile-time constant fallback here, so the page stays
- * readable before theme injection (docs/03 §5.1). Theme switching only writes
- * via CSSOM and is not constrained by the CSP `style-src` directive.
+ * Composition (order matters, see Skeleton's own index.css):
+ *   Tailwind v4 -> Skeleton core (design tokens, presets, components) -> rem theme.
+ *
+ * Theme switching works in two dimensions:
+ *   - palette: `data-theme="rem"` picks the registered Skeleton theme (themes/rem.css).
+ *   - mode:    `data-mode="light|dark"` drives the `dark` variant. It is defined
+ *              explicitly below because Tailwind's default `dark` variant is the
+ *              OS media query, which would ignore the host's light/dark selection.
+ *
+ * Source scanning is restricted to the renderer tree (`source(none)` disables
+ * Tailwind's project-wide auto-detection): otherwise documentation and build
+ * artifacts would contribute unrelated utility classes to the bundle.
  */
 
-:root {
-  /* Matches the dark fallbacks below, so native widgets do not flash light before a theme arrives. */
-  color-scheme: dark;
+@import 'tailwindcss';
+@import '@skeletonlabs/skeleton'; 
+@import '@skeletonlabs/skeleton-svelte'; 
+@import './themes/rem.css';
 
-  --rem2-color-background: #0f1115;
-  --rem2-color-surface: #161922;
-  --rem2-color-text: #e6e6e6;
-  --rem2-color-text-muted: #9aa4b2;
-  --rem2-color-accent: #4f9cf9;
-  --rem2-color-border: #232838;
+@source '../../';
 
-  --rem2-font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --rem2-font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+@custom-variant dark (&:where([data-mode='dark'], [data-mode='dark'] *));
 
-  --rem2-space-xs: 4px;
-  --rem2-space-sm: 8px;
-  --rem2-space-md: 16px;
-  --rem2-space-lg: 24px;
+@layer base {
+  :root {
+    /*
+     * Legacy semantic tokens.
+     *
+     * Kept as aliases into the Skeleton palette so plugin-authored panel markup
+     * (third-party plugins only contribute declarative panel data, but their CSS
+     * still targets these names) keeps following the active theme. New code must
+     * use the Skeleton utility classes instead.
+     */
+    --rem2-color-background: light-dark(
+      var(--color-root-bg-light),
+      var(--color-root-bg-dark)
+    );
+    --rem2-color-surface: var(--color-surface-100-900);
+    --rem2-color-text: var(--color-surface-950-50);
+    --rem2-color-text-muted: var(--color-surface-600-400);
+    --rem2-color-accent: light-dark(
+      var(--color-brand-light),
+      var(--color-brand-dark)
+    );
+    --rem2-color-border: var(--color-surface-200-800);
 
-  /* Custom title bar height; must match TITLE_BAR_HEIGHT in host/electron/window.ts. */
-  --rem2-titlebar-height: 36px;
-}
+    --rem2-font-ui: var(--typo-base--font-family);
+    --rem2-font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
 
-* {
-  box-sizing: border-box;
-}
+    --rem2-space-xs: 0.25rem;
+    --rem2-space-sm: 0.5rem;
+    --rem2-space-md: 1rem;
+    --rem2-space-lg: 1.5rem;
 
-html,
-body {
-  margin: 0;
-  height: 100%;
-}
+    /* Custom title bar height; must match TITLE_BAR_HEIGHT in host/electron/window.ts. */
+    --rem2-titlebar-height: 36px;
+  }
 
-body {
-  font-family: var(--rem2-font-ui);
-  background: var(--rem2-color-background);
-  color: var(--rem2-color-text);
+  html,
+  body {
+    margin: 0;
+    height: 100%;
+  }
+
+  #app {
+    height: 100%;
+  }
 }

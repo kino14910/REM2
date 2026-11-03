@@ -1,5 +1,5 @@
-import { ipc } from '../ipc-client'
-import { channels, events } from '../../../shared/ipc-contract'
+import { ipc } from '@/frontend/lib/ipc-client'
+import { channels, events } from '@/shared/ipc-contract'
 import type {
   AllowedMethod,
   PluginDetailDto,
@@ -8,14 +8,14 @@ import type {
   PluginOperationResultDto,
   PluginRemoteInspectionDto,
   PluginUpdateDto,
-} from '../../../shared/ipc-contract'
+} from '@/shared/ipc-contract'
 import {
   parseDownloadProgress,
   parsePluginInspection,
   parsePluginList,
   parsePluginOperation,
   parsePluginUpdateCheck,
-} from '../dto-guards'
+} from '@/frontend/lib/dto-guards'
 
 type PluginAction =
   | 'installFromDirectory'

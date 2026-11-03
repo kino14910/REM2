@@ -5,12 +5,22 @@
   `PanelDto` (declarative description); the main process fetches data over
   the event bus according to `panel.command`, and the shape is up to the
   plugin (classified by dto-guards into table / json / empty / invalid).
+
+  Everything here uses the shared UI kit, so plugin-contributed panels inherit
+  the same theme, spacing and controls as the host views.
 -->
 <script lang="ts">
-  import { ipc } from '../../lib/ipc-client'
-  import { channels, events } from '../../../shared/ipc-contract'
-  import type { PanelDto } from '../../lib/bridge-types'
-  import { parsePanelData } from '../../lib/dto-guards'
+  import { ipc } from '@/frontend/lib/ipc-client'
+  import { channels, events } from '@/shared/ipc-contract'
+  import type { PanelDto } from '@/frontend/lib/bridge-types'
+  import { parsePanelData } from '@/frontend/lib/dto-guards'
+  import Alert from '@/frontend/lib/ui/Alert.svelte'
+  import Button from '@/frontend/lib/ui/Button.svelte'
+  import Card from '@/frontend/lib/ui/Card.svelte'
+  import Field from '@/frontend/lib/ui/Field.svelte'
+  import Select from '@/frontend/lib/ui/Select.svelte'
+  import Spinner from '@/frontend/lib/ui/Spinner.svelte'
+  import TextField from '@/frontend/lib/ui/TextField.svelte'
 
   let { panel }: { panel: PanelDto } = $props()
 
@@ -84,162 +94,89 @@
   }
 </script>
 
-<section class="panel">
-  <header class="panel-head">
-    <span class="icon">{panel.icon}</span>
-    <h2>{panel.title}</h2>
-    <button type="button" onclick={onRefresh}>Refresh</button>
+<Card padding="none" class="overflow-hidden">
+  <header
+    class="flex items-center gap-3 border-b border-surface-200-800 px-4 py-3"
+  >
+    <span class="text-lg leading-none" aria-hidden="true">{panel.icon}</span>
+    <h2 class="min-w-0 flex-1 truncate text-sm font-semibold">{panel.title}</h2>
+    <Button
+      size="sm"
+      variant="secondary"
+      loading={loading}
+      loadingLabel="Loading…"
+      onclick={onRefresh}
+    >
+      Refresh
+    </Button>
   </header>
-  <div class="panel-body">
-    {#if loading}
-      <p class="muted">Loading…</p>
+  <div class="p-4">
+    {#if loading && data === undefined}
+      <div class="flex items-center gap-2 text-sm text-surface-600-400">
+        <Spinner />
+        <span>Loading…</span>
+      </div>
     {:else if error}
-      <p class="error">{error}</p>
+      <Alert tone="error">{error}</Alert>
     {:else if parsed.kind === 'form'}
-      <form class="settings-form" onsubmit={(event) => event.preventDefault()}>
+      <form
+        class="grid max-w-lg gap-4"
+        onsubmit={(event) => event.preventDefault()}
+      >
         {#each parsed.fields as field (field.id)}
-          <label class="form-field" for={`${panel.panelId}-${field.id}`}>
-            <span>{field.label}</span>
+          {@const id = `${panel.panelId}-${field.id}`}
+          <Field label={field.label} forId={id}>
             {#if field.type === 'select'}
-              <select
-                id={`${panel.panelId}-${field.id}`}
+              <Select
+                id={id}
                 value={field.value}
+                options={field.options ?? []}
                 disabled={changing}
                 onchange={(event) => void onFieldChange(field.id, event)}
-              >
-                {#each field.options ?? [] as option (option.value)}
-                  <option value={option.value}>{option.label}</option>
-                {/each}
-              </select>
+              />
             {:else}
-              <input
-                id={`${panel.panelId}-${field.id}`}
+              <TextField
+                id={id}
                 type="color"
                 value={field.value}
                 disabled={changing}
                 onchange={(event) => void onFieldChange(field.id, event)}
               />
             {/if}
-          </label>
+          </Field>
         {/each}
         {#if actionError}
-          <p class="error" role="alert">{actionError}</p>
+          <Alert tone="error">{actionError}</Alert>
         {/if}
       </form>
     {:else if parsed.kind === 'table'}
-      <table>
-        <thead>
-          <tr>
-            {#each parsed.columns as col}
-              <th>{col}</th>
-            {/each}
-          </tr>
-        </thead>
-        <tbody>
-          {#each parsed.rows as row}
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
             <tr>
-              {#each row as cell}
-                <td>{cell}</td>
+              {#each parsed.columns as col}
+                <th>{col}</th>
               {/each}
             </tr>
-          {/each}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {#each parsed.rows as row}
+              <tr>
+                {#each row as cell}
+                  <td>{cell}</td>
+                {/each}
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
     {:else if parsed.kind === 'json'}
-      <pre>{parsed.text}</pre>
+      <pre
+        class="max-h-96 overflow-auto rounded-base bg-surface-50-950 p-3 font-mono text-xs whitespace-pre-wrap">{parsed.text}</pre>
     {:else if parsed.kind === 'invalid'}
-      <p class="error">{parsed.reason}</p>
+      <Alert tone="error">{parsed.reason}</Alert>
     {:else}
-      <p class="muted">This panel provides no data</p>
+      <p class="text-sm text-surface-600-400">This panel provides no data</p>
     {/if}
   </div>
-</section>
-
-<style>
-  .panel {
-    border: 1px solid var(--rem2-color-border);
-    border-radius: 6px;
-    background: var(--rem2-color-surface);
-  }
-  .panel-head {
-    display: flex;
-    gap: var(--rem2-space-sm);
-    align-items: center;
-    padding: var(--rem2-space-sm) var(--rem2-space-md);
-    border-bottom: 1px solid var(--rem2-color-border);
-  }
-  .panel-head h2 {
-    margin: 0;
-    font-size: 14px;
-    flex: 1;
-  }
-  .panel-body {
-    padding: var(--rem2-space-md);
-  }
-  .settings-form {
-    display: grid;
-    gap: var(--rem2-space-md);
-    max-width: 32rem;
-  }
-  .form-field {
-    display: grid;
-    grid-template-columns: minmax(8rem, 1fr) minmax(10rem, 2fr);
-    align-items: center;
-    gap: var(--rem2-space-md);
-    color: var(--rem2-color-text);
-  }
-  .form-field select {
-    padding: var(--rem2-space-xs) var(--rem2-space-sm);
-    border: 1px solid var(--rem2-color-border);
-    border-radius: 4px;
-    background: var(--rem2-color-background);
-    color: var(--rem2-color-text);
-    font: inherit;
-  }
-  .form-field input[type='color'] {
-    width: 4rem;
-    height: 2rem;
-    padding: 2px;
-    border: 1px solid var(--rem2-color-border);
-    border-radius: 4px;
-    background: var(--rem2-color-background);
-    cursor: pointer;
-  }
-  .form-field select:focus-visible,
-  .form-field input:focus-visible {
-    outline: 2px solid var(--rem2-color-accent);
-    outline-offset: 2px;
-  }
-  pre {
-    margin: 0;
-    font-family: var(--rem2-font-mono);
-    font-size: 12px;
-    white-space: pre-wrap;
-  }
-  table {
-    border-collapse: collapse;
-    width: 100%;
-    font-family: var(--rem2-font-mono);
-    font-size: 12px;
-  }
-  th {
-    text-align: left;
-    padding: var(--rem2-space-xs) var(--rem2-space-sm);
-    border: 1px solid var(--rem2-color-border);
-    background: var(--rem2-color-surface);
-    color: var(--rem2-color-text-muted);
-  }
-  td {
-    padding: var(--rem2-space-xs) var(--rem2-space-sm);
-    border: 1px solid var(--rem2-color-border);
-    color: var(--rem2-color-text);
-  }
-  .muted {
-    color: var(--rem2-color-text-muted);
-    margin: 0;
-  }
-  .error {
-    color: #ff6b6b;
-    margin: 0;
-  }
-</style>
+</Card>

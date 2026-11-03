@@ -10,37 +10,33 @@
 -->
 <script lang="ts">
   import PanelShell from './components/PanelShell.svelte'
-  import { panels } from '../lib/stores/panels.svelte'
+  import { panels } from '@/frontend/lib/stores/panels.svelte'
+  import Alert from '@/frontend/lib/ui/Alert.svelte'
+  import EmptyState from '@/frontend/lib/ui/EmptyState.svelte'
+  import Spinner from '@/frontend/lib/ui/Spinner.svelte'
 </script>
 
-<section class="panel-host">
+<section class="flex flex-col gap-3">
   {#if panels.active}
     <PanelShell panel={panels.active} />
   {:else if panels.error}
-    <p class="empty error">{panels.error}</p>
+    <Alert tone="error">{panels.error}</Alert>
   {:else if panels.notice}
-    <p class="empty">{panels.notice}</p>
+    <Alert tone="info">{panels.notice}</Alert>
   {:else if panels.loading}
-    <p class="empty">Loading…</p>
+    <div class="flex items-center gap-2 text-sm text-surface-600-400">
+      <Spinner />
+      <span>Loading panels…</span>
+    </div>
   {:else}
-    <p class="empty">No panels available</p>
+    <EmptyState
+      title="No panels available"
+      description="Load a plugin that contributes a ui.panel entry to see it here."
+    />
   {/if}
   {#if panels.issues.length > 0}
-    <p class="issues">{panels.issues.length} panel entr(ies) dropped by validation</p>
+    <p class="text-xs text-surface-600-400">
+      {panels.issues.length} panel entr(ies) dropped by validation
+    </p>
   {/if}
 </section>
-
-<style>
-  .empty {
-    color: var(--rem2-color-text-muted);
-    font-family: var(--rem2-font-mono);
-  }
-  .error {
-    color: #ff6b6b;
-  }
-  .issues {
-    color: var(--rem2-color-text-muted);
-    font-size: 11px;
-    margin: var(--rem2-space-xs) 0 0;
-  }
-</style>

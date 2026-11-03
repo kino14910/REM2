@@ -4,38 +4,16 @@
   import HealthBadge from './components/HealthBadge.svelte'
 </script>
 
-<div class="shell">
-  <aside class="side">
+<div class="grid min-h-0 flex-1 grid-cols-[14rem_1fr] grid-rows-[1fr_auto]">
+  <aside class="overflow-y-auto border-r border-surface-200-800">
     <RouteHost />
   </aside>
-  <main class="main">
+  <main class="min-h-0 overflow-auto p-4">
     <PanelHost />
   </main>
-  <footer class="statusbar">
+  <footer
+    class="col-span-full border-t border-surface-200-800 px-4 py-1"
+  >
     <HealthBadge />
   </footer>
 </div>
-
-<style>
-  .shell {
-    display: grid;
-    grid-template-columns: 200px 1fr;
-    grid-template-rows: 1fr auto;
-    flex: 1;
-    min-height: 0;
-  }
-  .side {
-    border-right: 1px solid var(--rem2-color-border);
-    overflow-y: auto;
-  }
-  .main {
-    min-height: 0;
-    overflow: auto;
-    padding: var(--rem2-space-md);
-  }
-  .statusbar {
-    grid-column: 1 / -1;
-    border-top: 1px solid var(--rem2-color-border);
-    padding: var(--rem2-space-xs) var(--rem2-space-md);
-  }
-</style>
