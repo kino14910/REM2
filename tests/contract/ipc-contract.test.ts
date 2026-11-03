@@ -34,9 +34,9 @@ import {
   events,
   type AllowedEvent,
   type AllowedMethod,
-} from '../../src/shared/ipc-contract.js'
-import { EVENT_FORWARD_MAP } from '../../src/host/ipc/forward-map.js'
-import { METHOD_FACTORIES } from '../../src/host/ipc/method-handlers.js'
+} from '@/shared/ipc-contract.js'
+import { EVENT_FORWARD_MAP } from '@/host/ipc/forward-map.js'
+import { METHOD_FACTORIES } from '@/host/ipc/method-handlers.js'
 import {
   collectSourceFiles,
   extractStringLiterals,

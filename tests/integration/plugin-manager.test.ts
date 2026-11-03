@@ -10,22 +10,22 @@ import {
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Kernel } from '../../src/kernel/kernel.js'
-import { KernelTokens } from '../../src/kernel/contracts/kernel-tokens.js'
-import type { EventBus } from '../../src/kernel/contracts/event-bus.js'
-import { LocalPluginManager } from '../../src/host/plugins/local-plugin-manager.js'
-import { PluginStateStore } from '../../src/host/plugins/state-store.js'
-import { PluginGrantStore } from '../../src/host/plugins/grant-store.js'
-import { PluginRemovedStore } from '../../src/host/plugins/removed-plugin-store.js'
-import { ThemeRegistryImpl } from '../../src/host/electron/theme-registry.js'
-import { createMethodHandlers } from '../../src/host/ipc/method-handlers.js'
-import { IpcBridge } from '../../src/host/ipc/bridge.js'
+import { Kernel } from '@/kernel/kernel.js'
+import { KernelTokens } from '@/kernel/contracts/kernel-tokens.js'
+import type { EventBus } from '@/kernel/contracts/event-bus.js'
+import { LocalPluginManager } from '@/host/plugins/local-plugin-manager.js'
+import { PluginStateStore } from '@/host/plugins/state-store.js'
+import { PluginGrantStore } from '@/host/plugins/grant-store.js'
+import { PluginRemovedStore } from '@/host/plugins/removed-plugin-store.js'
+import { ThemeRegistryImpl } from '@/host/electron/theme-registry.js'
+import { createMethodHandlers } from '@/host/ipc/method-handlers.js'
+import { IpcBridge } from '@/host/ipc/bridge.js'
 import {
   Ipc,
   channels,
   type IpcResponse,
-} from '../../src/shared/ipc-contract.js'
-import type { copyDirectorySafe } from '../../src/host/plugins/safe-fs.js'
+} from '@/shared/ipc-contract.js'
+import type { copyDirectorySafe } from '@/host/plugins/safe-fs.js'
 import {
   makeManifest,
   type MakeManifestOptions,

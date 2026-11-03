@@ -7,7 +7,7 @@ import {
   parseSha256Text,
   sha256File,
   verifyFileDigest,
-} from '../../src/host/plugins/integrity.js'
+} from '@/host/plugins/integrity.js'
 
 const ABC_SHA256 =
   'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'

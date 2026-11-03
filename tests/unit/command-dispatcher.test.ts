@@ -16,10 +16,10 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { CommandDispatcher } from '../../src/kernel/extensions/command-dispatcher.js'
-import { ExtensionPointRegistry } from '../../src/kernel/extensions/registry.js'
-import { EXTENSION_POINT_DEFS } from '../../src/kernel/extensions/definitions.js'
-import type { CommandHandler } from '../../src/kernel/extensions/ports.js'
+import { CommandDispatcher } from '@/kernel/extensions/command-dispatcher.js'
+import { ExtensionPointRegistry } from '@/kernel/extensions/registry.js'
+import { EXTENSION_POINT_DEFS } from '@/kernel/extensions/definitions.js'
+import type { CommandHandler } from '@/kernel/extensions/ports.js'
 
 function createRegistry(): ExtensionPointRegistry {
   const registry = new ExtensionPointRegistry()

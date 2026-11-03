@@ -22,9 +22,9 @@ import {
   parsePluginUpdateCheck,
   parseProxySettings,
   parseRouteList,
-} from '../../src/frontend/lib/dto-guards.js'
-import type { PluginDetailDto } from '../../src/shared/ipc-contract.js'
-import type { PanelDto, RouteDto } from '../../src/frontend/lib/bridge-types.js'
+} from '@/frontend/lib/dto-guards.js'
+import type { PluginDetailDto } from '@/shared/ipc-contract.js'
+import type { PanelDto, RouteDto } from '@/frontend/lib/bridge-types.js'
 
 function validPanel(): PanelDto {
   return {

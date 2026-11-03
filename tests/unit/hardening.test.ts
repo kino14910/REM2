@@ -5,11 +5,11 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { ConfigService } from '../../src/kernel/config/config-service.js'
-import type { ConfigProviderFailure } from '../../src/kernel/config/config-service.js'
-import type { ConfigProvider } from '../../src/kernel/contracts/config.js'
-import { DependencyResolver } from '../../src/kernel/dependency/resolver.js'
-import { validateManifest } from '../../src/kernel/discovery/manifest-validator.js'
+import { ConfigService } from '@/kernel/config/config-service.js'
+import type { ConfigProviderFailure } from '@/kernel/config/config-service.js'
+import type { ConfigProvider } from '@/kernel/contracts/config.js'
+import { DependencyResolver } from '@/kernel/dependency/resolver.js'
+import { validateManifest } from '@/kernel/discovery/manifest-validator.js'
 import { makeCandidate, makeManifest } from '../helpers/make-manifest.js'
 
 // ─────────────────────────── 1. Config provider failures must be observable ───────────────────────────
@@ -164,9 +164,9 @@ describe('hardening · plugin id rejects consecutive separators', () => {
   })
 
   it('accepts legal ids (reverse-DNS, hyphens, underscores)', () => {
-    expect(idValid('com.rem2.hello-command')).toBe(true)
+    expect(idValid('com.rem2.logger-console')).toBe(true)
     expect(idValid('com.example.my_plugin')).toBe(true)
-    expect(idValid('com.rem2.config-json')).toBe(true)
+    expect(idValid('com.rem2.plugin-inspector')).toBe(true)
     expect(idValid('abc')).toBe(true)
   })
 

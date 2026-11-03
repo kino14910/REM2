@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   isNewerVersion,
   normalizeVersion,
-} from '../../src/host/plugins/update-compare.js'
+} from '@/host/plugins/update-compare.js'
 
 describe('unit · update compare', () => {
   it('normalizes surrounding whitespace and a leading v or V', () => {

@@ -1,17 +1,23 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { Session } from 'electron'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ElectronProxySettingsService } from '../../src/host/electron/proxy-settings-service.js'
+import { ElectronAppSettingsStore } from '@/host/electron/app-settings-store.js'
+import { ElectronProxySettingsService } from '@/host/electron/proxy-settings-service.js'
 import {
   normalizeProxySettings,
   parseProxyAddress,
   type ProxyConfigLike,
   ProxySettingsError,
   toProxyConfig,
-} from '../../src/host/settings/proxy-settings.js'
-import { ProxySettingsStore } from '../../src/host/settings/proxy-settings-store.js'
+} from '@/host/settings/proxy-settings.js'
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void
@@ -21,94 +27,145 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve }
 }
 
+function settingsPath(directory: string): string {
+  return path.join(directory, 'settings.json')
+}
+
+function readPersistedProxy(directory: string): unknown {
+  return (
+    JSON.parse(readFileSync(settingsPath(directory), 'utf8')) as {
+      proxy: unknown
+    }
+  ).proxy
+}
+
 describe('unit · proxy settings', () => {
   let root: string | undefined
 
-  afterEach(async () => {
-    if (root) await rm(root, { recursive: true, force: true })
+  afterEach(() => {
+    if (root) rmSync(root, { recursive: true, force: true })
     root = undefined
   })
 
-  async function settingsPath(): Promise<string> {
-    root = await mkdtemp(path.join(tmpdir(), 'rem2-proxy-'))
-    return path.join(root, 'proxy-settings.json')
+  function prepareRoot(): string {
+    root = mkdtempSync(path.join(tmpdir(), 'rem2-proxy-'))
+    return root
   }
 
   it('defaults to the system proxy when the file is missing', async () => {
-    const store = new ProxySettingsStore(await settingsPath())
+    const store = new ElectronAppSettingsStore(prepareRoot())
     await store.load()
-    expect(store.get()).toEqual({ mode: 'system' })
+    expect(store.getProxy()).toEqual({ mode: 'system' })
   })
 
   it('persists manual settings and reloads them in a fresh store', async () => {
-    const file = await settingsPath()
-    const first = new ProxySettingsStore(file)
+    const directory = prepareRoot()
+    const first = new ElectronAppSettingsStore(directory)
     await first.load()
-    await first.set({
+    await first.setProxy({
       mode: 'manual',
       address: 'http://127.0.0.1:7890',
       bypass: 'localhost,127.0.0.1',
     })
 
-    expect(first.get()).toEqual({
+    expect(first.getProxy()).toEqual({
       mode: 'manual',
       address: 'http://127.0.0.1:7890',
       bypass: 'localhost,127.0.0.1',
     })
-    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({
-      version: 1,
+    expect(JSON.parse(readFileSync(settingsPath(directory), 'utf8'))).toEqual({
+      schemaVersion: 1,
       proxy: {
         mode: 'manual',
         address: 'http://127.0.0.1:7890',
         bypass: 'localhost,127.0.0.1',
       },
+      appearance: { colorMode: 'system' },
     })
 
-    const second = new ProxySettingsStore(file)
+    const second = new ElectronAppSettingsStore(directory)
     await second.load()
-    expect(second.get()).toEqual(first.get())
+    expect(second.getProxy()).toEqual(first.getProxy())
   })
 
   it('loads persisted manual addresses without a scheme as http', async () => {
-    const file = await settingsPath()
-    await writeFile(
-      file,
+    const directory = prepareRoot()
+    writeFileSync(
+      settingsPath(directory),
       JSON.stringify({
-        version: 1,
+        schemaVersion: 1,
         proxy: { mode: 'manual', address: '127.0.0.1:7890' },
+        appearance: { colorMode: 'system' },
       }),
       'utf8',
     )
-    const store = new ProxySettingsStore(file)
+    const store = new ElectronAppSettingsStore(directory)
     await store.load()
-    expect(store.get()).toEqual({
+    expect(store.getProxy()).toEqual({
       mode: 'manual',
       address: 'http://127.0.0.1:7890',
     })
   })
 
   it('drops the manual address when switching to direct', async () => {
-    const store = new ProxySettingsStore(await settingsPath())
+    const directory = prepareRoot()
+    const store = new ElectronAppSettingsStore(directory)
     await store.load()
-    await store.set({ mode: 'manual', address: '127.0.0.1:7890' })
-    await store.set({ mode: 'direct', address: '127.0.0.1:7890' })
-    expect(store.get()).toEqual({ mode: 'direct' })
+    await store.setProxy({ mode: 'manual', address: '127.0.0.1:7890' })
+    await store.setProxy({ mode: 'direct', address: '127.0.0.1:7890' })
+    expect(store.getProxy()).toEqual({ mode: 'direct' })
+    expect(readPersistedProxy(directory)).toEqual({ mode: 'direct' })
   })
 
   it.each([
-    ['bad JSON', '{"version":1'],
-    ['bad version', '{"version":2,"proxy":{"mode":"system"}}'],
-    ['missing proxy', '{"version":1}'],
-    ['invalid mode', '{"version":1,"proxy":{"mode":"auto"}}'],
-    ['manual without address', '{"version":1,"proxy":{"mode":"manual"}}'],
+    ['bad JSON', '{"schemaVersion":1'],
+    [
+      'bad version',
+      JSON.stringify({
+        schemaVersion: 2,
+        proxy: { mode: 'system' },
+        appearance: { colorMode: 'system' },
+      }),
+    ],
+    [
+      'missing proxy',
+      JSON.stringify({
+        schemaVersion: 1,
+        appearance: { colorMode: 'system' },
+      }),
+    ],
+    [
+      'invalid mode',
+      JSON.stringify({
+        schemaVersion: 1,
+        proxy: { mode: 'auto' },
+        appearance: { colorMode: 'system' },
+      }),
+    ],
+    [
+      'manual without address',
+      JSON.stringify({
+        schemaVersion: 1,
+        proxy: { mode: 'manual' },
+        appearance: { colorMode: 'system' },
+      }),
+    ],
     [
       'invalid bypass type',
-      '{"version":1,"proxy":{"mode":"manual","address":"127.0.0.1:7890","bypass":1}}',
+      JSON.stringify({
+        schemaVersion: 1,
+        proxy: {
+          mode: 'manual',
+          address: '127.0.0.1:7890',
+          bypass: 1,
+        },
+        appearance: { colorMode: 'system' },
+      }),
     ],
   ])('rejects %s', async (_label, text) => {
-    const file = await settingsPath()
-    await writeFile(file, text, 'utf8')
-    const store = new ProxySettingsStore(file)
+    const directory = prepareRoot()
+    writeFileSync(settingsPath(directory), text, 'utf8')
+    const store = new ElectronAppSettingsStore(directory)
     await expect(store.load()).rejects.toMatchObject({
       code: 'E_SETTINGS_INVALID',
     })
@@ -178,9 +235,40 @@ describe('unit · proxy settings', () => {
     })
   })
 
+  it('initialize loads the persisted proxy before applying it', async () => {
+    const directory = prepareRoot()
+    writeFileSync(
+      settingsPath(directory),
+      JSON.stringify({
+        schemaVersion: 1,
+        proxy: { mode: 'manual', address: '127.0.0.1:7890' },
+        appearance: { colorMode: 'system' },
+      }),
+      'utf8',
+    )
+    const store = new ElectronAppSettingsStore(directory)
+    const setProxy = vi.fn(async (_config: ProxyConfigLike) => {})
+    const session = {
+      setProxy,
+      resolveProxy: vi.fn(async () => 'DIRECT'),
+    } as unknown as Session
+    const service = new ElectronProxySettingsService(session, store)
+
+    await service.initialize()
+    expect(setProxy).toHaveBeenCalledWith({
+      mode: 'fixed_servers',
+      proxyRules: 'http=http://127.0.0.1:7890;https=http://127.0.0.1:7890',
+    })
+    expect(store.getProxy()).toEqual({
+      mode: 'manual',
+      address: 'http://127.0.0.1:7890',
+    })
+  })
+
   it('serializes concurrent sets and coordinates snapshots with them', async () => {
-    const file = await settingsPath()
-    const store = new ProxySettingsStore(file)
+    const directory = prepareRoot()
+    const store = new ElectronAppSettingsStore(directory)
+    await store.load()
     const firstProxyStarted = deferred()
     const finishFirstProxy = deferred()
     const applied: ProxyConfigLike[] = []
@@ -226,18 +314,21 @@ describe('unit · proxy settings', () => {
       address: 'https://127.0.0.1:8443',
     })
     expect(getResult).toEqual(secondResult)
-    expect(store.get()).toEqual({
+    expect(store.getProxy()).toEqual({
       mode: 'manual',
       address: 'https://127.0.0.1:8443',
     })
-    expect(JSON.parse(await readFile(file, 'utf8')).proxy).toEqual(store.get())
-    expect(applied.at(-1)).toEqual(toProxyConfig(store.get()))
+    expect(readPersistedProxy(directory)).toEqual(store.getProxy())
+    expect(applied.at(-1)).toEqual(toProxyConfig(store.getProxy()))
   })
 
-  it('restores the previous session proxy when persistence fails', async () => {
-    const store = new ProxySettingsStore(await settingsPath())
-    const persistenceError = new Error('disk full')
-    vi.spyOn(store, 'set').mockRejectedValueOnce(persistenceError)
+  it('restores the previous session proxy when the file write fails', async () => {
+    const directory = prepareRoot()
+    const store = new ElectronAppSettingsStore(directory)
+    await store.load()
+    await store.setProxy({ mode: 'direct' })
+    const file = settingsPath(directory)
+    chmodSync(file, 0o444)
     const setProxy = vi.fn(async (_config: ProxyConfigLike) => {})
     const session = {
       setProxy,
@@ -245,17 +336,23 @@ describe('unit · proxy settings', () => {
     } as unknown as Session
     const service = new ElectronProxySettingsService(session, store)
 
-    await expect(
-      service.set({ mode: 'manual', address: '127.0.0.1:7890' }),
-    ).rejects.toBe(persistenceError)
+    try {
+      await expect(
+        service.set({ mode: 'manual', address: '127.0.0.1:7890' }),
+      ).rejects.toMatchObject({ code: 'E_SETTINGS_WRITE' })
+    } finally {
+      chmodSync(file, 0o666)
+    }
     expect(setProxy).toHaveBeenCalledTimes(2)
-    expect(setProxy).toHaveBeenLastCalledWith({ mode: 'system' })
-    expect(store.get()).toEqual({ mode: 'system' })
+    expect(setProxy).toHaveBeenLastCalledWith({ mode: 'direct' })
+    expect(store.getProxy()).toEqual({ mode: 'direct' })
   })
 
   it('reports a rollback failure with its cause', async () => {
-    const store = new ProxySettingsStore(await settingsPath())
-    vi.spyOn(store, 'set').mockRejectedValueOnce(new Error('disk full'))
+    const directory = prepareRoot()
+    const store = new ElectronAppSettingsStore(directory)
+    await store.load()
+    vi.spyOn(store, 'setProxy').mockRejectedValueOnce(new Error('disk full'))
     const rollbackError = new Error('session unavailable')
     const setProxy = vi
       .fn(async (_config: ProxyConfigLike) => {})
@@ -275,6 +372,32 @@ describe('unit · proxy settings', () => {
       message: expect.stringContaining('rolling back'),
       cause: rollbackError,
     })
-    expect(store.get()).toEqual({ mode: 'system' })
+    expect(store.getProxy()).toEqual({ mode: 'system' })
+  })
+
+  it('returns the resolved diagnostic without persisting it', async () => {
+    const directory = prepareRoot()
+    const store = new ElectronAppSettingsStore(directory)
+    await store.load()
+    const setProxy = vi.fn(async (_config: ProxyConfigLike) => {})
+    const session = {
+      setProxy,
+      resolveProxy: vi.fn(async () => 'PROXY 127.0.0.1:7890'),
+    } as unknown as Session
+    const service = new ElectronProxySettingsService(session, store)
+
+    const result = await service.set({
+      mode: 'manual',
+      address: '127.0.0.1:7890',
+    })
+    expect(result).toMatchObject({
+      mode: 'manual',
+      address: 'http://127.0.0.1:7890',
+      resolved: 'PROXY 127.0.0.1:7890',
+    })
+    expect(readPersistedProxy(directory)).toEqual({
+      mode: 'manual',
+      address: 'http://127.0.0.1:7890',
+    })
   })
 })

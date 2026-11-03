@@ -9,8 +9,8 @@ import { describe, expect, it } from 'vitest'
 import {
   compareVersions,
   parseVersion,
-} from '../../src/kernel/semver/semver.js'
-import { isValidRange, satisfies } from '../../src/kernel/semver/range.js'
+} from '@/kernel/semver/semver.js'
+import { isValidRange, satisfies } from '@/kernel/semver/range.js'
 
 describe('semver-boundary · REM known-bug regression', () => {
   it('2.10.0 > 2.9.0 (numeric comparison, not lexicographic)', () => {

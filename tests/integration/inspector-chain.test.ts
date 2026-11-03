@@ -15,14 +15,14 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { Kernel } from '../../src/kernel/kernel.js'
-import { createDeps } from '../../src/kernel/composition.js'
-import { KernelTokens } from '../../src/kernel/contracts/kernel-tokens.js'
-import { Topics } from '../../src/kernel/topics.js'
+import { Kernel } from '@/kernel/kernel.js'
+import { createDeps } from '@/kernel/composition.js'
+import { KernelTokens } from '@/kernel/contracts/kernel-tokens.js'
+import { Topics } from '@/kernel/topics.js'
 import type {
   EventBus,
   Unsubscribe,
-} from '../../src/kernel/contracts/event-bus.js'
+} from '@/kernel/contracts/event-bus.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = path.resolve(HERE, '..', '..')
@@ -35,13 +35,9 @@ const THEME_CAPABILITIES = ['ui.theme', 'ui.panel', 'ui.route']
 const DATA_TOPIC = 'com.rem2.plugin-inspector.data'
 const INSPECTOR_PLUGIN_ID = 'com.rem2.plugin-inspector'
 
-/** The 7 plugins loaded by these suites (6 built-in + external theme-switcher). */
-const BUILTIN_PLUGIN_IDS = [
-  'com.rem2.config-json',
-  'com.rem2.health-http',
-  'com.rem2.hello-command',
+/** The 3 plugins loaded by these suites (2 built-in + external theme-switcher). */
+const LOADED_PLUGIN_IDS = [
   'com.rem2.logger-console',
-  'com.rem2.notify-worker',
   'com.rem2.plugin-inspector',
   'com.rem2.theme-switcher',
 ]
@@ -140,7 +136,7 @@ describe('integration · inspector chain (plugin self-view)', () => {
         'message',
       ])
       expect(table.rows.map(r => r[0]).toSorted()).toEqual(
-        [...BUILTIN_PLUGIN_IDS].toSorted(),
+        [...LOADED_PLUGIN_IDS].toSorted(),
       )
       for (const row of table.rows) {
         expect(row, `row for ${String(row[0])} is malformed`).toHaveLength(6)
@@ -173,7 +169,7 @@ describe('integration · inspector chain (plugin self-view)', () => {
         const pushed = collector.items[0]!
         expect(pushed.panelId).toBe('plugin-inspector')
         expect(pushed.data.kind).toBe('table')
-        expect(pushed.data.rows).toHaveLength(BUILTIN_PLUGIN_IDS.length)
+        expect(pushed.data.rows).toHaveLength(LOADED_PLUGIN_IDS.length)
       } finally {
         collector.dispose()
       }

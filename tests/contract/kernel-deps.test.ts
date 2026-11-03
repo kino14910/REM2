@@ -4,7 +4,8 @@
  *
  * Cases:
  * - R1 zero third-party: every import under `src/kernel/**` + `src/host/**`
- *   (excluding `host/electron/**`) must be `node:*` or a relative path.
+ *   (excluding `host/electron/**`) must be `node:*`, a relative path, or the
+ *   internal `@/` source alias.
  * - R2 no reverse dependency: `src/kernel/**` must not import `host` /
  *   `frontend` / `plugins`.
  * - R5 `dependencies` is empty.
@@ -113,9 +114,13 @@ function extractSpecifiers(source: string): string[] {
   return specs
 }
 
-/** Whether a specifier is allowed (node: built-in or relative path). */
+/**
+ * Whether a specifier is allowed (node: built-in, relative path, or the
+ * project-internal `@/` alias). `@/` maps to `src/` and is not a package.
+ */
 function isAllowed(spec: string): boolean {
   if (spec.startsWith('.') || spec.startsWith('/')) return true
+  if (spec.startsWith('@/')) return true
   if (spec.startsWith('node:')) {
     return ALLOWED_NODE_BUILTINS.some(
       b => spec === b || spec.startsWith(`${b}/`),
@@ -252,7 +257,13 @@ describe('contract · extractor self-check (meta-test)', () => {
   })
 
   it('isAllowed identifies legal and illegal specifiers', () => {
-    for (const ok of ['node:path', './a.js', '../b.js', 'node:fs/promises']) {
+    for (const ok of [
+      'node:path',
+      './a.js',
+      '../b.js',
+      '@/kernel/kernel.js',
+      'node:fs/promises',
+    ]) {
       expect(isAllowed(ok)).toBe(true)
     }
     for (const bad of ['zod', 'svelte', 'rem2-kernel', 'electron']) {

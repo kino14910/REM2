@@ -20,20 +20,20 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { Kernel } from '../../src/kernel/kernel.js'
-import { createDeps } from '../../src/kernel/composition.js'
-import { KernelTokens } from '../../src/kernel/contracts/kernel-tokens.js'
-import { Topics } from '../../src/kernel/topics.js'
-import type { EventBus } from '../../src/kernel/contracts/event-bus.js'
-import type { PanelContribution } from '../../src/kernel/contracts/ui.js'
-import { ThemeRegistryImpl } from '../../src/host/electron/theme-registry.js'
-import { createMethodHandlers } from '../../src/host/ipc/method-handlers.js'
-import { IpcBridge } from '../../src/host/ipc/bridge.js'
+import { Kernel } from '@/kernel/kernel.js'
+import { createDeps } from '@/kernel/composition.js'
+import { KernelTokens } from '@/kernel/contracts/kernel-tokens.js'
+import { Topics } from '@/kernel/topics.js'
+import type { EventBus } from '@/kernel/contracts/event-bus.js'
+import type { PanelContribution } from '@/kernel/contracts/ui.js'
+import { ThemeRegistryImpl } from '@/host/electron/theme-registry.js'
+import { createMethodHandlers } from '@/host/ipc/method-handlers.js'
+import { IpcBridge } from '@/host/ipc/bridge.js'
 import {
   channels,
   Ipc,
   type IpcResponse,
-} from '../../src/shared/ipc-contract.js'
+} from '@/shared/ipc-contract.js'
 import { createTmpPluginsDir } from '../helpers/tmp-plugins-dir.js'
 import {
   cleanupTestPluginDataRoots,
@@ -53,13 +53,9 @@ const INSPECTOR_PANEL_ID = 'plugin-inspector'
 const INSPECTOR_PLUGIN_ID = 'com.rem2.plugin-inspector'
 const DATA_TOPIC = 'com.rem2.plugin-inspector.data'
 
-/** The 7 plugins loaded by these suites (6 built-in + external theme-switcher). */
-const BUILTIN_PLUGIN_IDS = [
-  'com.rem2.config-json',
-  'com.rem2.health-http',
-  'com.rem2.hello-command',
+/** The 3 plugins loaded by these suites (2 built-in + external theme-switcher). */
+const LOADED_PLUGIN_IDS = [
   'com.rem2.logger-console',
-  'com.rem2.notify-worker',
   'com.rem2.plugin-inspector',
   'com.rem2.theme-switcher',
 ]
@@ -217,7 +213,7 @@ describe('integration · ui chain', () => {
     }
   })
 
-  it('④ panel data resolves to the inspector table (all 7 plugins, Active/healthy)', async () => {
+  it('④ panel data resolves to the inspector table (all 3 plugins, Active/healthy)', async () => {
     const kernel = createKernel()
     try {
       await kernel.start()
@@ -243,9 +239,9 @@ describe('integration · ui chain', () => {
         'health',
         'message',
       ])
-      expect(table.rows).toHaveLength(BUILTIN_PLUGIN_IDS.length)
+      expect(table.rows).toHaveLength(LOADED_PLUGIN_IDS.length)
       expect(table.rows.map(r => r[0]).toSorted()).toEqual(
-        [...BUILTIN_PLUGIN_IDS].toSorted(),
+        [...LOADED_PLUGIN_IDS].toSorted(),
       )
       const self = table.rows.find(r => r[0] === INSPECTOR_PLUGIN_ID)
       expect(self).toBeDefined()

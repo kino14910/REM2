@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   PluginProvenanceStore,
   type PluginProvenance,
-} from '../../src/host/plugins/provenance-store.js'
+} from '@/host/plugins/provenance-store.js'
 
 const validEntry: PluginProvenance = {
   kind: 'remote',

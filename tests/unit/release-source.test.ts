@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { resolveRemoteRelease } from '../../src/host/plugins/release-source.js'
+import { resolveRemoteRelease } from '@/host/plugins/release-source.js'
 
 const digest = 'a'.repeat(64)
 const publishedAt = '2026-01-02T03:04:05Z'

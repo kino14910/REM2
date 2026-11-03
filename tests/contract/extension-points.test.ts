@@ -11,8 +11,8 @@ import { describe, expect, it } from 'vitest'
 import {
   EXTENSION_POINT_DEFS,
   EXTENSION_POINT_IDS,
-} from '../../src/kernel/extensions/definitions.js'
-import type { ExtensionPointDef } from '../../src/kernel/contracts/extension-point.js'
+} from '@/kernel/extensions/definitions.js'
+import type { ExtensionPointDef } from '@/kernel/contracts/extension-point.js'
 
 type AnyDef = ExtensionPointDef<unknown>
 

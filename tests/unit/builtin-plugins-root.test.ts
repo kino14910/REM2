@@ -12,7 +12,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { builtinPluginsRoot } from '../../src/host/cli/paths.js'
+import { builtinPluginsRoot } from '@/host/cli/paths.js'
 
 describe('unit · builtinPluginsRoot layout resolution', () => {
   let cleanup: () => Promise<void>

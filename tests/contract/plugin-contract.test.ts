@@ -16,14 +16,14 @@ import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { Topics } from '../../src/kernel/topics.js'
+import { Topics } from '@/kernel/topics.js'
 import {
   ALLOWED_EVENTS,
   ALLOWED_EVENT_SET,
   ALLOWED_METHODS,
   ALLOWED_METHOD_SET,
-} from '../../src/shared/ipc-contract.js'
-import { EVENT_FORWARD_MAP } from '../../src/host/ipc/forward-map.js'
+} from '@/shared/ipc-contract.js'
+import { EVENT_FORWARD_MAP } from '@/host/ipc/forward-map.js'
 import { collectSourceFiles, extractSpecifiers } from './helpers/source-scan.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))

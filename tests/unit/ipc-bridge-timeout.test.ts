@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { timeoutFor } from '../../src/host/ipc/bridge.js'
-import { channels } from '../../src/shared/ipc-contract.js'
+import { timeoutFor } from '@/host/ipc/bridge.js'
+import { channels } from '@/shared/ipc-contract.js'
 
 describe('unit · IPC timeout policy', () => {
   it('does not time out operations that wait for native confirmation or user-controlled work', () => {

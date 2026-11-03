@@ -12,8 +12,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   PluginUpdateJournal,
   type UpdateTransactionRecord,
-} from '../../src/host/plugins/transaction-journal.js'
-import type { PluginProvenance } from '../../src/host/plugins/provenance-store.js'
+} from '@/host/plugins/transaction-journal.js'
+import type { PluginProvenance } from '@/host/plugins/provenance-store.js'
 
 const nextProvenance: PluginProvenance = {
   kind: 'remote',

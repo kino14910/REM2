@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Kernel } from '../../src/kernel/kernel.js'
-import { KernelTokens } from '../../src/kernel/contracts/kernel-tokens.js'
-import { MemoryLogSink } from '../../src/kernel/observability/null-sink.js'
-import { MemoryMetricSink } from '../../src/kernel/observability/noop-metrics-sink.js'
+import { Kernel } from '@/kernel/kernel.js'
+import { KernelTokens } from '@/kernel/contracts/kernel-tokens.js'
+import { MemoryLogSink } from '@/kernel/observability/null-sink.js'
+import { MemoryMetricSink } from '@/kernel/observability/noop-metrics-sink.js'
 import { materializePlugins } from '../fixtures/fake-kernel.js'
 
 describe('integration · observability', () => {

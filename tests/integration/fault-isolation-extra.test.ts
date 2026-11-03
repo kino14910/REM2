@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { Kernel } from '../../src/kernel/kernel.js'
+import { Kernel } from '@/kernel/kernel.js'
 import {
   createTmpPluginsDir,
   type TmpPluginsDir,

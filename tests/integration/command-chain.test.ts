@@ -16,16 +16,33 @@ import { execFile } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { Kernel } from '../../src/kernel/kernel.js'
-import { KernelTokens } from '../../src/kernel/contracts/kernel-tokens.js'
-import { Topics } from '../../src/kernel/topics.js'
-import { ALLOWED_METHOD_SET, Ipc } from '../../src/shared/ipc-contract.js'
-import { IpcBridge } from '../../src/host/ipc/bridge.js'
-import type { EventBus } from '../../src/kernel/contracts/event-bus.js'
+import { Kernel } from '@/kernel/kernel.js'
+import { KernelTokens } from '@/kernel/contracts/kernel-tokens.js'
+import { Topics } from '@/kernel/topics.js'
+import { ALLOWED_METHOD_SET, Ipc } from '@/shared/ipc-contract.js'
+import { IpcBridge } from '@/host/ipc/bridge.js'
+import type { EventBus } from '@/kernel/contracts/event-bus.js'
+import { createTmpPluginsDir } from '../helpers/tmp-plugins-dir.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = path.resolve(HERE, '..', '..')
-const BUILTIN_ROOT = path.join(PROJECT_ROOT, 'plugins-dist')
+
+/** Minimal command plugin fixture: the built-in hello-command sample was removed. */
+const COMMAND_PLUGIN_SOURCE = `
+export default function (ctx) {
+  return {
+    async onStart() {
+      ctx.extensions.contribute('command.provide', {
+        contributionId: 'hello',
+        impl: async args => ({
+          ok: true,
+          output: 'Hello, ' + ((args && args.name) || 'rem2-kernel') + '!',
+        }),
+      })
+    },
+  }
+}
+`
 
 const RECURSION_PROBE = `
 import { pathToFileURL } from 'node:url'
@@ -87,17 +104,27 @@ function runRecursionProbe(): Promise<string> {
   })
 }
 
-function createKernel(): Kernel {
-  return new Kernel({
+async function createKernel(): Promise<{
+  kernel: Kernel
+  cleanup: () => Promise<void>
+}> {
+  const plugins = await createTmpPluginsDir('rem2-command-chain-')
+  await plugins.writePlugin(
+    { id: 'com.rem2.test-command', requires: ['command.provide'] },
+    COMMAND_PLUGIN_SOURCE,
+  )
+  const kernel = new Kernel({
     id: 'rem2-command-chain',
-    roots: [],
-    builtinRoot: BUILTIN_ROOT,
+    roots: [plugins.root],
+    // The fixture is a user plugin; elevate trust only for this test.
+    trustLevel: 'trusted',
     startTimeoutMs: 8000,
     stopTimeoutMs: 8000,
     legacyFallback: false,
     logLevel: 'error',
     initialConfig: { app: { greeting: 'Hello from rem2' } },
   })
+  return { kernel, cleanup: plugins.cleanup }
 }
 
 describe('integration · command chain', () => {
@@ -108,7 +135,7 @@ describe('integration · command chain', () => {
   })
 
   it('the hello command gets a successful response via the kernel bus', async () => {
-    const kernel = createKernel()
+    const { kernel, cleanup } = await createKernel()
     try {
       await kernel.start()
       const bus = kernel.root.resolve<EventBus>(KernelTokens.EventBus)
@@ -122,11 +149,12 @@ describe('integration · command chain', () => {
       expect(result.output).toContain('rem2')
     } finally {
       await kernel.shutdown()
+      await cleanup()
     }
   })
 
   it('an unknown command returns an error instead of infinite recursion', async () => {
-    const kernel = createKernel()
+    const { kernel, cleanup } = await createKernel()
     try {
       await kernel.start()
       const bus = kernel.root.resolve<EventBus>(KernelTokens.EventBus)
@@ -144,6 +172,7 @@ describe('integration · command chain', () => {
       expect(result.error).toContain('definitely-not-a-command')
     } finally {
       await kernel.shutdown()
+      await cleanup()
     }
   })
 
@@ -182,7 +211,7 @@ describe('integration · command chain', () => {
   })
 
   it('the full chain through the IPC bridge yields a successful hello response', async () => {
-    const kernel = createKernel()
+    const { kernel, cleanup } = await createKernel()
     try {
       await kernel.start()
       const bus = kernel.root.resolve<EventBus>(KernelTokens.EventBus)
@@ -227,6 +256,7 @@ describe('integration · command chain', () => {
       bridge.unbind()
     } finally {
       await kernel.shutdown()
+      await cleanup()
     }
   })
 

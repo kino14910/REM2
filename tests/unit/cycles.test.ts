@@ -3,7 +3,7 @@ import {
   cycleNodes,
   findCycles,
   hasCycle,
-} from '../../src/kernel/dependency/cycles.js'
+} from '@/kernel/dependency/cycles.js'
 
 const make = (): Map<string, string[]> =>
   new Map<string, string[]>([

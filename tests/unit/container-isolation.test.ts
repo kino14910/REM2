@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { Container } from '../../src/kernel/di/container.js'
-import { defineToken } from '../../src/kernel/contracts/service-token.js'
-import { NoProviderError } from '../../src/kernel/errors.js'
+import { Container } from '@/kernel/di/container.js'
+import { defineToken } from '@/kernel/contracts/service-token.js'
+import { NoProviderError } from '@/kernel/errors.js'
 
 interface Svc {
   value: number

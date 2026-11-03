@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   DEFAULT_ALLOWED_HOSTS,
   downloadPackage,
-} from '../../src/host/plugins/remote-download.js'
+} from '@/host/plugins/remote-download.js'
 
 function fetchStub(
   implementation: (

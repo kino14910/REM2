@@ -15,16 +15,17 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Kernel } from '../../src/kernel/kernel.js'
-import { createDeps } from '../../src/kernel/composition.js'
-import { KernelTokens } from '../../src/kernel/contracts/kernel-tokens.js'
-import type { EventBus } from '../../src/kernel/contracts/event-bus.js'
-import type { ThemeDefinition } from '../../src/kernel/contracts/ui.js'
-import type { HealthReport } from '../../src/kernel/contracts/health.js'
-import { ThemeRegistryImpl } from '../../src/host/electron/theme-registry.js'
-import { createMethodHandlers } from '../../src/host/ipc/method-handlers.js'
-import { ALLOWED_METHODS, channels } from '../../src/shared/ipc-contract.js'
-import type { ProxySettingsService } from '../../src/host/settings/proxy-settings-service.js'
+import { Kernel } from '@/kernel/kernel.js'
+import { createDeps } from '@/kernel/composition.js'
+import { KernelTokens } from '@/kernel/contracts/kernel-tokens.js'
+import type { EventBus } from '@/kernel/contracts/event-bus.js'
+import type { ThemeDefinition } from '@/kernel/contracts/ui.js'
+import type { HealthReport } from '@/kernel/contracts/health.js'
+import { ThemeRegistryImpl } from '@/host/electron/theme-registry.js'
+import { createMethodHandlers } from '@/host/ipc/method-handlers.js'
+import { ALLOWED_METHODS, channels } from '@/shared/ipc-contract.js'
+import type { AppearanceSettingsService } from '@/host/settings/appearance-settings.js'
+import type { ProxySettingsService } from '@/host/settings/proxy-settings-service.js'
 import {
   cleanupTestPluginDataRoots,
   createTestPluginDataRoot,
@@ -176,6 +177,70 @@ describe('integration · allowlisted method implementation table', () => {
       expect(await themeSet({ themeId: 'light' })).toEqual({ ok: true })
       expect(registry.active()).toBe('light')
       expect(await themeSet({ themeId: 'not-a-theme' })).toEqual({ ok: false })
+    } finally {
+      await kernel.shutdown()
+    }
+  })
+
+  it('ui.theme.set mirrors the selected mode into the appearance settings', async () => {
+    const kernel = createKernel()
+    try {
+      await kernel.start()
+      const bus = kernel.root.resolve<EventBus>(KernelTokens.EventBus)
+      const written: string[] = []
+      const appearanceSettings: AppearanceSettingsService = {
+        get: () => ({ colorMode: 'system' }),
+        set: async settings => {
+          written.push(settings.colorMode)
+          return settings
+        },
+      }
+      const handlers = createMethodHandlers({
+        kernel,
+        bus,
+        themeRegistry: new ThemeRegistryImpl(),
+        appearanceSettings,
+      })
+      const themeSet = handlers[channels.themeSet]!
+
+      expect(await themeSet({ themeId: 'light' })).toEqual({ ok: true })
+      expect(await themeSet({ themeId: 'system' })).toEqual({ ok: true })
+      // An unregistered id changes nothing and persists nothing.
+      expect(await themeSet({ themeId: 'not-a-theme' })).toEqual({ ok: false })
+      expect(written).toEqual(['light', 'system'])
+    } finally {
+      await kernel.shutdown()
+    }
+  })
+
+  it('settings.appearance.get / set delegate to the host store and validate args', async () => {
+    const kernel = createKernel()
+    try {
+      await kernel.start()
+      const bus = kernel.root.resolve<EventBus>(KernelTokens.EventBus)
+      const appearanceSettings: AppearanceSettingsService = {
+        get: () => ({ colorMode: 'dark' }),
+        set: async settings => ({ ...settings }),
+      }
+      const handlers = createMethodHandlers({
+        kernel,
+        bus,
+        themeRegistry: new ThemeRegistryImpl(),
+        appearanceSettings,
+      })
+
+      expect(
+        await handlers[channels.settingsAppearanceGet]!(undefined),
+      ).toEqual({ colorMode: 'dark' })
+      expect(
+        await handlers[channels.settingsAppearanceSet]!({ colorMode: 'light' }),
+      ).toEqual({ colorMode: 'light' })
+      await expect(async () =>
+        handlers[channels.settingsAppearanceSet]!({ colorMode: 'sepia' }),
+      ).rejects.toThrow(/colorMode/)
+      await expect(async () =>
+        handlers[channels.settingsAppearanceGet]!({ colorMode: 'light' }),
+      ).rejects.toThrow(/no arguments/)
     } finally {
       await kernel.shutdown()
     }

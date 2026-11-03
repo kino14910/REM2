@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 const electronMock = vi.hoisted(() => ({ request: vi.fn() }))
 vi.mock('electron', () => ({ net: { request: electronMock.request } }))
 
-import { createSessionFetch } from '../../src/host/electron/session-fetch.js'
+import { createSessionFetch } from '@/host/electron/session-fetch.js'
 
 class FakeRequest extends EventEmitter {
   abort = vi.fn()

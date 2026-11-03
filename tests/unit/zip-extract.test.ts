@@ -2,7 +2,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { extractZipSafe } from '../../src/host/plugins/zip-extract.js'
+import { extractZipSafe } from '@/host/plugins/zip-extract.js'
 import { buildZip, type ZipBuilderEntry } from '../helpers/zip-builder.js'
 
 describe('unit · safe ZIP extraction', () => {

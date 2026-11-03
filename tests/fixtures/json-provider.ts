@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import type { ConfigProvider } from 'rem2-kernel'
-import type { ConfigService } from '../../src/kernel/config/config-service.js'
+import type { ConfigService } from '@/kernel/config/config-service.js'
 
 export class TestJsonProvider implements ConfigProvider {
   readonly name = 'json'

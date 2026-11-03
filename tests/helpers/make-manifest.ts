@@ -8,12 +8,12 @@
 import type {
   Candidate,
   CandidateSource,
-} from '../../src/kernel/discovery/candidate.js'
+} from '@/kernel/discovery/candidate.js'
 import type {
   Compatibility,
   ManifestContribution,
   PluginManifest,
-} from '../../src/kernel/contracts/manifest.js'
+} from '@/kernel/contracts/manifest.js'
 
 /** makeManifest options. */
 export interface MakeManifestOptions {

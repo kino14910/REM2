@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { PluginGrantStore } from '../../src/host/plugins/grant-store.js'
+import { PluginGrantStore } from '@/host/plugins/grant-store.js'
 
 describe('unit · plugin grant store', () => {
   let root: string | undefined

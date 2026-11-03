@@ -5,12 +5,12 @@ import {
   formatVersion,
   isValidVersion,
   parseVersion,
-} from '../../src/kernel/semver/semver.js'
+} from '@/kernel/semver/semver.js'
 import {
   isValidRange,
   satisfies,
   withinRange,
-} from '../../src/kernel/semver/range.js'
+} from '@/kernel/semver/range.js'
 
 describe('semver · parseVersion', () => {
   it('parses three-segment versions', () => {

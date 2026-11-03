@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateManifest } from '../../src/kernel/discovery/manifest-validator.js'
+import { validateManifest } from '@/kernel/discovery/manifest-validator.js'
 
 const base = {
   id: 'com.qa.demo',
@@ -67,9 +67,9 @@ describe('manifest-boundary · id rules', () => {
   })
 
   it('accepts reverse-DNS and dotted ids', () => {
-    expect(validateManifest({ ...base, id: 'com.rem2.hello-command' }).ok).toBe(
-      true,
-    )
+    expect(
+      validateManifest({ ...base, id: 'com.rem2.plugin-inspector' }).ok,
+    ).toBe(true)
     expect(validateManifest({ ...base, id: 'abc' }).ok).toBe(true)
   })
 })

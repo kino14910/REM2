@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { Container } from '../../src/kernel/di/container.js'
-import { defineToken } from '../../src/kernel/contracts/service-token.js'
-import { Lifetime } from '../../src/kernel/di/lifetime.js'
+import { Container } from '@/kernel/di/container.js'
+import { defineToken } from '@/kernel/contracts/service-token.js'
+import { Lifetime } from '@/kernel/di/lifetime.js'
 import {
   CircularDependencyError,
   NoProviderError,
-} from '../../src/kernel/errors.js'
+} from '@/kernel/errors.js'
 
 interface Greeter {
   greet(name: string): string

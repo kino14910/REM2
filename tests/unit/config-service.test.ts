@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { ConfigService } from '../../src/kernel/config/config-service.js'
-import { MemoryConfigProvider } from '../../src/kernel/config/memory-provider.js'
-import type { ConfigProvider } from '../../src/kernel/contracts/config.js'
+import { ConfigService } from '@/kernel/config/config-service.js'
+import { MemoryConfigProvider } from '@/kernel/config/memory-provider.js'
+import type { ConfigProvider } from '@/kernel/contracts/config.js'
 
 describe('config-service · layered merging', () => {
   it('higher priority overrides lower priority', async () => {
