@@ -84,3 +84,8 @@ vite.config.ts.timestamp-*
 
 # 本地 Agent 验证产物（out/ 已被锁定文件污染时的备用输出）
 out-final/
+
+# 验收/ESM 校验的临时构建与覆盖率产物
+coverage-acceptance/
+out-acceptance/
+out-esm-check/
