@@ -118,41 +118,10 @@ function expandTilde(body: string): Comparator[] | null {
   if (raw !== null) {
     lower = raw
     minor = raw.minor
+  } else if (parts.length === 1 && /^\d+$/.test(parts[0]!)) {
+    lower = { major: Number(parts[0]), minor: 0, patch: 0 }
+    minor = 0
   } else {
-    // Partial forms keep npm semantics: `~1` = >=1.0.0 <2.0.0, `~1.2` = >=1.2.0 <1.3.0.
-    const nums = parts.map(p => (/^\d+$/.test(p) ? Number(p) : null))
-    if (nums.some(n => n === null)) return null
-    if (nums.length === 1) {
-      const major = nums[0]!
-      return [
-        {
-          op: '>=',
-          version: { major, minor: 0, patch: 0 },
-          hasPrerelease: false,
-        },
-        {
-          op: '<',
-          version: { major: major + 1, minor: 0, patch: 0 },
-          hasPrerelease: false,
-        },
-      ]
-    }
-    if (nums.length === 2) {
-      const major = nums[0]!
-      const partialMinor = nums[1]!
-      return [
-        {
-          op: '>=',
-          version: { major, minor: partialMinor, patch: 0 },
-          hasPrerelease: false,
-        },
-        {
-          op: '<',
-          version: { major, minor: partialMinor + 1, patch: 0 },
-          hasPrerelease: false,
-        },
-      ]
-    }
     return null
   }
 

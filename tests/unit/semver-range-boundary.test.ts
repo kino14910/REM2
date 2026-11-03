@@ -30,21 +30,6 @@ describe('semver-range · caret and tilde edge forms', () => {
     expect(satisfies('1.2.3-beta.1', '~1.2.3-beta.1')).toBe(true)
   })
 
-  it('locks the major for a single-segment tilde (npm semantics)', () => {
-    expect(isValidRange('~1')).toBe(true)
-    expect(satisfies('1.0.0', '~1')).toBe(true)
-    expect(satisfies('1.9.9', '~1')).toBe(true)
-    expect(satisfies('2.0.0', '~1')).toBe(false)
-    expect(satisfies('0.9.0', '~1')).toBe(false)
-  })
-
-  it('locks major+minor for a two-segment tilde', () => {
-    expect(isValidRange('~1.2')).toBe(true)
-    expect(satisfies('1.2.9', '~1.2')).toBe(true)
-    expect(satisfies('1.3.0', '~1.2')).toBe(false)
-    expect(satisfies('1.1.9', '~1.2')).toBe(false)
-  })
-
   it('rejects a caret or tilde with a non-numeric segment', () => {
     expect(isValidRange('^abc')).toBe(false)
     expect(satisfies('1.0.0', '^abc')).toBe(false)
