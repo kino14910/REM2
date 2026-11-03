@@ -400,12 +400,12 @@ const SPACING_KEYS = ['xs', 'sm', 'md', 'lg'] as const
 
 ### 6.1 `vite.shared.mts`: what is shared and what is not
 
-| Item              | Value                                              | Reason                                                                                                                                                                        |
-| ----------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `resolve.alias`   | `{ 'rem2-kernel': <abs>/src/kernel/index.ts }`     | lets Vite treat the kernel as source; `.js` → `.ts` falls back automatically                                                                                                  |
-| `ssr.noExternal`  | `['rem2-kernel']`                                  | **critical**. By default the bare name is externalized, leaving `require('rem2-kernel')` in the main bundle, which resolves to the `.ts` entry in a packaged app and explodes |
-| `build.target`    | `node20` (main / preload) · `chrome120` (renderer) | aligned with `engines.node` and Electron 44's Chromium                                                                                                                        |
-| `build.sourcemap` | `true`                                             | matches `tsconfig.json` `sourceMap`; the contract test uses the sourcemap to prove the artifact is the browser build                                                          |
+| Item              | Value                                                 | Reason                                                                                                                                                                                                                                                                                                                                                             |
+| ----------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `resolve.alias`   | `{ 'rem2-kernel': <abs>/src/kernel/index.ts }`        | lets Vite treat the kernel as source; `.js` → `.ts` falls back automatically                                                                                                                                                                                                                                                                                       |
+| `ssr.noExternal`  | shared `['rem2-kernel']`; main overrides it to `true` | **critical**. By default the bare name is externalized, leaving `require('rem2-kernel')` in the main bundle, which resolves to the `.ts` entry in a packaged app and explodes. Main uses `true` so ESM-only runtime deps such as `electron-store` are bundled into `main.mjs` — forge packs only `.vite`, so anything left external cannot resolve inside the asar |
+| `build.target`    | `node20` (main / preload) · `chrome120` (renderer)    | aligned with `engines.node` and Electron 44's Chromium                                                                                                                                                                                                                                                                                                             |
+| `build.sourcemap` | `true`                                                | matches `tsconfig.json` `sourceMap`; the contract test uses the sourcemap to prove the artifact is the browser build                                                                                                                                                                                                                                               |
 
 **`resolve.conditions` must not be shared — it differs per target**:
 
@@ -420,18 +420,18 @@ This class of defect lives only at the "browser condition × bundled artifact" i
 
 ### 6.2 Required settings per config
 
-| Config                     | Required                                                                                                                |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `vite.main.config.mts`     | `external: ['electron']`; shared alias / `ssr.noExternal`; no extra `define` (forge injects them)                       |
-| `vite.preload.config.mts`  | `external: ['electron']`; `target: node20`; **CJS** output named exactly `preload.cjs` (hardcoded in the main process)  |
-| `vite.renderer.config.mts` | `plugins: [svelte()]` (the only config mounting svelte); `conditions` explicitly include `browser`; `input: index.html` |
+| Config                     | Required                                                                                                                            |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `vite.main.config.mts`     | `external: ['electron']`; shared alias; `ssr.noExternal: true` (overrides the shared array); no extra `define` (forge injects them) |
+| `vite.preload.config.mts`  | `external: ['electron']`; `target: node20`; **CJS** output named exactly `preload.cjs` (hardcoded in the main process)              |
+| `vite.renderer.config.mts` | `plugins: [svelte()]` (the only config mounting svelte); `conditions` explicitly include `browser`; `input: index.html`             |
 
 ### 6.3 Compile-time constants injected by Forge
 
-| Constant                          | Use                                                                 |
-| --------------------------------- | ------------------------------------------------------------------- |
-| `MAIN_WINDOW_VITE_DEV_SERVER_URL` | dev branch loads the Vite dev server                                |
-| `MAIN_WINDOW_VITE_NAME`           | prod branch `path.join(__dirname, '../renderer/<name>/index.html')` |
+| Constant                          | Use                                                                                                              |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `MAIN_WINDOW_VITE_DEV_SERVER_URL` | dev branch loads the Vite dev server                                                                             |
+| `MAIN_WINDOW_VITE_NAME`           | prod branch `path.join(moduleDirectory(), '../renderer/<name>/index.html')` (stored as `hostDir` in `window.ts`) |
 
 Both are **bare-identifier substitutions**: writing `process.env.MAIN_WINDOW_…` is never replaced, so it stays `undefined` at runtime and the window always takes the `file://` branch. The names come from uppercasing the renderer process name (`main_window` here); renaming the renderer process requires renaming both.
 

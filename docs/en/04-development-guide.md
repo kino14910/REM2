@@ -8,12 +8,12 @@
 
 ## 1. Environment
 
-| Item        | Requirement                                                                     |
-| ----------- | ------------------------------------------------------------------------------- |
-| Node        | >= 20 (`package.json` → `engines`)                                              |
-| pnpm        | >= 9; the repo pins `pnpm@12.8.1` (via Corepack)                                |
-| Platform    | Windows / macOS / Linux; on Windows test concurrency must stay limited (see §6) |
-| Third-party | devDependencies only. `dependencies` stays `{}` (hard red line)                 |
+| Item        | Requirement                                                                                          |
+| ----------- | ---------------------------------------------------------------------------------------------------- |
+| Node        | >= 22.13.0 (`package.json` → `engines`)                                                              |
+| pnpm        | >= 9; the repo sets no `packageManager` field and does not pin a version (verified locally: 12.16.1) |
+| Platform    | Windows / macOS / Linux; on Windows test concurrency must stay limited (see §6)                      |
+| Third-party | devDependencies only. `dependencies` stays `{}` (hard red line)                                      |
 
 ```bash
 pnpm install
@@ -62,7 +62,7 @@ pnpm dev --exit-after-start → all plugins started, failed=0
 | ------- | ----------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------ |
 | Kernel  | `src/kernel/**`                                                   | `tsc -p tsconfig.build.json`            | `dist/kernel/**` (`.js` + `.d.ts` + `.map`)                                                |
 | Plugins | `plugins/<id>/src/index.ts`                                       | `esbuild` (`scripts/build-plugins.mjs`) | `plugins-dist/<id>/{dist/index.js, plugin.json, package.json}`                             |
-| Shell   | `src/main.ts` / `src/preload.ts` / `src/frontend/entry-client.ts` | forge's VitePlugin                      | `.vite/build/main.cjs`, `.vite/build/preload.cjs`, `.vite/renderer/main_window/index.html` |
+| Shell   | `src/main.ts` / `src/preload.ts` / `src/frontend/entry-client.ts` | forge's VitePlugin                      | `.vite/build/main.mjs`, `.vite/build/preload.cjs`, `.vite/renderer/main_window/index.html` |
 
 Packaging (`electron-forge package`):
 
@@ -73,15 +73,15 @@ plugins-dist                  →  resources/plugins-dist/ (extraResource, ★ o
 
 ### 3.2 "Artifact ↔ path ↔ resolution rule" table
 
-| Artifact                  | Location                                | Resolved by                                     | Rule / constraint                                                                                    |
-| ------------------------- | --------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Kernel library            | `dist/kernel/index.js` + `.d.ts`        | `package.json` → `exports["."]`                 | `types` → `.d.ts`, `default` → `.js`. The `./src` subpath export exists only for in-repo development |
-| Kernel (bare name in dev) | `src/kernel/index.ts`                   | tsconfig `paths` + vite alias                   | both must point at the same file; plugin tsconfigs declare `paths` separately                        |
-| Plugin entry              | `plugins-dist/<id>/dist/index.js`       | kernel `loader`'s `import()`                    | `entry` always `dist/index.js`; only `.js` / `.mjs`; `assertInsideRoot` blocks escapes               |
-| Main process              | `.vite/build/main.cjs`                  | `package.json` → `main`                         | CJS; `import.meta.url` is `undefined`, so path resolution must fall back to `__dirname`              |
-| preload                   | `.vite/build/preload.cjs`               | hardcoded filename in `host/electron/window.ts` | must be CJS and must be named `preload.cjs`                                                          |
-| renderer                  | `.vite/renderer/main_window/index.html` | `loadFile` in `window.ts`                       | directory name is the uppercased renderer process name (`MAIN_WINDOW_VITE_NAME`)                     |
-| Plugins (packaged)        | `resources/plugins-dist/`               | `builtinPluginsRoot()`                          | `extraResource` derives the target name from the last segment, **not** `rem2-plugins/`               |
+| Artifact                  | Location                                | Resolved by                                     | Rule / constraint                                                                                                                                                                                                                                                         |
+| ------------------------- | --------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Kernel library            | `dist/kernel/index.js` + `.d.ts`        | `package.json` → `exports["."]`                 | `types` → `.d.ts`, `default` → `.js`. The `./src` subpath export exists only for in-repo development                                                                                                                                                                      |
+| Kernel (bare name in dev) | `src/kernel/index.ts`                   | tsconfig `paths` + vite alias                   | both must point at the same file; plugin tsconfigs declare `paths` separately                                                                                                                                                                                             |
+| Plugin entry              | `plugins-dist/<id>/dist/index.js`       | kernel `loader`'s `import()`                    | `entry` always `dist/index.js`; only `.js` / `.mjs`; `assertInsideRoot` blocks escapes                                                                                                                                                                                    |
+| Main process              | `.vite/build/main.mjs`                  | `package.json` → `main`                         | **ESM**; `import.meta.url` is valid and all path resolution goes through `moduleDirectory()`. `vite.main.config.mts` declares `lib.formats: ['es']` + `ssr.noExternal: true`, which stops Forge from injecting its CJS default and bundles `electron-store` into the asar |
+| preload                   | `.vite/build/preload.cjs`               | hardcoded filename in `host/electron/window.ts` | must be CJS and must be named `preload.cjs`                                                                                                                                                                                                                               |
+| renderer                  | `.vite/renderer/main_window/index.html` | `loadFile` in `window.ts`                       | directory name is the uppercased renderer process name (`MAIN_WINDOW_VITE_NAME`)                                                                                                                                                                                          |
+| Plugins (packaged)        | `resources/plugins-dist/`               | `builtinPluginsRoot()`                          | `extraResource` derives the target name from the last segment, **not** `rem2-plugins/`                                                                                                                                                                                    |
 
 ### 3.3 tsconfig responsibilities
 
@@ -99,7 +99,7 @@ Plugin tsconfigs (`plugins/*/tsconfig.json`) are standalone, declaring only `pat
 
 ### 3.4 Build-time red lines
 
-1. Missing `ssr.noExternal: ['rem2-kernel']` → the main bundle keeps `require('rem2-kernel')`, resolving to the `.ts` entry when packaged → `ERR_UNKNOWN_FILE_EXTENSION`. **Only visible after packaging.**
+1. Missing the kernel entry in `ssr.noExternal` (shared value is `['rem2-kernel']`, which main further overrides to `true`) → the main bundle keeps `require('rem2-kernel')`, resolving to the `.ts` entry when packaged → `ERR_UNKNOWN_FILE_EXTENSION`. **Only visible after packaging.**
 2. renderer `resolve.conditions` without `browser` → resolves to svelte's `index-server.js` → blank page.
 3. `index.html` must point at `/src/frontend/entry-client.ts` and must contain no inline styles.
 4. Renaming the renderer process → rename the `MAIN_WINDOW_VITE_DEV_SERVER_URL` / `MAIN_WINDOW_VITE_NAME` constants too.

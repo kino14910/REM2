@@ -398,12 +398,12 @@ const SPACING_KEYS = ['xs', 'sm', 'md', 'lg'] as const
 
 ### 6.1 `vite.shared.mts`：共享什么、不共享什么
 
-| 项                | 值                                                  | 理由                                                                                                      |
-| ----------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `resolve.alias`   | `{ 'rem2-kernel': <abs>/src/kernel/index.ts }`      | 让 Vite 把内核当源码处理，`.js` → `.ts` 由 Vite 内建回退                                                  |
-| `ssr.noExternal`  | `['rem2-kernel']`                                   | **关键**。默认会 externalize 裸包名，主进程产物留下 `require('rem2-kernel')`，打包态解析到 `.ts` 入口即炸 |
-| `build.target`    | `node20`（main / preload）· `chrome120`（renderer） | 与 `engines.node`、Electron 44 的 Chromium 对齐                                                           |
-| `build.sourcemap` | `true`                                              | 与 `tsconfig.json` 的 `sourceMap` 一致；契约测试靠 sourcemap 判定产物是浏览器版 svelte                    |
+| 项                | 值                                                  | 理由                                                                                                                                                                                                                                                        |
+| ----------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resolve.alias`   | `{ 'rem2-kernel': <abs>/src/kernel/index.ts }`      | 让 Vite 把内核当源码处理，`.js` → `.ts` 由 Vite 内建回退                                                                                                                                                                                                    |
+| `ssr.noExternal`  | 共享 `['rem2-kernel']`，main 覆盖为 `true`          | **关键**。默认会 externalize 裸包名，主进程产物留下 `require('rem2-kernel')`，打包态解析到 `.ts` 入口即炸。main 用 `true` 是为了把 `electron-store` 这类 ESM-only 运行时依赖一并打进 `main.mjs`——forge 只打包 `.vite`，留在 external 的包在 asar 内无法解析 |
+| `build.target`    | `node20`（main / preload）· `chrome120`（renderer） | 与 `engines.node`、Electron 44 的 Chromium 对齐                                                                                                                                                                                                             |
+| `build.sourcemap` | `true`                                              | 与 `tsconfig.json` 的 `sourceMap` 一致；契约测试靠 sourcemap 判定产物是浏览器版 svelte                                                                                                                                                                      |
 
 **`resolve.conditions` 不共享，必须按目标环境分化**：
 
@@ -418,18 +418,18 @@ const SPACING_KEYS = ['xs', 'sm', 'md', 'lg'] as const
 
 ### 6.2 各 config 的必备项
 
-| 配置                       | 必备                                                                                                 |
-| -------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `vite.main.config.mts`     | `external: ['electron']`；共享 alias / `ssr.noExternal`；`define` 不用自加（forge 注入）             |
-| `vite.preload.config.mts`  | `external: ['electron']`；`target: node20`；输出 **CJS**，文件名必须是 `preload.cjs`（主进程硬编码） |
-| `vite.renderer.config.mts` | `plugins: [svelte()]`（唯一挂 svelte 的 config）；`conditions` 显式含 `browser`；`input: index.html` |
+| 配置                       | 必备                                                                                                            |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `vite.main.config.mts`     | `external: ['electron']`；共享 alias；`ssr.noExternal: true`（覆盖共享的数组）；`define` 不用自加（forge 注入） |
+| `vite.preload.config.mts`  | `external: ['electron']`；`target: node20`；输出 **CJS**，文件名必须是 `preload.cjs`（主进程硬编码）            |
+| `vite.renderer.config.mts` | `plugins: [svelte()]`（唯一挂 svelte 的 config）；`conditions` 显式含 `browser`；`input: index.html`            |
 
 ### 6.3 Forge 注入的编译期常量
 
-| 常量                              | 用法                                                              |
-| --------------------------------- | ----------------------------------------------------------------- |
-| `MAIN_WINDOW_VITE_DEV_SERVER_URL` | dev 分支加载 Vite dev server                                      |
-| `MAIN_WINDOW_VITE_NAME`           | prod 分支 `path.join(__dirname, '../renderer/<name>/index.html')` |
+| 常量                              | 用法                                                                                                                  |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `MAIN_WINDOW_VITE_DEV_SERVER_URL` | dev 分支加载 Vite dev server                                                                                          |
+| `MAIN_WINDOW_VITE_NAME`           | prod 分支 `path.join(moduleDirectory(), '../renderer/<name>/index.html')`（`window.ts` 里该值存的变量名是 `hostDir`） |
 
 两者都是**裸标识符替换**：写成 `process.env.MAIN_WINDOW_…` 不会被替换，运行期恒 `undefined`，窗口永远走 `file://`。常量名由渲染进程名大写化而来（本项目 `main_window`），改渲染进程名必须同步改这两处。
 

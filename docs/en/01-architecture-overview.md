@@ -519,7 +519,7 @@ src/shared/ipc-contract.ts        ← the only copy of the strings (channels / e
 | Kernel           | `src/kernel/**`                                                        | `tsc -p tsconfig.build.json`                | `dist/kernel/**` (`.js` + `.d.ts` + `.map`); `exports["."]` points here                    |
 | Built-in plugins | `plugins/<id>/src/index.ts`                                            | `node scripts/build-plugins.mjs` (esbuild)  | `plugins-dist/<id>/dist/index.js` (ESM bundle, node20) + `plugin.json` + `package.json`    |
 | External plugins | `REM2_EXTERNAL_PLUGINS_DIR/<id>/src` (default: sibling `REM2-plugins`) | `node scripts/build-plugins.mjs --external` | `plugins-external-dist/<id>/` (not packaged; used for release ZIPs and tests)              |
-| Shell            | `src/main.ts` / `src/preload.ts` / `src/frontend/entry-client.ts`      | `electron-forge` (VitePlugin)               | `.vite/build/main.cjs`, `.vite/build/preload.cjs`, `.vite/renderer/main_window/index.html` |
+| Shell            | `src/main.ts` / `src/preload.ts` / `src/frontend/entry-client.ts`      | `electron-forge` (VitePlugin)               | `.vite/build/main.mjs`, `.vite/build/preload.cjs`, `.vite/renderer/main_window/index.html` |
 
 `pnpm build` = `build:kernel` + `build:plugins` + `build:external` (skipped when the external repository is absent); both `predev` and `premake` run it. The installer only ships `plugins-dist/` (built-in plugins).
 
@@ -536,7 +536,7 @@ plugins-dist/ ──extraResource──▶ resources/plugins-dist/ (outside the 
 - asar stays `true`; plugins live **outside** the asar, so `import()` only needs a normal file path.
 - `extraResource` takes a list of directories and derives the target name from the last path segment ⇒ the result is `resources/plugins-dist/`, not `rem2-plugins/`.
 - `builtinPluginsRoot()` prefers `plugins-dist/` (built) and falls back to `plugins/` (manual source debugging). **The manifest `entry` is always `dist/index.js`**, so pointing the root at the wrong directory makes every plugin fail with "module resolution failed" — an error far from the real cause.
-- `paths.ts` → `moduleDir()` tries `__dirname` (CJS) → `import.meta.url` (ESM, null-checked) → `process.cwd()`: Forge bundles the main process as CJS, where `import.meta.url` is `undefined`; without the null check the app crashes at startup.
+- `paths.ts` → `moduleDirectory()` resolves solely via `path.dirname(fileURLToPath(import.meta.url))`: both the main process and the CLI are native ESM, so `main.mjs` sits in `.vite/build/`, the same directory that anchors `preload.cjs` and the sibling `renderer/` output. The CJS `__dirname` fallback was removed together with the CJS main bundle — **do not reintroduce it**; `vite.main.config.mts` declares `build.lib.formats: ['es']` precisely to stop Forge from injecting its CJS default. All startup path reads go through `moduleDirectory()` / `projectRoot()` / `builtinPluginsRoot()`; never scatter raw `import.meta.url` handling across host modules.
 
 ### 8.3 dev vs prod
 

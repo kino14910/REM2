@@ -518,7 +518,7 @@ src/shared/ipc-contract.ts        ← 唯一一份字符串（channels / events�
 | 内核库   | `src/kernel/**`                                                   | `tsc -p tsconfig.build.json`                | `dist/kernel/**`（`.js` + `.d.ts` + `.map`）；`exports["."]` 指向此处                      |
 | 内置插件 | `plugins/<id>/src/index.ts`                                       | `node scripts/build-plugins.mjs`（esbuild） | `plugins-dist/<id>/dist/index.js`（ESM bundle，node20）+ `plugin.json` + `package.json`    |
 | 外部插件 | `REM2_EXTERNAL_PLUGINS_DIR/<id>/src`（默认同级 `REM2-plugins`）   | `node scripts/build-plugins.mjs --external` | `plugins-external-dist/<id>/`（不进安装包；用于 Release zip 与测试）                       |
-| 外壳     | `src/main.ts` / `src/preload.ts` / `src/frontend/entry-client.ts` | `electron-forge`（VitePlugin）              | `.vite/build/main.cjs`、`.vite/build/preload.cjs`、`.vite/renderer/main_window/index.html` |
+| 外壳     | `src/main.ts` / `src/preload.ts` / `src/frontend/entry-client.ts` | `electron-forge`（VitePlugin）              | `.vite/build/main.mjs`、`.vite/build/preload.cjs`、`.vite/renderer/main_window/index.html` |
 
 `pnpm build` = `build:kernel` + `build:plugins` + `build:external`（外部仓库不存在时跳过）；`predev` / `premake` 都挂了 `build`。安装包只带 `plugins-dist/`（内置插件）。
 
@@ -535,7 +535,7 @@ plugins-dist/ ──extraResource──▶ resources/plugins-dist/（asar 之外
 - asar 保持 `true`；插件落在 asar **外面**，`import()` 只需普通文件路径。
 - `extraResource` 接受目录列表，目标名取路径末段 ⇒ 装出来是 `resources/plugins-dist/`，不是 `rem2-plugins/`。
 - `builtinPluginsRoot()` 优先 `plugins-dist/`（已构建），回退 `plugins/`（便于手工调试）。**manifest 的 `entry` 恒为 `dist/index.js`**，所以根目录指错会让所有插件以「模块解析失败」Failed，报错与真因相距很远。
-- `paths.ts` 的 `moduleDir()` 依次尝试 `__dirname`（CJS）→ `import.meta.url`（ESM，判空）→ `process.cwd()`：Electron 主进程被 forge 打成 CJS，`import.meta.url` 是 `undefined`，不判空会崩在启动。
+- `paths.ts` 的 `moduleDirectory()` 只取 `path.dirname(fileURLToPath(import.meta.url))`：主进程与 CLI 都是原生 ESM，`main.mjs` 落在 `.vite/build/`，该目录同时是 `preload.cjs` 与同级 `renderer/` 的锚点。CJS 的 `__dirname` 回退已随 CJS 主进程产物一并删除，**不要再加回来**——`vite.main.config.mts` 显式声明 `build.lib.formats: ['es']` 正是为了阻止 forge 注入 CJS 默认值。启动期读路径一律走 `moduleDirectory()` / `projectRoot()` / `builtinPluginsRoot()`，不要在宿主模块里散写 `import.meta.url`。
 
 ### 8.3 dev 与 prod 的差异
 

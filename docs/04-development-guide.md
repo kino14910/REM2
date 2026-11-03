@@ -10,8 +10,8 @@
 
 | 项       | 要求                                                              |
 | -------- | ----------------------------------------------------------------- |
-| Node     | >= 20（`package.json` → `engines`）                               |
-| pnpm     | >= 9，仓库固定 `pnpm@12.8.1`（Corepack 管理）                     |
+| Node     | >= 22.13.0（`package.json` → `engines`）                          |
+| pnpm     | >= 9；仓库未设 `packageManager`，不固定版本（本机验证 12.16.1）   |
 | 平台     | Windows / macOS / Linux 均可；Windows 下测试并发必须受限（见 §6） |
 | 第三方包 | 只有 devDependencies。`dependencies` 恒为 `{}`（硬红线）          |
 
@@ -62,7 +62,7 @@ pnpm dev --exit-after-start → 全部插件启动、failed=0
 | ---- | ----------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------ |
 | 内核 | `src/kernel/**`                                                   | `tsc -p tsconfig.build.json`             | `dist/kernel/**`（`.js` + `.d.ts` + `.map`）                                               |
 | 插件 | `plugins/<id>/src/index.ts`                                       | `esbuild`（`scripts/build-plugins.mjs`） | `plugins-dist/<id>/{dist/index.js, plugin.json, package.json}`                             |
-| 外壳 | `src/main.ts` / `src/preload.ts` / `src/frontend/entry-client.ts` | forge 的 VitePlugin                      | `.vite/build/main.cjs`、`.vite/build/preload.cjs`、`.vite/renderer/main_window/index.html` |
+| 外壳 | `src/main.ts` / `src/preload.ts` / `src/frontend/entry-client.ts` | forge 的 VitePlugin                      | `.vite/build/main.mjs`、`.vite/build/preload.cjs`、`.vite/renderer/main_window/index.html` |
 
 打包（`electron-forge package`）：
 
@@ -73,15 +73,15 @@ plugins-dist                  →  resources/plugins-dist/（extraResource，★
 
 ### 3.2 「产物 ↔ 路径 ↔ 解析规则」对照
 
-| 产物                 | 磁盘位置                                | 谁解析                                 | 解析规则 / 约束                                                                |
-| -------------------- | --------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------ |
-| 内核库               | `dist/kernel/index.js` + `.d.ts`        | `package.json` → `exports["."]`        | `types` → `.d.ts`，`default` → `.js`。`./src` 子路径导出仅供本仓库开发期使用   |
-| 内核（开发期裸包名） | `src/kernel/index.ts`                   | tsconfig `paths` + vite alias          | 两处必须指向同一文件；插件 tsconfig 的 `paths` 单独声明一次                    |
-| 插件入口             | `plugins-dist/<id>/dist/index.js`       | 内核 `loader` 的 `import()`            | `entry` 恒为 `dist/index.js`；只允许 `.js` / `.mjs`；`assertInsideRoot` 防逃逸 |
-| 主进程               | `.vite/build/main.cjs`                  | `package.json` → `main`                | CJS；`import.meta.url` 为 `undefined`，路径解析要回退 `__dirname`              |
-| preload              | `.vite/build/preload.cjs`               | `host/electron/window.ts` 硬编码文件名 | 必须是 CJS 且必须叫 `preload.cjs`                                              |
-| renderer             | `.vite/renderer/main_window/index.html` | `window.ts` 的 `loadFile`              | 目录名来自渲染进程名大写化（`MAIN_WINDOW_VITE_NAME`）                          |
-| 插件（打包态）       | `resources/plugins-dist/`               | `builtinPluginsRoot()`                 | `extraResource` 目标名取路径末段，**不是** `rem2-plugins/`                     |
+| 产物                 | 磁盘位置                                | 谁解析                                 | 解析规则 / 约束                                                                                                                                                                                                |
+| -------------------- | --------------------------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 内核库               | `dist/kernel/index.js` + `.d.ts`        | `package.json` → `exports["."]`        | `types` → `.d.ts`，`default` → `.js`。`./src` 子路径导出仅供本仓库开发期使用                                                                                                                                   |
+| 内核（开发期裸包名） | `src/kernel/index.ts`                   | tsconfig `paths` + vite alias          | 两处必须指向同一文件；插件 tsconfig 的 `paths` 单独声明一次                                                                                                                                                    |
+| 插件入口             | `plugins-dist/<id>/dist/index.js`       | 内核 `loader` 的 `import()`            | `entry` 恒为 `dist/index.js`；只允许 `.js` / `.mjs`；`assertInsideRoot` 防逃逸                                                                                                                                 |
+| 主进程               | `.vite/build/main.mjs`                  | `package.json` → `main`                | **ESM**；`import.meta.url` 有效，路径解析统一走 `moduleDirectory()`。`vite.main.config.mts` 显式声明 `lib.formats: ['es']` + `ssr.noExternal: true`，阻止 forge 注入 CJS 默认值并把 `electron-store` 打进 asar |
+| preload              | `.vite/build/preload.cjs`               | `host/electron/window.ts` 硬编码文件名 | 必须是 CJS 且必须叫 `preload.cjs`                                                                                                                                                                              |
+| renderer             | `.vite/renderer/main_window/index.html` | `window.ts` 的 `loadFile`              | 目录名来自渲染进程名大写化（`MAIN_WINDOW_VITE_NAME`）                                                                                                                                                          |
+| 插件（打包态）       | `resources/plugins-dist/`               | `builtinPluginsRoot()`                 | `extraResource` 目标名取路径末段，**不是** `rem2-plugins/`                                                                                                                                                     |
 
 ### 3.3 tsconfig 职责
 
@@ -99,7 +99,7 @@ tsconfig 由基线、按运行形态特化的配置与转发壳组成，`strict`
 
 ### 3.4 构建期红线
 
-1. `ssr.noExternal: ['rem2-kernel']` 缺失 → 主进程产物留下 `require('rem2-kernel')`，打包态解析到 `.ts` → `ERR_UNKNOWN_FILE_EXTENSION`。**这个错误只在打包后出现。**
+1. `ssr.noExternal` 少掉内核条目（共享值是 `['rem2-kernel']`，main 再覆盖为 `true`）→ 主进程产物留下 `require('rem2-kernel')`，打包态解析到 `.ts` → `ERR_UNKNOWN_FILE_EXTENSION`。**这个错误只在打包后出现。**
 2. renderer 的 `resolve.conditions` 缺 `browser` → 解析到 svelte 的 `index-server.js` → 白屏。
 3. `index.html` 的入口必须是 `/src/frontend/entry-client.ts`；`index.html` 里不得写内联样式。
 4. 改渲染进程名 → 必须同步 `MAIN_WINDOW_VITE_DEV_SERVER_URL` / `MAIN_WINDOW_VITE_NAME` 的常量名。
