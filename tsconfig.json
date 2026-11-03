@@ -49,6 +49,7 @@
     "plugins-dist",
     "src/host/electron/**",
     "src/main.ts",
-    "src/preload.ts"
+    "src/preload.ts",
+    "tests/browser/**"
   ]
 }

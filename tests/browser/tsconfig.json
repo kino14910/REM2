@@ -1,0 +1,7 @@
+{
+  "//": "Browser component tests: DOM + Svelte, deliberately without Node types. Extends the frontend config so `@/*`, Bundler resolution and the `*.svelte` module declaration are shared instead of duplicated.",
+  "//exclude": "The root config excludes tests/browser/** (it has no DOM lib); this project re-includes them, so the inherited exclude list must be cleared.",
+  "extends": "../../src/frontend/tsconfig.json",
+  "include": ["./**/*.ts"],
+  "exclude": []
+}

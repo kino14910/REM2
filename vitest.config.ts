@@ -1,17 +1,23 @@
-import { defineConfig } from 'vitest/config'
+import { svelte } from '@sveltejs/vite-plugin-svelte'
+import { playwright } from '@vitest/browser-playwright'
+import { configDefaults, defineConfig } from 'vitest/config'
 
 import { KERNEL_RESOLVE } from './vite.shared.mjs'
 
 /**
- * Vitest configuration.
+ * Vitest configuration: two projects sharing one alias table.
  *
- * - environment: node (the kernel is a pure Node library; it never depends on
- *   Electron or the DOM).
- * - pool: threads (good isolation, fast startup).
- * - aliases (`@` -> src, rem2-kernel -> src/kernel/index.ts): shared with the
- *   vite configs, eliminating drift from declaring the same alias in several places.
+ * - `node`: the kernel, host and contract suites. Pure Node, no DOM, and the
+ *   only project that feeds coverage (`src/kernel/**`).
+ * - `browser`: Svelte component tests driven by Playwright/Chromium. A real
+ *   browser is required because the components depend on runes, CSS custom
+ *   properties and native events — jsdom would assert against a DOM that the
+ *   packaged app never uses.
  *
- * ## Concurrency and timeouts (important)
+ * Coverage lives at the root but `test:coverage` scopes it to `--project=node`,
+ * so instrumenting `.svelte` files never slows the gate down.
+ *
+ * ## Concurrency and timeouts (node project)
  *
  * Every integration case materializes a temp plugin directory, boots a real
  * kernel (with timers and timeout guards), shuts down in reverse order, then
@@ -29,14 +35,6 @@ import { KERNEL_RESOLVE } from './vite.shared.mjs'
  */
 export default defineConfig({
   test: {
-    environment: 'node',
-    pool: 'threads',
-    include: ['tests/**/*.test.ts'],
-    globals: false,
-    maxWorkers: 4,
-    minWorkers: 1,
-    testTimeout: 30_000,
-    hookTimeout: 30_000,
     coverage: {
       provider: 'v8',
       include: ['src/kernel/**/*.ts'],
@@ -53,6 +51,43 @@ export default defineConfig({
         branches: 80,
       },
     },
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'node',
+          environment: 'node',
+          pool: 'threads',
+          include: ['tests/**/*.test.ts'],
+          // The browser suite lives under tests/browser; importing
+          // `vitest/browser` outside Browser Mode throws at import time.
+          exclude: [...configDefaults.exclude, 'tests/browser/**'],
+          globals: false,
+          maxWorkers: 4,
+          // Projects with different worker counts need distinct group order,
+          // otherwise Vitest cannot schedule them (node runs first).
+          sequence: { groupOrder: 1 },
+          testTimeout: 30_000,
+          hookTimeout: 30_000,
+        },
+      },
+      {
+        extends: true,
+        plugins: [svelte()],
+        test: {
+          name: 'browser',
+          include: ['tests/browser/**/*.test.ts'],
+          globals: false,
+          sequence: { groupOrder: 2 },
+          browser: {
+            enabled: true,
+            headless: true,
+            provider: playwright(),
+            instances: [{ browser: 'chromium' }],
+          },
+        },
+      },
+    ],
   },
   resolve: {
     alias: KERNEL_RESOLVE.alias,

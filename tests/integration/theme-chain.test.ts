@@ -23,7 +23,7 @@
 
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { EventBus } from '@/kernel/contracts/event-bus.js'
 import type { ThemeDefinition } from '@/kernel/contracts/ui.js'
@@ -169,8 +169,8 @@ describe('integration · theme chain', () => {
       })
 
       expect(await themeSet({ themeId: 'light' })).toEqual({ ok: true })
-      await new Promise(resolve => setTimeout(resolve, 10))
-      expect(emitted.length).toBe(1)
+      // Event delivery is asynchronous; a fixed sleep raced it under load.
+      await vi.waitFor(() => expect(emitted.length).toBe(1))
 
       // A second identical switch is a no-op: emitting again would make the renderer
       // push the same theme back, forever.
