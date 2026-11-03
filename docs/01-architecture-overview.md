@@ -19,8 +19,8 @@
 ```mermaid
 graph BT
     subgraph L1["plugins/ —— 内置插件；REM2-plugins —— 外部可安装插件"]
-        PA["in-process：config-json / hello-command / logger-console /<br/>health-http / plugin-inspector"]
-        PB["worker：notify-worker"]
+        PA["in-process：logger-console / plugin-inspector"]
+        PB["worker：按需加载（内置示例未附带）"]
     end
 
     subgraph L2["src/frontend/ —— Svelte 5 renderer"]
@@ -61,7 +61,7 @@ graph BT
 ```
 frontend →（window.rem2）→ host/ipc → kernel
 plugins  →（rem2-kernel 公共出口）→ kernel
-host     →（相对路径 import）→ kernel
+host     →（@/ 别名 import）→ kernel
 ```
 
 | 层                   | 硬约束                                                                                | 机器判据                                                                         |
@@ -167,7 +167,8 @@ rem2-kernel/
 │   ├── frontend/                      # ═══ Svelte 5 前端（详见 03）═══
 │   │   ├── entry-client.ts            #   renderer 入口：引入 global.css + mount(App)
 │   │   ├── app/                       #   App / Shell / PanelHost / RouteHost / components / global.css
-│   │   └── lib/                       #   ipc-client / bridge-types / nav-link / dto-guards / stores(.svelte.ts) / theme/vars.ts
+│   │   ├── lib/                       #   ipc-client / bridge-types / nav-link / dto-guards / stores(.svelte.ts) / theme/vars.ts
+│   │   └── tsconfig.json              #   renderer 的 TS 工程（只要 DOM，types: []）
 │   │
 │   └── shared/
 │       └── ipc-contract.ts            # ★ 宿主与前端共用的方法名 / 事件名（唯一一份字符串，零 import）
@@ -177,7 +178,7 @@ rem2-kernel/
 ├── plugins-external-dist/             # 外部插件构建产物（发布包/测试用，不进安装包，git 忽略）
 ├── scripts/build-plugins.mjs          # esbuild 逐插件打包（含 REM2_EXTERNAL_PLUGINS_DIR；构建期代码，刻意不进 src/）
 ├── tests/{unit,integration,contract}  # 分层测试 + fixtures/ + helpers/
-├── examples/config/app.config.json    # config-json 插件的示例配置
+├── examples/README.md                 # 插件扩展示例与脚手架说明
 │
 ├── vite.shared.mts                    # ★ alias / ssr.noExternal 的单一来源（conditions 按环境分化）
 ├── vite.main.config.mts               #   主进程构建（target node20）
@@ -187,7 +188,6 @@ rem2-kernel/
 ├── tsconfig.json                      #   基线：kernel + host(cli/ipc) + 插件 + 测试
 ├── tsconfig.build.json                # ★ 唯一 noEmit:false 的配置（内核产物）
 ├── tsconfig.electron.json             #   主进程 + preload（DOM + node）
-├── tsconfig.frontend.json             #   renderer（只要 DOM，types: []）
 ├── tsconfig.shell.json                #   转发壳（等价于 tsconfig.electron.json）
 └── forge.config.mts                   #   asar + extraResource: ['plugins-dist'] + Fuses
 ```
@@ -223,7 +223,7 @@ rem2-kernel/
 | 模块                                                          | 职责                                                                                            | 关键符号                                                              | 不负责什么                                                                           |
 | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | `host/electron/main.ts`                                       | 宿主入口：`createDeps` + `Kernel` + 注册实现表 + 窗口生命周期                                   | `startKernel`、`registerWhitelistedMethods`                           | 不认识任何具体插件 id；**不含任何方法名字符串**（实现表在 `host/ipc/`）              |
-| `host/settings/*` + `host/electron/proxy-settings-service.ts` | 代理设置模型、地址校验、原子持久化（`proxy-settings.json`）与 Electron session 应用             | `ProxySettingsStore`、`toProxyConfig`、`ElectronProxySettingsService` | `method-handlers` 只依赖接口，不 import electron；地址只接受 host:port / http(s) URL |
+| `host/settings/*` + `host/electron/app-settings-store.ts` | 代理/外观设置模型、地址校验、统一 `settings.json`（electron-store，schemaVersion 1，旧文件一次性导入）与 Electron session 应用 | `ProxySettingsRepository`、`parseAppSettingsDocument`、`ElectronAppSettingsStore`、`toProxyConfig`、`ElectronProxySettingsService` | `method-handlers` 只依赖接口，不 import electron；electron-store 仅在 Main 适配器；地址只接受 host:port / http(s) URL |
 | `host/ipc/method-handlers.ts` + `forward-map.ts`              | 方法实现表（键由 `Record` 强制齐全，入参经 `validate.ts` 运行时校验）+ topic → 对外事件降维映射 | `METHOD_FACTORIES`、`EVENT_FORWARD_MAP`                               | 不 import electron（可被 vitest 直接驱动）                                           |
 | `host/ipc/bridge.ts` + `shared/ipc-contract.ts`               | renderer 唯一通道：白名单精确匹配 + DTO 降维                                                    | `IpcBridge`、`channels` / `events`                                    | 不把 `bus.emit` 暴露给 renderer、不转发 `bus.on('*')`                                |
 | `host/electron/preload.ts`                                    | 唯一契约边界：`contextBridge` 暴露 `{invoke, onEvent}`                                          | `Rem2Bridge`                                                          | **不做白名单判定**（判定必须在主进程，renderer 不可信）                              |
@@ -473,12 +473,12 @@ unloadPlugin(pluginId)
 
 ### 7.1 四类数据
 
-| 数据     | 产生                                                                                                                          | 经过谁                                                                                                                                                            | 消费                                                                                                   |
-| -------- | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| **配置** | `config-json` 插件（`JsonConfigProvider`，priority 10）+ 内核只读默认层 `{app:{name:'rem2-kernel'}}` + `initialConfig` 可写层 | `ConfigService.refresh()` 按 priority 升序 deepMerge 成快照；`get()` 惰性刷新                                                                                     | 插件 `onConfigure` 期 `ctx.config.get(…)`；Worker 插件拿 init 快照 + 变更推送。**配置不外泄 renderer** |
-| **命令** | `CommandPrompt.svelte` 输入                                                                                                   | store → `ipc.request` → preload → `IpcBridge`（白名单）→ `bus.request(Topics.CommandExecute)`                                                                     | 内核 `CommandDispatcher` 读 `command.provide` 槽 → 命令插件 handler → `{ok, output}` 原路回传          |
-| **事件** | 插件 `bus.emit`                                                                                                               | `EventBusImpl` → `EVENT_FORWARD_MAP`（白名单 topic）→ `toDto` → `Ipc.Event`                                                                                       | renderer `ipc.subscribe`                                                                               |
-| **主题** | `theme-switcher` 插件贡献 `ui.theme`（light / dark / system 三套 token）                                                      | 扩展点槽 →（`method-handlers.ts` → `syncThemeFromExtension()` **pull 同步 + followSystem 物化**）→ 宿主 `ThemeRegistryImpl`（目录 + 激活态）→ `ui.theme.list/set` | renderer `theme` store → `theme/vars.ts` → CSS 变量 + `color-scheme`                                   |
+| 数据     | 产生                                                                                                                  | 经过谁                                                                                                                                                            | 消费                                                                                                   |
+| -------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **配置** | 内核只读默认层 `{app:{name:'rem2-kernel'}}` + `initialConfig` 可写层；文件 / 环境等来源可由插件注册 `config.provider` | `ConfigService.refresh()` 按 priority 升序 deepMerge 成快照；`get()` 惰性刷新                                                                                     | 插件 `onConfigure` 期 `ctx.config.get(…)`；Worker 插件拿 init 快照 + 变更推送。**配置不外泄 renderer** |
+| **命令** | `CommandPrompt.svelte` 输入                                                                                           | store → `ipc.request` → preload → `IpcBridge`（白名单）→ `bus.request(Topics.CommandExecute)`                                                                     | 内核 `CommandDispatcher` 读 `command.provide` 槽 → 命令插件 handler → `{ok, output}` 原路回传          |
+| **事件** | 插件 `bus.emit`                                                                                                       | `EventBusImpl` → `EVENT_FORWARD_MAP`（白名单 topic）→ `toDto` → `Ipc.Event`                                                                                       | renderer `ipc.subscribe`                                                                               |
+| **主题** | `theme-switcher` 插件贡献 `ui.theme`（light / dark / system 三套 token）                                              | 扩展点槽 →（`method-handlers.ts` → `syncThemeFromExtension()` **pull 同步 + followSystem 物化**）→ 宿主 `ThemeRegistryImpl`（目录 + 激活态）→ `ui.theme.list/set` | renderer `theme` store → `theme/vars.ts` → CSS 变量 + `color-scheme`                                   |
 
 `initialConfig` 内存层 priority = 1000，高于所有插件 provider —— 插件 `set()` 永远写内存层。这是有意的「宿主配置优先」语义。
 

@@ -17,7 +17,7 @@ sequenceDiagram
     participant EP as ExtensionPointRegistry
     participant LD as PluginLoader
     participant PIPE as LifecyclePipeline
-    participant PL as 插件 hello-command
+    participant PL as 插件（command.provide）
 
     EM->>K: new Kernel(options)
     Note over K: 由 Composition.createDeps() 注入 14 个服务<br/>Kernel 构造器不再 new 具体实现
@@ -97,7 +97,7 @@ sequenceDiagram
     participant EB as EventBusImpl
     participant CD as CommandDispatcher（内核）
     participant EP as ExtensionPointRegistry
-    participant HP as hello-command
+    participant HP as 命令插件（command.provide）
 
     S->>IC: execute('hello', {name:'rem2-kernel'})
     IC->>PL: window.rem2.invoke('command.execute', {command, args})
@@ -153,7 +153,7 @@ sequenceDiagram
 %% ═══════════════════════════════════════════════════════
 sequenceDiagram
     autonumber
-    participant PJ as 插件 config-json
+    participant PJ as 配置提供者插件（config.provider）
     participant CFG as ConfigService
     participant P1 as 插件 onConfigure
     participant WK as Worker 插件
@@ -163,7 +163,7 @@ sequenceDiagram
     CFG->>CFG: 订阅 provider.onDidChange → dirty=true + emitChange
     CFG->>CFG: refresh() ★ 串行 await 每个 provider → deepMerge → snapshot
 
-    P1->>CFG: ctx.config.get('health.http.port', 0)
+    P1->>CFG: ctx.config.get('feature.flag', false)
     Note over CFG: ★ dirty=true 时惰性 refresh（修复 O18）
 
     CFG->>WK: onDidChange → postMessage({t:'config', snapshot})
@@ -190,7 +190,7 @@ sequenceDiagram
     participant RC as rootContainer
     participant DEP as 依赖者插件
 
-    EM->>K: unloadPlugin('com.rem2.config-json', 'user-disable')
+    EM->>K: unloadPlugin('com.rem2.plugin-inspector', 'user-disable')
     K->>REG: allLoaded().filter(硬依赖本插件)
     loop 递归（依赖者先停）
         K->>K: unloadPlugin(依赖者, 'dependency-failed')
@@ -205,7 +205,7 @@ sequenceDiagram
     PIPE->>DEP: onDispose(ctx)
 
     Note over K: teardownPluginArtifacts —— P6 强制回收，不依赖插件自觉
-    K->>EP: retractAll('com.rem2.config-json') ★ 撤回其全部扩展点贡献
+    K->>EP: retractAll('com.rem2.plugin-inspector') ★ 撤回其全部扩展点贡献
     K->>HS: unregisterCheck(pluginId)
     K->>PM: unregister(pluginId)（含 guard.unregisterPermissions）
     K->>RC: unmountChildContainer(container)

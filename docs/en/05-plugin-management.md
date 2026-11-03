@@ -18,7 +18,7 @@
 | Remote provenance    | `<userData>/plugin-provenance.json` (URL + publisher digest + install time)        |
 | Update journal       | `<userData>/plugin-transactions/<id>.json` (recovered before kernel start)         |
 | Remote package cache | `<userData>/plugin-packages/<sha256(url[+digest])>.zip` (10-minute TTL)            |
-| Host proxy settings  | `<userData>/proxy-settings.json` (system / direct / manual)                        |
+| Host settings        | `<userData>/settings.json` (`schemaVersion: 1`, `proxy` / `appearance`)            |
 | Allowed IPC methods  | `src/shared/ipc-contract.ts`                                                       |
 
 Disabled intent is separate from runtime state: an enabled plugin that fails to start remains `enabled: true` with runtime state `Failed`, so the user can retry.
@@ -33,9 +33,11 @@ Electron layout:
 ├── plugin-provenance.json        # { version: 1, entries: { <id>: { kind, url, sha256, … } } }
 ├── plugin-transactions/<id>.json # update journal; recovered before plugins start
 ├── plugin-packages/<hash>.zip    # remote download cache (reused for 10 minutes)
-├── proxy-settings.json           # { version: 1, proxy: { mode, address?, bypass? } }
+├── settings.json                 # { schemaVersion: 1, proxy: { … }, appearance: { colorMode } }
 └── plugin-data/<plugin-id>/      # preserved config/ and data/
 ```
+
+Legacy `proxy-settings.json` / `appearance-settings.json` are imported once into `settings.json` and never deleted; a damaged or unknown-`schemaVersion` file is preserved as `settings.invalid-<timestamp>.json` before safe defaults are written.
 
 Built-ins come from `builtinPluginsRoot()`; in a packaged app this is the read-only sibling `resources/plugins-dist` (built-in samples only). External plugins (such as `theme-switcher`) build into `plugins-external-dist` and install from a GitHub release into `<userData>/plugins`. Built-ins cannot be uninstalled. `<userData>` is resolved with `app.getPath('userData')`.
 

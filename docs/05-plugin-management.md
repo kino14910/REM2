@@ -18,7 +18,7 @@
 | 远程来源记录    | `<userData>/plugin-provenance.json`（URL + 发布方摘要 + 安装时间）       |
 | 更新事务日志    | `<userData>/plugin-transactions/<id>.json`（启动时恢复未完成更新）       |
 | 远程包缓存      | `<userData>/plugin-packages/<sha256(url[+digest])>.zip`（TTL 10 分钟）   |
-| 宿主代理设置    | `<userData>/proxy-settings.json`（system / direct / manual）             |
+| 宿主设置        | `<userData>/settings.json`（`schemaVersion: 1`，`proxy` / `appearance`） |
 | 可用 IPC 方法   | `src/shared/ipc-contract.ts`                                             |
 
 禁用意图与运行态分开保存：启用但启动失败的插件保持 `enabled: true`、运行态 `Failed`，用户可直接重试。
@@ -33,9 +33,11 @@ Electron 下目录固定为：
 ├── plugin-provenance.json        # { version: 1, entries: { <id>: { kind, url, sha256, … } } }
 ├── plugin-transactions/<id>.json # 更新事务日志；启动时先恢复再启动插件
 ├── plugin-packages/<hash>.zip    # 远程下载缓存（10 分钟内复用）
-├── proxy-settings.json           # { version: 1, proxy: { mode, address?, bypass? } }
+├── settings.json                 # { schemaVersion: 1, proxy: { … }, appearance: { colorMode } }
 └── plugin-data/<plugin-id>/      # 卸载后保留的 config/ 与 data/
 ```
+
+旧版 `proxy-settings.json` / `appearance-settings.json` 会在首次启动时一次性导入 `settings.json` 且不删除；损坏或未知 `schemaVersion` 的文件会先保留为 `settings.invalid-<timestamp>.json`，再写入安全默认值。
 
 内置插件来自 `builtinPluginsRoot()`，打包后是 `resources/plugins-dist`（仅内置示例插件），只读且不可卸载。外部插件（如 `theme-switcher`）构建到 `plugins-external-dist`，通过 GitHub Release 安装到 `<userData>/plugins`。`<userData>` 由 `app.getPath('userData')` 决定，不在仓库内。
 

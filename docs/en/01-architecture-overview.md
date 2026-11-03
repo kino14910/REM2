@@ -19,8 +19,8 @@
 ```mermaid
 graph BT
     subgraph L1["plugins/ — built-in plugins; REM2-plugins — external installable plugins"]
-        PA["in-process: config-json / hello-command / logger-console /<br/>health-http / plugin-inspector"]
-        PB["worker: notify-worker"]
+        PA["in-process: logger-console / plugin-inspector"]
+        PB["worker: load on demand (no built-in sample)"]
     end
 
     subgraph L2["src/frontend/ — Svelte 5 renderer"]
@@ -61,7 +61,7 @@ Dependencies are strictly one-way, **no reverse edges**:
 ```
 frontend → (window.rem2) → host/ipc → kernel
 plugins  → (rem2-kernel public entry) → kernel
-host     → (relative imports) → kernel
+host     → (@/ alias imports) → kernel
 ```
 
 | Layer                   | Hard constraint                                                                                 | Machine-checked by                                                                   |
@@ -167,7 +167,8 @@ rem2-kernel/
 │   ├── frontend/                      # ═══ Svelte 5 frontend (see 03 for detail) ═══
 │   │   ├── entry-client.ts            #   renderer entry: import global.css + mount(App)
 │   │   ├── app/                       #   App / Shell / PanelHost / RouteHost / components / global.css
-│   │   └── lib/                       #   ipc-client / bridge-types / nav-link / dto-guards / stores(.svelte.ts) / theme/vars.ts
+│   │   ├── lib/                       #   ipc-client / bridge-types / nav-link / dto-guards / stores(.svelte.ts) / theme/vars.ts
+│   │   └── tsconfig.json              #   renderer TS project (DOM only, types: [])
 │   │
 │   └── shared/
 │       └── ipc-contract.ts            # ★ method/event names shared by host and frontend (one copy, zero imports)
@@ -177,7 +178,7 @@ rem2-kernel/
 ├── plugins-external-dist/             # external plugin artifacts for releases/tests (not packaged, git-ignored)
 ├── scripts/build-plugins.mjs          # esbuild bundling (honors REM2_EXTERNAL_PLUGINS_DIR; build-time code, outside src/)
 ├── tests/{unit,integration,contract}  # test layers + fixtures/ + helpers/
-├── examples/config/app.config.json    # sample config for the config-json plugin
+├── examples/README.md                 # plugin extension examples and scaffolding notes
 │
 ├── vite.shared.mts                    # ★ single source for alias / ssr.noExternal (conditions differ per target)
 ├── vite.main.config.mts               #   main process build (target node20)
@@ -187,7 +188,6 @@ rem2-kernel/
 ├── tsconfig.json                      #   baseline: kernel + host(cli/ipc) + plugins + tests
 ├── tsconfig.build.json                # ★ the only config with noEmit:false (kernel artifact)
 ├── tsconfig.electron.json             #   main + preload (DOM + node)
-├── tsconfig.frontend.json             #   renderer (DOM only, types: [])
 ├── tsconfig.shell.json                #   forwarder (equivalent to tsconfig.electron.json)
 └── forge.config.mts                   #   asar + extraResource: ['plugins-dist'] + Fuses
 ```
@@ -223,7 +223,7 @@ rem2-kernel/
 | Module                                                        | Responsibility                                                                                                                            | Key symbols                                                           | Not responsible for                                                                                     |
 | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `host/electron/main.ts`                                       | host entry: `createDeps` + `Kernel` + register implementation tables + window lifecycle                                                   | `startKernel`, `registerWhitelistedMethods`                           | knows no plugin id; **contains no method-name string** (tables live in `host/ipc/`)                     |
-| `host/settings/*` + `host/electron/proxy-settings-service.ts` | proxy settings model, address validation, atomic persistence (`proxy-settings.json`) and Electron session application                     | `ProxySettingsStore`, `toProxyConfig`, `ElectronProxySettingsService` | `method-handlers` depends on the interface only (no electron import); accepts host:port or http(s) URLs |
+| `host/settings/*` + `host/electron/app-settings-store.ts` | proxy/appearance models, address validation, unified `settings.json` (electron-store, schemaVersion 1, one-time legacy import) and Electron session application | `ProxySettingsRepository`, `parseAppSettingsDocument`, `ElectronAppSettingsStore`, `toProxyConfig`, `ElectronProxySettingsService` | `method-handlers` depends on interfaces only (no electron import); electron-store only in the Main adapter; accepts host:port or http(s) URLs |
 | `host/ipc/method-handlers.ts` + `forward-map.ts`              | method implementation table (keys enforced complete by `Record`; args validated at runtime by `validate.ts`) + topic → external event map | `METHOD_FACTORIES`, `EVENT_FORWARD_MAP`                               | does not import electron (so vitest can drive it directly)                                              |
 | `host/ipc/bridge.ts` + `shared/ipc-contract.ts`               | the only renderer channel: exact allowlist match + DTO reduction                                                                          | `IpcBridge`, `channels` / `events`                                    | never exposes `bus.emit`, never forwards `bus.on('*')`                                                  |
 | `host/electron/preload.ts`                                    | the only contract boundary: `contextBridge` exposes `{invoke, onEvent}`                                                                   | `Rem2Bridge`                                                          | **does not judge the allowlist** (judgment must happen in main; renderer is untrusted)                  |
@@ -474,12 +474,12 @@ unloadPlugin(pluginId)
 
 ### 7.1 Four kinds of data
 
-| Data        | Produced by                                                                                                                                        | Flows through                                                                                                                                                                         | Consumed by                                                                                                                                        |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Config**  | `config-json` plugin (`JsonConfigProvider`, priority 10) + read-only kernel defaults `{app:{name:'rem2-kernel'}}` + writable `initialConfig` layer | `ConfigService.refresh()` deep-merges by ascending priority into a snapshot; `get()` refreshes lazily                                                                                 | plugins read `ctx.config.get(…)` in `onConfigure`; worker plugins get the init snapshot plus change pushes. **Config never leaks to the renderer** |
-| **Command** | input in `CommandPrompt.svelte`                                                                                                                    | store → `ipc.request` → preload → `IpcBridge` (allowlist) → `bus.request(Topics.CommandExecute)`                                                                                      | kernel `CommandDispatcher` reads the `command.provide` slot → command plugin handler → `{ok, output}` back through the same path                   |
-| **Event**   | plugin `bus.emit`                                                                                                                                  | `EventBusImpl` → `EVENT_FORWARD_MAP` (allowlisted topics) → `toDto` → `Ipc.Event`                                                                                                     | renderer `ipc.subscribe`                                                                                                                           |
-| **Theme**   | `theme-switcher` plugin contributes `ui.theme` (light / dark / system token sets)                                                                  | extension slot → (`method-handlers.ts` → `syncThemeFromExtension()` **pull sync + followSystem materialization**) → host `ThemeRegistryImpl` (catalog + active) → `ui.theme.list/set` | renderer `theme` store → `theme/vars.ts` → CSS variables + `color-scheme`                                                                          |
+| Data        | Produced by                                                                                                                                             | Flows through                                                                                                                                                                         | Consumed by                                                                                                                                        |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Config**  | read-only kernel defaults `{app:{name:'rem2-kernel'}}` + writable `initialConfig` layer; file/env sources can be supplied by a `config.provider` plugin | `ConfigService.refresh()` deep-merges by ascending priority into a snapshot; `get()` refreshes lazily                                                                                 | plugins read `ctx.config.get(…)` in `onConfigure`; worker plugins get the init snapshot plus change pushes. **Config never leaks to the renderer** |
+| **Command** | input in `CommandPrompt.svelte`                                                                                                                         | store → `ipc.request` → preload → `IpcBridge` (allowlist) → `bus.request(Topics.CommandExecute)`                                                                                      | kernel `CommandDispatcher` reads the `command.provide` slot → command plugin handler → `{ok, output}` back through the same path                   |
+| **Event**   | plugin `bus.emit`                                                                                                                                       | `EventBusImpl` → `EVENT_FORWARD_MAP` (allowlisted topics) → `toDto` → `Ipc.Event`                                                                                                     | renderer `ipc.subscribe`                                                                                                                           |
+| **Theme**   | `theme-switcher` plugin contributes `ui.theme` (light / dark / system token sets)                                                                       | extension slot → (`method-handlers.ts` → `syncThemeFromExtension()` **pull sync + followSystem materialization**) → host `ThemeRegistryImpl` (catalog + active) → `ui.theme.list/set` | renderer `theme` store → `theme/vars.ts` → CSS variables + `color-scheme`                                                                          |
 
 The `initialConfig` memory layer has priority 1000, higher than every plugin provider — a plugin's `set()` always writes the memory layer. That is the intended "host config wins" semantics.
 

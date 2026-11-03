@@ -52,16 +52,12 @@ pnpm dev --log-level debug
 
 ```
 ──── rem2-kernel started ────
-loadOrder : com.rem2.config-json -> com.rem2.hello-command -> com.rem2.logger-console -> com.rem2.health-http -> com.rem2.notify-worker -> com.rem2.plugin-inspector
-started   : com.rem2.config-json, com.rem2.hello-command, com.rem2.logger-console, com.rem2.health-http, com.rem2.notify-worker, com.rem2.plugin-inspector
+loadOrder : com.rem2.logger-console -> com.rem2.plugin-inspector
+started   : com.rem2.logger-console, com.rem2.plugin-inspector
 degraded  : (none)
 failed    : (none)
 health    : healthy
-  - com.rem2.config-json [Active] healthy
-  - com.rem2.health-http [Active] healthy
-  - com.rem2.hello-command [Active] healthy
   - com.rem2.logger-console [Active] healthy
-  - com.rem2.notify-worker [Active] healthy
   - com.rem2.plugin-inspector [Active] healthy
 ─────────────────────────────
 ```
@@ -75,7 +71,7 @@ health    : healthy
 pnpm start
 ```
 
-窗口里输入命令（默认 `hello`）点「执行」，命令会经 IPC 桥转发到内核事件总线。顶栏 **Plugins** 打开本地插件管理，可安装、查看、启停和卸载插件；安装前会确认并授予声明能力，安装完成即启用，用户数据默认保留。顶栏 **Settings** 可选择系统代理、直连或手动代理，保存后立即作用于窗口请求与插件下载。
+窗口里输入命令点「执行」，命令会经 IPC 桥转发到内核事件总线。默认不附带命令插件，因此内核会返回明确的 `unknown command`；安装提供 `command.provide` 的插件后即可使用。顶栏 **Plugins** 打开本地插件管理，可安装、查看、启停和卸载插件；安装前会确认并授予声明能力，安装完成即启用，用户数据默认保留。顶栏 **Settings** 可选择系统代理、直连或手动代理，保存后立即作用于窗口请求与插件下载。
 
 > **为什么宿主用 tsx 跑 TypeScript**：宿主自身的入口（终端形态 `src/host/cli/run.ts`、桌面外壳 `src/host/electron/main.ts`）用 TypeScript 编写，开发期由 tsx 直接执行。但**插件运行时并不以原始 `.ts` 加载**——每个插件已由 esbuild 预编译为自包含 ESM bundle，落在 `dist/index.js`（及 `plugins-dist/<id>/dist/index.js`），内核用动态 `import()` 加载。`tsx` 属 `devDependencies`：内核与 `dependencies` 仍零第三方依赖。打包产物若需加载 `.ts` 插件，需自行把 tsx 提为运行时依赖。
 
@@ -159,15 +155,11 @@ export default definePlugin(
 
 ## 示例插件（内置 + 可安装）
 
-| 插件                                           | 证明什么                                                                | 依赖                  |
-| ---------------------------------------------- | ----------------------------------------------------------------------- | --------------------- |
-| [`logger-console`](plugins/logger-console)     | **可观测性是插件** — 提供 `log.sink`                                    | —                     |
-| [`config-json`](plugins/config-json)           | **配置来源是插件** — 提供 `config.provider`                             | —                     |
-| [`hello-command`](plugins/hello-command)       | **业务功能是插件** — 提供 `command.provide`                             | 软依赖 config-json    |
-| [`health-http`](plugins/health-http)           | **运维是插件** — 暴露 `/health` 端点                                    | 硬依赖 logger-console |
-| `theme-switcher`（外部）                       | **UI 是插件** — 亮/暗/跟随系统、强调色表单、选择持久化                  | —                     |
-| [`plugin-inspector`](plugins/plugin-inspector) | **检查器自身也是插件** — 贡献 `ui.panel` + `ui.route`，提供实时插件表格 | —                     |
-| [`notify-worker`](plugins/notify-worker)       | **Worker 线程隔离** — 崩溃不影响内核（故障隔离）                        | —                     |
+| 插件                                           | 证明什么                                                                | 依赖 |
+| ---------------------------------------------- | ----------------------------------------------------------------------- | ---- |
+| [`logger-console`](plugins/logger-console)     | **可观测性是插件** — 提供 `log.sink`                                    | —    |
+| `theme-switcher`（外部）                       | **UI 是插件** — 亮/暗/跟随系统、强调色表单、选择持久化                  | —    |
+| [`plugin-inspector`](plugins/plugin-inspector) | **检查器自身也是插件** — 贡献 `ui.panel` + `ui.route`，提供实时插件表格 | —    |
 
 `theme-switcher` 的源码位于同级 `REM2-plugins` 仓库，**不再作为内置插件打包**：
 `pnpm build:external` 把它构建到 `plugins-external-dist`（git 忽略，不进
@@ -269,7 +261,7 @@ plugins-external-dist/    # 外部插件构建产物（用于发布打包与测�
 dist/                     # 内核产物（tsc，含 .d.ts）
 tests/                    # 单元 / 集成 / 契约测试
 docs/                     # 架构与 API 文档（入口见 docs/INDEX.md；英文见 docs/en/）
-examples/                 # 示例配置与说明
+examples/                 # 插件扩展示例与说明
 ```
 
 ---

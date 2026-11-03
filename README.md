@@ -61,16 +61,12 @@ Expected output:
 
 ```
 ──── rem2-kernel started ────
-loadOrder : com.rem2.config-json -> com.rem2.hello-command -> com.rem2.logger-console -> com.rem2.health-http -> com.rem2.notify-worker -> com.rem2.plugin-inspector
-started   : com.rem2.config-json, com.rem2.hello-command, com.rem2.logger-console, com.rem2.health-http, com.rem2.notify-worker, com.rem2.plugin-inspector
+loadOrder : com.rem2.logger-console -> com.rem2.plugin-inspector
+started   : com.rem2.logger-console, com.rem2.plugin-inspector
 degraded  : (none)
 failed    : (none)
 health    : healthy
-  - com.rem2.config-json [Active] healthy
-  - com.rem2.health-http [Active] healthy
-  - com.rem2.hello-command [Active] healthy
   - com.rem2.logger-console [Active] healthy
-  - com.rem2.notify-worker [Active] healthy
   - com.rem2.plugin-inspector [Active] healthy
 ─────────────────────────────
 ```
@@ -86,9 +82,11 @@ library and provides a command input box.
 pnpm start
 ```
 
-Type a command in the window (default `hello`) and click "Execute"; the command is forwarded
+Type a command in the window and click "Execute"; the command is forwarded
 
-to the kernel event bus through the IPC bridge. The top-bar **Plugins** view lists, installs,
+to the kernel event bus through the IPC bridge. No built-in command is shipped, so the kernel
+
+returns an explicit `unknown command` until a plugin contributes `command.provide`. The top-bar **Plugins** view lists, installs,
 
 enables, disables and uninstalls local plugins; installs approve the declared capabilities up front and enable the plugin, and user
 
@@ -198,15 +196,11 @@ Full API reference: **[docs/02-plugin-api.md](docs/02-plugin-api.md)** (English:
 
 ## Example plugins (built-in + installable)
 
-| Plugin                                         | Proves what                                                                                     | Depends on              |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------- |
-| [`logger-console`](plugins/logger-console)     | **observability is a plugin** — provides `log.sink`                                             | —                       |
-| [`config-json`](plugins/config-json)           | **config source is a plugin** — provides `config.provider`                                      | —                       |
-| [`hello-command`](plugins/hello-command)       | **business logic is a plugin** — provides `command.provide`                                     | soft-dep config-json    |
-| [`health-http`](plugins/health-http)           | **ops is a plugin** — exposes a `/health` endpoint                                              | hard-dep logger-console |
-| `theme-switcher` (external)                    | **UI is a plugin** — light/dark/system themes, accent form, persisted selection                 | —                       |
-| [`plugin-inspector`](plugins/plugin-inspector) | **the inspector is a plugin** — contributes `ui.panel` + `ui.route`, serves a live plugin table | —                       |
-| [`notify-worker`](plugins/notify-worker)       | **worker-thread isolation** — a crash never hits the kernel (fault isolation)                   | —                       |
+| Plugin                                         | Proves what                                                                                     | Depends on |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------- |
+| [`logger-console`](plugins/logger-console)     | **observability is a plugin** — provides `log.sink`                                             | —          |
+| `theme-switcher` (external)                    | **UI is a plugin** — light/dark/system themes, accent form, persisted selection                 | —          |
+| [`plugin-inspector`](plugins/plugin-inspector) | **the inspector is a plugin** — contributes `ui.panel` + `ui.route`, serves a live plugin table | —          |
 
 `theme-switcher` lives in the sibling `REM2-plugins` repository and is **not**
 bundled as a built-in: `pnpm build:external` builds it into
@@ -316,7 +310,7 @@ plugins-external-dist/    # external plugin artifacts for release packaging/test
 dist/                     # kernel artifacts (tsc, includes .d.ts)
 tests/                    # unit / integration / contract tests
 docs/                     # architecture & API docs (entry: docs/INDEX.md; English: docs/en/)
-examples/                 # example config & notes
+examples/                 # plugin extension notes
 ```
 
 ---

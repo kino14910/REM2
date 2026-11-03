@@ -64,7 +64,7 @@ src/frontend/
 │   ├── RouteHost.svelte         # ★ ui.route slot: derives nav entries from route declarations (explicit error line on top)
 │   ├── components/
 │   │   ├── PanelShell.svelte    # single-panel chrome: table / JSON rendering + refresh (notify plugin + local re-fetch + consume push)
-│   │   ├── ThemeToggle.svelte   # light/dark switch: renders only when the catalog holds both modes, sends ui.theme.set
+│   │   ├── ThemeToggle.svelte   # light/dark switch (Settings view): renders only when the catalog holds both modes, sends ui.theme.set; without a catalog it applies and persists the mode locally
 │   │   ├── HealthBadge.svelte   # health badge reading the health report
 │   │   ├── PluginManager.svelte # host-owned plugin management: list / detail / install / enable / disable / uninstall
 │   │   └── CommandPrompt.svelte # command input and result display
@@ -126,9 +126,11 @@ Responses and events live on separate channels so the frontend `subscribe` only 
 | 19  | `plugin.download.cancel`   | `{ operationId }`                                            | `{ ok: true, cancelled }`                 | aborts a queued or downloading operation; repeated cancels are idempotent                                                                                                 |
 | 20  | `plugin.update.check`      | `{ pluginId? }`                                              | `PluginUpdateCheckDto`                    | resolves releases from provenance; returns `updates` plus per-source `issues`, never a silent "no update"                                                                 |
 | 21  | `plugin.update.install`    | `{ operationId, pluginId, expectedVersion, expectedSha256 }` | `PluginOperationResultDto`                | re-check confirmed version/digest → download/verify/extract → dependency preflight → backup → install → preserve config/data → optional restart; rolls back before commit |
-| 22  | `settings.proxy.get`       | —                                                            | `ProxySettingsDto`                        | reads `proxy-settings.json` + `session.resolveProxy()` diagnostic (no network, no paths)                                                                                  |
-| 23  | `settings.proxy.set`       | `{ mode, address?, bypass? }`                                | `ProxySettingsDto`                        | validates the address → native confirmation → `session.setProxy()` → atomic write of `proxy-settings.json`; accepts only system/direct/manual                             |
+| 22  | `settings.proxy.get`       | —                                                            | `ProxySettingsDto`                        | reads the proxy block of `settings.json` + `session.resolveProxy()` diagnostic (no network, no paths)                                                                      |
+| 23  | `settings.proxy.set`       | `{ mode, address?, bypass? }`                                | `ProxySettingsDto`                        | validates the address → native confirmation → `session.setProxy()` → atomic write of the proxy block in `settings.json`; accepts only system/direct/manual                 |
 | 24  | `plugin.reinstall`         | `{ pluginId }`                                               | `PluginOperationResultDto`                | reads the removal record → native capability confirmation → reinstalls and enables from the recorded URL + digest; directory records return `E_SOURCE_INVALID`            |
+| 25  | `settings.appearance.get`  | —                                                            | `AppearanceSettingsDto`                   | reads the appearance block of `settings.json` (defaults to `system`); restores `data-mode` when no theme catalog is loaded                                                |
+| 26  | `settings.appearance.set`  | `{ colorMode }`                                              | `AppearanceSettingsDto`                   | validates light/dark/system → atomic write of the appearance block in `settings.json`; `ui.theme.set` also mirrors the active theme's mode                                |
 
 ### 3.3 Event allowlist
 
@@ -188,6 +190,9 @@ interface ThemeDto {
 interface ThemeCatalogDto {
   themes: ThemeDto[]
   activeId?: string
+}
+interface AppearanceSettingsDto {
+  colorMode: 'light' | 'dark' | 'system'
 }
 interface HealthDto {
   status: 'healthy' | 'degraded' | 'unhealthy'

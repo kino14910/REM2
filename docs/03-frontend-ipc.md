@@ -64,7 +64,7 @@ src/frontend/
 │   ├── RouteHost.svelte         # ★ ui.route 插槽：由路由声明派生导航项（顶部显式 error 行）
 │   ├── components/
 │   │   ├── PanelShell.svelte    # 单面板 chrome：表格 / JSON 渲染 + 刷新（通知插件 + 本地回取 + 消费推送）
-│   │   ├── ThemeToggle.svelte   # light/dark 切换：目录含双模式时才渲染，发 ui.theme.set
+│   │   ├── ThemeToggle.svelte   # light/dark 切换（设置页）：目录含双模式时才渲染，发 ui.theme.set；无目录时本地应用并持久化模式
 │   │   ├── HealthBadge.svelte   # 健康徽标：读 health 报告
 │   │   ├── PluginManager.svelte # 宿主常驻插件管理：列表 / 详情 / 本地与远程安装 / 更新 / 启停 / 卸载 / 确认
 │   │   └── CommandPrompt.svelte # 命令输入与结果展示
@@ -126,9 +126,11 @@ export const Ipc = {
 | 19  | `plugin.download.cancel`   | `{ operationId }`                                            | `{ ok: true, cancelled }`                  | `LocalPluginManager.cancelDownload()`：排队中与下载中的 operation 都可中止；重复取消幂等                 |
 | 20  | `plugin.update.check`      | `{ pluginId? }`                                              | `PluginUpdateCheckDto`                     | 按 provenance 解析最新 release；结果含 `updates` 和逐来源 `issues`，失败不再伪装成无更新                 |
 | 21  | `plugin.update.install`    | `{ operationId, pluginId, expectedVersion, expectedSha256 }` | `PluginOperationResultDto`                 | 复核确认的版本/摘要 → 下载/校验/解压 → 依赖预检 → 备份 → 安装 → 保留 config/data → 必要时重启；失败回滚  |
-| 22  | `settings.proxy.get`       | —                                                            | `ProxySettingsDto`                         | 读 `proxy-settings.json` + `session.resolveProxy()` 诊断（不触碰网络、不返回路径）                       |
-| 23  | `settings.proxy.set`       | `{ mode, address?, bypass? }`                                | `ProxySettingsDto`                         | 校验地址 → 主进程确认 → `session.setProxy()` → 原子写 `proxy-settings.json`；仅接受 system/direct/manual |
+| 22  | `settings.proxy.get`       | —                                                            | `ProxySettingsDto`                         | 读 `settings.json` 的 proxy 块 + `session.resolveProxy()` 诊断（不触碰网络、不返回路径）                 |
+| 23  | `settings.proxy.set`       | `{ mode, address?, bypass? }`                                | `ProxySettingsDto`                         | 校验地址 → 主进程确认 → `session.setProxy()` → 原子写 `settings.json` 的 proxy 块；仅接受 system/direct/manual |
 | 24  | `plugin.reinstall`         | `{ pluginId }`                                               | `PluginOperationResultDto`                 | 读取卸载记录 → 主进程确认能力 → 按记录 URL + 摘要重装并启用；目录来源返回 `E_SOURCE_INVALID`             |
+| 25  | `settings.appearance.get`  | —                                                            | `AppearanceSettingsDto`                    | 读 `settings.json` 的 appearance 块（缺省 `system`）；无主题目录时用于恢复 `data-mode`                   |
+| 26  | `settings.appearance.set`  | `{ colorMode }`                                              | `AppearanceSettingsDto`                    | 校验 light/dark/system → 原子写 `settings.json` 的 appearance 块；`ui.theme.set` 也会镜像激活主题的模式   |
 
 ### 3.3 事件白名单
 
@@ -188,6 +190,9 @@ interface ThemeDto {
 interface ThemeCatalogDto {
   themes: ThemeDto[]
   activeId?: string
+}
+interface AppearanceSettingsDto {
+  colorMode: 'light' | 'dark' | 'system'
 }
 interface HealthDto {
   status: 'healthy' | 'degraded' | 'unhealthy'

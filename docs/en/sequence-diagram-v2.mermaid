@@ -17,7 +17,7 @@ sequenceDiagram
     participant EP as ExtensionPointRegistry
     participant LD as PluginLoader
     participant PIPE as LifecyclePipeline
-    participant PL as Plugin hello-command
+    participant PL as Plugin (command.provide)
 
     EM->>K: new Kernel(options)
     Note over K: 14 services injected by Composition.createDeps()<br/>Kernel ctor no longer new's concrete impl
@@ -98,7 +98,7 @@ sequenceDiagram
     participant EB as EventBusImpl
     participant CD as CommandDispatcher (kernel)
     participant EP as ExtensionPointRegistry
-    participant HP as hello-command
+    participant HP as Command plugin (command.provide)
 
     S->>IC: execute('hello', {name:'rem2-kernel'})
     IC->>PL: window.rem2.invoke('command.execute', {command, args})
@@ -154,7 +154,7 @@ sequenceDiagram
 %% ═════════════════════════════════════════════════════
 sequenceDiagram
     autonumber
-    participant PJ as Plugin config-json
+    participant PJ as Config provider plugin (config.provider)
     participant CFG as ConfigService
     participant P1 as Plugin onConfigure
     participant WK as Worker plugin
@@ -164,7 +164,7 @@ sequenceDiagram
     CFG->>CFG: subscribe provider.onDidChange → dirty=true + emitChange
     CFG->>CFG: refresh() ★ serial await each provider → deepMerge → snapshot
 
-    P1->>CFG: ctx.config.get('health.http.port', 0)
+    P1->>CFG: ctx.config.get('feature.flag', false)
     Note over CFG: ★ lazy refresh when dirty=true (fixes O18)
 
     CFG->>WK: onDidChange → postMessage({t:'config', snapshot})
@@ -191,7 +191,7 @@ sequenceDiagram
     participant RC as rootContainer
     participant DEP as Dependent plugin
 
-    EM->>K: unloadPlugin('com.rem2.config-json', 'user-disable')
+    EM->>K: unloadPlugin('com.rem2.plugin-inspector', 'user-disable')
     K->>REG: allLoaded().filter(hard-depends on this plugin)
     loop recursive (dependents stop first)
         K->>K: unloadPlugin(dependent, 'dependency-failed')
@@ -206,7 +206,7 @@ sequenceDiagram
     PIPE->>DEP: onDispose(ctx)
 
     Note over K: teardownPluginArtifacts —— P6 forced reclaim, not dependent on plugin discipline
-    K->>EP: retractAll('com.rem2.config-json') ★ retract all its extension-point contributions
+    K->>EP: retractAll('com.rem2.plugin-inspector') ★ retract all its extension-point contributions
     K->>HS: unregisterCheck(pluginId)
     K->>PM: unregister(pluginId) (incl. guard.unregisterPermissions)
     K->>RC: unmountChildContainer(container)
