@@ -1,0 +1,18 @@
+# 仓库内被跟踪的均为文本源码与配置，统一使用 LF
+* text=auto eol=lf
+
+*.ts text eol=lf
+*.mts text eol=lf
+*.cjs text eol=lf
+*.mjs text eol=lf
+*.svelte text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.mermaid text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.yaml text eol=lf
+*.txt text eol=lf
+
+# 锁文件由 pnpm 生成，不计入语言统计
+pnpm-lock.yaml linguist-generated=true
