@@ -22,6 +22,7 @@ import type {
   RequestOptions,
   Unsubscribe,
 } from '../contracts/event-bus.js'
+
 import { NoResponderError } from '../errors.js'
 import { withTimeout } from '../util/timeout.js'
 import {

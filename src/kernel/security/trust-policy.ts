@@ -6,12 +6,13 @@
  * capabilities require explicit grants.
  */
 
+import type { CandidateSource } from '../discovery/candidate.js'
+
 import {
   Capabilities,
   type TrustLevel,
   type TrustPolicy,
 } from '../contracts/permission.js'
-import type { CandidateSource } from '../discovery/candidate.js'
 
 export const DEFAULT_TRUST_POLICY: TrustPolicy = {
   defaults: {

@@ -1,7 +1,9 @@
+import type { RouteDto } from '@/frontend/lib/bridge-types'
+
+import { parseRouteList } from '@/frontend/lib/dto-guards'
 import { ipc } from '@/frontend/lib/ipc-client'
 import { channels } from '@/shared/ipc-contract'
-import type { RouteDto } from '@/frontend/lib/bridge-types'
-import { parseRouteList } from '@/frontend/lib/dto-guards'
+
 import { panels } from './panels.svelte'
 
 class RoutesStore {

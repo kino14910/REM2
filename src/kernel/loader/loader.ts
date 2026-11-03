@@ -1,18 +1,19 @@
-import type { Candidate } from '../discovery/candidate.js'
-import type { PluginFactoryHooks } from '../contracts/plugin.js'
-import type { PluginContext } from '../contracts/context.js'
 import type { Container } from '../contracts/container.js'
+import type { PluginContext } from '../contracts/context.js'
 import type { PermissionSet } from '../contracts/permission.js'
+import type { PluginFactoryHooks } from '../contracts/plugin.js'
+import type { Candidate } from '../discovery/candidate.js'
 import type {
   LoadedPlugin,
   PluginLoaderOptions,
 } from '../extensions/ports-types.js'
-import { assertPluginFactory, inlineManifestId } from './plugin-factory.js'
-import { resolveEntry } from './module-resolver.js'
+import type { WorkerHostFacilities } from '../isolation/worker-host.js'
+
 import { KernelError, ManifestMismatchError } from '../errors.js'
 import { WorkerPluginHost } from '../isolation/worker-host.js'
 import { WorkerPluginProxy } from '../isolation/worker-plugin-proxy.js'
-import type { WorkerHostFacilities } from '../isolation/worker-host.js'
+import { resolveEntry } from './module-resolver.js'
+import { assertPluginFactory, inlineManifestId } from './plugin-factory.js'
 
 /** Context construction callback (provided by the Kernel). */
 export type ContextFactory = (

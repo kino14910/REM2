@@ -1,7 +1,9 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
+
 import { isValidPluginId } from '@/kernel/discovery/manifest-validator.js'
+
 import { PluginManagementError } from './errors.js'
 
 /** Capability names use the same grammar as `manifest.requires`. */
@@ -44,7 +46,9 @@ export class PluginGrantStore {
       throw new PluginManagementError(
         'E_STATE_INVALID',
         'plugin grants are not valid JSON',
-        { cause: error },
+        {
+          cause: error,
+        },
       )
     }
     if (!isPersistedGrants(raw)) {
@@ -156,7 +160,9 @@ export class PluginGrantStore {
       throw new PluginManagementError(
         'E_STATE_WRITE',
         'failed to persist plugin grants',
-        { cause: error },
+        {
+          cause: error,
+        },
       )
     }
   }

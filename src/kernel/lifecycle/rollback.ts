@@ -4,9 +4,10 @@
  * isolated from the others.
  */
 
-import type { PluginFactoryHooks } from '../contracts/plugin.js'
 import type { PluginContext } from '../contracts/context.js'
 import type { StopReason } from '../contracts/lifecycle.js'
+import type { PluginFactoryHooks } from '../contracts/plugin.js'
+
 import { callWithTimeout } from '../util/timeout.js'
 
 export interface RollbackOptions {

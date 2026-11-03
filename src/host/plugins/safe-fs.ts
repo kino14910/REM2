@@ -11,6 +11,7 @@ import {
   rm,
 } from 'node:fs/promises'
 import path from 'node:path'
+
 import { PluginManagementError } from './errors.js'
 
 const MAX_FILES = 2000

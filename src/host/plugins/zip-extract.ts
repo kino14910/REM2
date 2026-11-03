@@ -8,6 +8,7 @@ import {
 } from 'node:fs/promises'
 import path from 'node:path'
 import { inflateRawSync } from 'node:zlib'
+
 import { PluginManagementError } from './errors.js'
 import { assertInside } from './safe-fs.js'
 
@@ -58,7 +59,9 @@ export async function extractZipSafe(
     throw new PluginManagementError(
       'E_PACKAGE_INVALID',
       `cannot read ZIP package: ${zipPath}`,
-      { cause: error },
+      {
+        cause: error,
+      },
     )
   }
 
@@ -112,7 +115,9 @@ export async function extractZipSafe(
     throw new PluginManagementError(
       'E_PACKAGE_INVALID',
       'failed to extract ZIP package',
-      { cause: error },
+      {
+        cause: error,
+      },
     )
   }
 }

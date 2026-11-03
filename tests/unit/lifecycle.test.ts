@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
+
 import { LifecycleManager } from '@/kernel/lifecycle/manager.js'
 import { isLegalTransition } from '@/kernel/lifecycle/phases.js'
+
 import { makePlugin } from '../helpers/make-plugin.js'
 
 /** Build a minimal PluginContext stand-in usable by LifecycleManager. */

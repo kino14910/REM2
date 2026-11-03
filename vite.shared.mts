@@ -14,8 +14,9 @@
  * This error only surfaces after packaging — in dev (in-memory bundle) it is invisible.
  */
 
-import { fileURLToPath } from 'node:url'
 import type { UserConfig } from 'vite'
+
+import { fileURLToPath } from 'node:url'
 
 /** Absolute path to the kernel public entry (every config targets the same file). */
 export const KERNEL_ALIAS = fileURLToPath(

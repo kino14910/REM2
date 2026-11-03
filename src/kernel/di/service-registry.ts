@@ -4,12 +4,12 @@
  * capability proxy (wrapped by CapabilityGuard).
  */
 
+import type { Container } from '../contracts/container.js'
 import type {
   ServiceToken,
   ServiceFactory,
   Lifetime,
 } from '../contracts/service-token.js'
-import type { Container } from '../contracts/container.js'
 import type { ServiceRegistry } from '../contracts/service.js'
 
 export class ServiceRegistryFacade implements ServiceRegistry {

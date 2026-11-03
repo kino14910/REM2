@@ -10,48 +10,49 @@
  * services -> host default extension implementations -> core services.
  */
 
-import { Container } from './di/container.js'
-import { EventBusImpl } from './events/event-bus.js'
+import type { Container as ContainerContract } from './contracts/container.js'
+import type { PluginContext } from './contracts/context.js'
+import type { ResolveIssue } from './dependency/resolver.js'
+import type { Candidate } from './discovery/candidate.js'
+import type { LoadOptions } from './loader/loader.js'
+
+import {
+  defaultKernelOptions,
+  type KernelOptions,
+} from './bootstrap/options.js'
+import {
+  registerCoreServices,
+  type CoreServices,
+} from './bootstrap/register-core-services.js'
 import { ConfigService } from './config/config-service.js'
 import {
   MemoryConfigProvider,
   ReadOnlyMemoryConfigProvider,
 } from './config/memory-provider.js'
-import { LogService } from './observability/log-service.js'
-import { MetricsService } from './observability/metrics-service.js'
-import { TracingService } from './observability/tracing-service.js'
-import { HealthService } from './observability/health-service.js'
-import { PermissionManager } from './security/permission-manager.js'
-import { CapabilityGuard } from './security/capability-guard.js'
-import { PluginsRegistry } from './registry/plugins-registry.js'
-import { SerialScheduler } from './scheduler/serial-scheduler.js'
+import { createPluginContext } from './context/plugin-context.js'
+import { KERNEL_METRICS } from './contracts/metrics.js'
 import { DependencyResolver } from './dependency/resolver.js'
+import { Container } from './di/container.js'
 import { PluginDiscovery } from './discovery/discovery.js'
-import { PluginLoader } from './loader/loader.js'
-import { LifecycleManager } from './lifecycle/manager.js'
-import { ExtensionPointRegistry } from './extensions/registry.js'
+import { EventBusImpl } from './events/event-bus.js'
 import { CommandDispatcher } from './extensions/command-dispatcher.js'
 import { EXTENSION_POINT_DEFS } from './extensions/definitions.js'
+import { ExtensionPointRegistry } from './extensions/registry.js'
+import { LifecycleManager } from './lifecycle/manager.js'
+import { PluginLoader } from './loader/loader.js'
 import {
   registerHostConfigLayer,
   registerHostSinks,
 } from './observability/extension-sinks.js'
-import {
-  registerCoreServices,
-  type CoreServices,
-} from './bootstrap/register-core-services.js'
-import {
-  defaultKernelOptions,
-  type KernelOptions,
-} from './bootstrap/options.js'
+import { HealthService } from './observability/health-service.js'
+import { LogService } from './observability/log-service.js'
+import { MetricsService } from './observability/metrics-service.js'
+import { TracingService } from './observability/tracing-service.js'
+import { PluginsRegistry } from './registry/plugins-registry.js'
+import { SerialScheduler } from './scheduler/serial-scheduler.js'
+import { CapabilityGuard } from './security/capability-guard.js'
+import { PermissionManager } from './security/permission-manager.js'
 import { KERNEL_VERSION, CONTRACT_VERSION } from './version.js'
-import { KERNEL_METRICS } from './contracts/metrics.js'
-import type { Candidate } from './discovery/candidate.js'
-import type { PluginContext } from './contracts/context.js'
-import type { Container as ContainerContract } from './contracts/container.js'
-import { createPluginContext } from './context/plugin-context.js'
-import type { LoadOptions } from './loader/loader.js'
-import type { ResolveIssue } from './dependency/resolver.js'
 
 /**
  * All dependencies of Kernel.

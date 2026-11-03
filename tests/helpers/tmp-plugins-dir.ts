@@ -1,7 +1,9 @@
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+
 import type { MakeManifestOptions } from './make-manifest.js'
+
 import { makeManifest } from './make-manifest.js'
 
 /** Temp plugin directory handle. */

@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+
 import {
   PluginProvenanceStore,
   type PluginProvenance,
@@ -104,7 +105,9 @@ describe('unit · plugin provenance store', () => {
     await mkdir(file)
     await expect(
       store.set('com.example.plugin', validEntry),
-    ).rejects.toMatchObject({ code: 'E_STATE_WRITE' })
+    ).rejects.toMatchObject({
+      code: 'E_STATE_WRITE',
+    })
     expect(store.get('com.example.plugin')).toBeUndefined()
     expect(store.entries()).toEqual({})
   })

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+
 import { Kernel } from '@/kernel/kernel.js'
+
 import { materializePlugins } from '../fixtures/fake-kernel.js'
 
 describe('integration · fault-isolation', () => {

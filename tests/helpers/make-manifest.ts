@@ -6,14 +6,14 @@
  */
 
 import type {
-  Candidate,
-  CandidateSource,
-} from '@/kernel/discovery/candidate.js'
-import type {
   Compatibility,
   ManifestContribution,
   PluginManifest,
 } from '@/kernel/contracts/manifest.js'
+import type {
+  Candidate,
+  CandidateSource,
+} from '@/kernel/discovery/candidate.js'
 
 /** makeManifest options. */
 export interface MakeManifestOptions {

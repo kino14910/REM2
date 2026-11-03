@@ -7,9 +7,10 @@
  * Tailwind emits a static CSS asset, so no runtime style generation is involved.
  */
 
-import { defineConfig } from 'vite'
-import tailwindcss from '@tailwindcss/vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
+import tailwindcss from '@tailwindcss/vite'
+import { defineConfig } from 'vite'
+
 import { KERNEL_RESOLVE, KERNEL_BUILD } from './vite.shared.mjs'
 
 export default defineConfig({

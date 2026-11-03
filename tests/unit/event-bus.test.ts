@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
+
+import { NoResponderError, TimeoutError } from '@/kernel/errors.js'
 import { EventBusImpl } from '@/kernel/events/event-bus.js'
 import { matches } from '@/kernel/events/pattern.js'
 import { Priority, compareHandlers } from '@/kernel/events/priority.js'
-import { NoResponderError, TimeoutError } from '@/kernel/errors.js'
 
 describe('events · wildcard matching', () => {
   it('exact match', () => {

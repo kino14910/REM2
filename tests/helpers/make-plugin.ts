@@ -1,4 +1,3 @@
-import { defineToken } from 'rem2-kernel'
 import type {
   HealthStatus,
   PluginContext,
@@ -6,6 +5,9 @@ import type {
   ServiceToken,
   StopReason,
 } from 'rem2-kernel'
+
+import { defineToken } from 'rem2-kernel'
+
 import { makeManifest, type MakeManifestOptions } from './make-manifest.js'
 
 /** Hook invocation record. */

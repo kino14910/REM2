@@ -5,11 +5,14 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { ConfigService } from '@/kernel/config/config-service.js'
+
 import type { ConfigProviderFailure } from '@/kernel/config/config-service.js'
 import type { ConfigProvider } from '@/kernel/contracts/config.js'
+
+import { ConfigService } from '@/kernel/config/config-service.js'
 import { DependencyResolver } from '@/kernel/dependency/resolver.js'
 import { validateManifest } from '@/kernel/discovery/manifest-validator.js'
+
 import { makeCandidate, makeManifest } from '../helpers/make-manifest.js'
 
 // ─────────────────────────── 1. Config provider failures must be observable ───────────────────────────

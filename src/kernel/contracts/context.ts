@@ -7,18 +7,18 @@
  * registry.
  */
 
-import type { PluginManifest } from './manifest.js'
-import type { ServicesView } from './service.js'
-import type { ServiceToken } from './service-token.js'
+import type { ConfigAccess } from './config.js'
 import type { Container } from './container.js'
 import type { EventBus } from './event-bus.js'
-import type { ConfigAccess } from './config.js'
+import type { ExtensionContributorView } from './extension-point.js'
+import type { LifecyclePhase } from './lifecycle.js'
 import type { Logger } from './logging.js'
+import type { PluginManifest } from './manifest.js'
 import type { MetricsApi } from './metrics.js'
 import type { PermissionSet } from './permission.js'
-import type { LifecyclePhase } from './lifecycle.js'
 import type { PluginsRegistryView } from './plugins.js'
-import type { ExtensionContributorView } from './extension-point.js'
+import type { ServiceToken } from './service-token.js'
+import type { ServicesView } from './service.js'
 
 export interface ExportOptions {
   /** Capability required to export this service; other plugins resolving it are checked through a capability proxy. */

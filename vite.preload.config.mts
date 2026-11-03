@@ -12,6 +12,7 @@
  */
 
 import { defineConfig } from 'vite'
+
 import { NODE_SHARED } from './vite.shared.mjs'
 
 export default defineConfig({

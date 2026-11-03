@@ -20,25 +20,24 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { Kernel } from '@/kernel/kernel.js'
-import { createDeps } from '@/kernel/composition.js'
-import { KernelTokens } from '@/kernel/contracts/kernel-tokens.js'
-import { Topics } from '@/kernel/topics.js'
+
 import type { EventBus } from '@/kernel/contracts/event-bus.js'
 import type { PanelContribution } from '@/kernel/contracts/ui.js'
+
 import { ThemeRegistryImpl } from '@/host/electron/theme-registry.js'
-import { createMethodHandlers } from '@/host/ipc/method-handlers.js'
 import { IpcBridge } from '@/host/ipc/bridge.js'
-import {
-  channels,
-  Ipc,
-  type IpcResponse,
-} from '@/shared/ipc-contract.js'
-import { createTmpPluginsDir } from '../helpers/tmp-plugins-dir.js'
+import { createMethodHandlers } from '@/host/ipc/method-handlers.js'
+import { createDeps } from '@/kernel/composition.js'
+import { KernelTokens } from '@/kernel/contracts/kernel-tokens.js'
+import { Kernel } from '@/kernel/kernel.js'
+import { Topics } from '@/kernel/topics.js'
+import { channels, Ipc, type IpcResponse } from '@/shared/ipc-contract.js'
+
 import {
   cleanupTestPluginDataRoots,
   createTestPluginDataRoot,
 } from '../helpers/plugin-data-root.js'
+import { createTmpPluginsDir } from '../helpers/tmp-plugins-dir.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = path.resolve(HERE, '..', '..')

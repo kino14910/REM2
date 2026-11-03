@@ -10,9 +10,10 @@
  * switching themes needs no CSP relaxation or `unsafe-eval`.
  */
 
+import type { ThemeDto } from '@/frontend/lib/bridge-types.js'
+
 import { ipc } from '@/frontend/lib/ipc-client'
 import { channels, type ColorModeDto } from '@/shared/ipc-contract'
-import type { ThemeDto } from '@/frontend/lib/bridge-types.js'
 
 const COLOR_KEYS = [
   'background',

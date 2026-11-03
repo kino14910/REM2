@@ -1,5 +1,6 @@
-import { net } from 'electron'
 import type { ClientRequest, IncomingMessage, Session } from 'electron'
+
+import { net } from 'electron'
 
 /**
  * `fetch` adapter over Electron's `ClientRequest`.

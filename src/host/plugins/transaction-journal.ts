@@ -8,7 +8,9 @@ import {
 } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
+
 import { isValidPluginId } from '@/kernel/discovery/manifest-validator.js'
+
 import type { PluginProvenance } from './provenance-store.js'
 
 export type UpdateTransactionStage =

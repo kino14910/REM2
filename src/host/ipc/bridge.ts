@@ -12,6 +12,7 @@
 
 import type { EventBus, Unsubscribe } from '@/kernel/contracts/event-bus.js'
 import type { TopicValue } from '@/kernel/topics.js'
+
 import {
   ALLOWED_EVENT_SET,
   ALLOWED_METHOD_SET,

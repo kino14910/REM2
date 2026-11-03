@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { Container } from '@/kernel/di/container.js'
+
 import { defineToken } from '@/kernel/contracts/service-token.js'
+import { Container } from '@/kernel/di/container.js'
 import { NoProviderError } from '@/kernel/errors.js'
 
 interface Svc {

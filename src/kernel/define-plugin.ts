@@ -7,9 +7,10 @@
  * exports each have their own drawbacks.
  */
 
-import type { PluginManifestInit } from './contracts/manifest.js'
 import type { PluginContext } from './contracts/context.js'
+import type { PluginManifestInit } from './contracts/manifest.js'
 import type { PluginFactory, PluginFactoryHooks } from './contracts/plugin.js'
+
 import { ManifestError } from './errors.js'
 
 /**

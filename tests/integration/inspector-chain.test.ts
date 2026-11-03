@@ -15,14 +15,13 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { Kernel } from '@/kernel/kernel.js'
+
+import type { EventBus, Unsubscribe } from '@/kernel/contracts/event-bus.js'
+
 import { createDeps } from '@/kernel/composition.js'
 import { KernelTokens } from '@/kernel/contracts/kernel-tokens.js'
+import { Kernel } from '@/kernel/kernel.js'
 import { Topics } from '@/kernel/topics.js'
-import type {
-  EventBus,
-  Unsubscribe,
-} from '@/kernel/contracts/event-bus.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = path.resolve(HERE, '..', '..')

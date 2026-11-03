@@ -31,10 +31,12 @@
  * in `tests/integration/command-chain.test.ts`.
  */
 
-import { Topics } from '@/kernel/topics.js'
-import { channels } from '@/shared/ipc-contract.js'
-import type { AllowedMethod } from '@/shared/ipc-contract.js'
-import type { Kernel } from '@/kernel/kernel.js'
+import type {
+  LocalPluginManager,
+  RemoteProgress,
+} from '@/host/plugins/local-plugin-manager.js'
+import type { AppearanceSettingsService } from '@/host/settings/appearance-settings.js'
+import type { ProxySettingsService } from '@/host/settings/proxy-settings-service.js'
 import type { EventBus } from '@/kernel/contracts/event-bus.js'
 import type { HealthReport } from '@/kernel/contracts/health.js'
 import type {
@@ -43,6 +45,14 @@ import type {
   ThemeDefinition,
   ThemeRegistry,
 } from '@/kernel/contracts/ui.js'
+import type { Kernel } from '@/kernel/kernel.js'
+import type { AllowedMethod } from '@/shared/ipc-contract.js'
+
+import { PluginManagementError } from '@/host/plugins/errors.js'
+import { ProxySettingsError } from '@/host/settings/proxy-settings.js'
+import { Topics } from '@/kernel/topics.js'
+import { channels } from '@/shared/ipc-contract.js'
+
 import {
   appearanceSettingsArgsOf,
   inspectRemoteArgsOf,
@@ -60,14 +70,6 @@ import {
   updateCheckArgsOf,
   updateInstallArgsOf,
 } from './validate.js'
-import type {
-  LocalPluginManager,
-  RemoteProgress,
-} from '@/host/plugins/local-plugin-manager.js'
-import { PluginManagementError } from '@/host/plugins/errors.js'
-import type { AppearanceSettingsService } from '@/host/settings/appearance-settings.js'
-import type { ProxySettingsService } from '@/host/settings/proxy-settings-service.js'
-import { ProxySettingsError } from '@/host/settings/proxy-settings.js'
 
 /** Handler for a single method (args come from the renderer and are untrusted at runtime). */
 export type MethodHandler = (args: unknown) => unknown | Promise<unknown>

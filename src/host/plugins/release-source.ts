@@ -176,7 +176,9 @@ function parseSource(source: string): ParsedSource {
     throw new PluginManagementError(
       'E_SOURCE_INVALID',
       'invalid escaped GitHub source path',
-      { cause: error },
+      {
+        cause: error,
+      },
     )
   }
   const [owner, repo] = parts
@@ -377,21 +379,27 @@ async function fetchWithTimeout<T>(
       throw new PluginManagementError(
         'E_CANCELLED',
         'release request was cancelled',
-        { cause: error },
+        {
+          cause: error,
+        },
       )
     }
     if (controller.signal.aborted) {
       throw new PluginManagementError(
         'E_DOWNLOAD_TIMEOUT',
         `release request timed out: ${url}`,
-        { cause: error },
+        {
+          cause: error,
+        },
       )
     }
     if (error instanceof PluginManagementError) throw error
     throw new PluginManagementError(
       'E_DOWNLOAD',
       `release request failed: ${url}`,
-      { cause: error },
+      {
+        cause: error,
+      },
     )
   } finally {
     clearTimeout(timer)

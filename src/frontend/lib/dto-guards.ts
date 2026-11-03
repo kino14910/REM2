@@ -8,7 +8,6 @@
  * lists throw so the store can degrade to its error state.
  */
 
-import type { PanelDto, PanelFormDto, RouteDto } from './bridge-types.js'
 import type {
   AppearanceSettingsDto,
   ColorModeDto,
@@ -22,6 +21,8 @@ import type {
   ProxyModeDto,
   ProxySettingsDto,
 } from '@/shared/ipc-contract.js'
+
+import type { PanelDto, PanelFormDto, RouteDto } from './bridge-types.js'
 
 /** Upper bound for rendered panel data (keeps a rogue plugin from freezing the UI). */
 const MAX_PANEL_DATA_CHARS = 32768

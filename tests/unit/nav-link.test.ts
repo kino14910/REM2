@@ -9,8 +9,10 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { resolveActivePanel } from '@/frontend/lib/nav-link.js'
+
 import type { PanelDto, RouteDto } from '@/frontend/lib/bridge-types.js'
+
+import { resolveActivePanel } from '@/frontend/lib/nav-link.js'
 
 function panel(panelId: string): PanelDto {
   return {

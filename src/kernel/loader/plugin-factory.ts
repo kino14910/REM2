@@ -1,5 +1,5 @@
-import type { PluginFactory } from '../contracts/plugin.js'
 import type { PluginManifestInit } from '../contracts/manifest.js'
+import type { PluginFactory } from '../contracts/plugin.js'
 
 /** Inline manifest attached to the factory by `definePlugin`. */
 export type PluginFactoryWithManifest = PluginFactory & {

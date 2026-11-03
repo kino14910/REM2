@@ -1,16 +1,9 @@
 {
   "singleQuote": true,
   "printWidth": 80,
-  "useTabs": false,
-  "trailingComma": "none",
-  "bracketSpacing": true,
-  "bracketSameLine": false,
   "sortPackageJson": false,
   "semi": false,
   "arrowParens": "avoid",
-  "endOfLine": "lf",
-  "insertFinalNewline": true,
-  
   "sortImports": {
     "groups": [
       "type-import",
@@ -20,8 +13,7 @@
       ["type-parent", "type-sibling", "type-index"],
       ["value-parent", "value-sibling", "value-index"],
       "unknown"
-    ],
-    "newlinesBetween": true
+    ]
   },
 
   "ignorePatterns": [
@@ -29,6 +21,9 @@
     "**/out/**",
     "**/node_modules/**",
     "**/.vite/**",
-    "**/coverage/**"
+    "**/coverage/**",
+    "**/src/frontend/app/themes/**",
+    "**/.claude/**",
+    "**/.vscode/**"
   ]
 }

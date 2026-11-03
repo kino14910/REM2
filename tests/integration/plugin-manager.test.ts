@@ -10,22 +10,21 @@ import {
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Kernel } from '@/kernel/kernel.js'
-import { KernelTokens } from '@/kernel/contracts/kernel-tokens.js'
-import type { EventBus } from '@/kernel/contracts/event-bus.js'
-import { LocalPluginManager } from '@/host/plugins/local-plugin-manager.js'
-import { PluginStateStore } from '@/host/plugins/state-store.js'
-import { PluginGrantStore } from '@/host/plugins/grant-store.js'
-import { PluginRemovedStore } from '@/host/plugins/removed-plugin-store.js'
-import { ThemeRegistryImpl } from '@/host/electron/theme-registry.js'
-import { createMethodHandlers } from '@/host/ipc/method-handlers.js'
-import { IpcBridge } from '@/host/ipc/bridge.js'
-import {
-  Ipc,
-  channels,
-  type IpcResponse,
-} from '@/shared/ipc-contract.js'
+
 import type { copyDirectorySafe } from '@/host/plugins/safe-fs.js'
+import type { EventBus } from '@/kernel/contracts/event-bus.js'
+
+import { ThemeRegistryImpl } from '@/host/electron/theme-registry.js'
+import { IpcBridge } from '@/host/ipc/bridge.js'
+import { createMethodHandlers } from '@/host/ipc/method-handlers.js'
+import { PluginGrantStore } from '@/host/plugins/grant-store.js'
+import { LocalPluginManager } from '@/host/plugins/local-plugin-manager.js'
+import { PluginRemovedStore } from '@/host/plugins/removed-plugin-store.js'
+import { PluginStateStore } from '@/host/plugins/state-store.js'
+import { KernelTokens } from '@/kernel/contracts/kernel-tokens.js'
+import { Kernel } from '@/kernel/kernel.js'
+import { Ipc, channels, type IpcResponse } from '@/shared/ipc-contract.js'
+
 import {
   makeManifest,
   type MakeManifestOptions,
@@ -272,7 +271,9 @@ describe('integration · local plugin manager lifecycle', () => {
     expect(await readdir(env.userRoot)).toEqual([])
     await expect(
       env.manager.detail('com.example.rollback'),
-    ).rejects.toMatchObject({ code: 'E_NOT_FOUND' })
+    ).rejects.toMatchObject({
+      code: 'E_NOT_FOUND',
+    })
   })
 
   it('rejects invalid manifests, traversal entries, duplicate ids and managed sources', async () => {
@@ -512,7 +513,9 @@ describe('integration · local plugin manager lifecycle', () => {
     // A directory record has no replayable path; the UI falls back to the chooser.
     await expect(
       env.manager.reinstall('com.example.removed'),
-    ).rejects.toMatchObject({ code: 'E_SOURCE_INVALID' })
+    ).rejects.toMatchObject({
+      code: 'E_SOURCE_INVALID',
+    })
 
     // Installing the same id again replaces the removed entry in the list.
     await env.manager.installFromDirectory(source)
@@ -766,7 +769,9 @@ export default function factory(ctx) {
 
     await expect(
       env.manager.uninstall('com.example.unsafe-config'),
-    ).rejects.toMatchObject({ code: 'E_UNSAFE_TREE' })
+    ).rejects.toMatchObject({
+      code: 'E_UNSAFE_TREE',
+    })
 
     await access(path.join(pluginDir, 'plugin.json'))
     expect(

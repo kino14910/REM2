@@ -1,7 +1,9 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
+
 import { isValidPluginId } from '@/kernel/discovery/manifest-validator.js'
+
 import { PluginManagementError } from './errors.js'
 
 export interface PluginProvenance {
@@ -43,7 +45,9 @@ export class PluginProvenanceStore {
       throw new PluginManagementError(
         'E_STATE_INVALID',
         'plugin provenance is not valid JSON',
-        { cause: error },
+        {
+          cause: error,
+        },
       )
     }
     if (!isPersistedProvenance(raw)) {
@@ -134,7 +138,9 @@ export class PluginProvenanceStore {
       throw new PluginManagementError(
         'E_STATE_WRITE',
         'failed to persist plugin provenance',
-        { cause: error },
+        {
+          cause: error,
+        },
       )
     }
   }

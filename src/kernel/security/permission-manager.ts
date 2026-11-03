@@ -1,12 +1,13 @@
+import type { PluginManifest } from '../contracts/manifest.js'
 import type {
   PermissionDecision,
   PermissionSet,
   TrustLevel,
   TrustPolicy,
 } from '../contracts/permission.js'
-import type { PluginManifest } from '../contracts/manifest.js'
-import { DEFAULT_TRUST_POLICY, matchesAny } from './trust-policy.js'
 import type { CapabilityGuard } from './capability-guard.js'
+
+import { DEFAULT_TRUST_POLICY, matchesAny } from './trust-policy.js'
 
 export class MutablePermissionSet implements PermissionSet {
   constructor(

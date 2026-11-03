@@ -1,9 +1,10 @@
 import { readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
+
+import { builtinPluginsRoot, projectRoot } from './paths.js'
 import { scaffoldPlugin } from './scaffold-plugin.js'
 import { runValidate } from './validate-manifest.js'
-import { builtinPluginsRoot, projectRoot } from './paths.js'
 
 /** CLI main entry point; returns the exit code. */
 export async function main(

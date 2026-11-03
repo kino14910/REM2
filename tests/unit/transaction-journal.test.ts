@@ -9,11 +9,13 @@ import {
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+
+import type { PluginProvenance } from '@/host/plugins/provenance-store.js'
+
 import {
   PluginUpdateJournal,
   type UpdateTransactionRecord,
 } from '@/host/plugins/transaction-journal.js'
-import type { PluginProvenance } from '@/host/plugins/provenance-store.js'
 
 const nextProvenance: PluginProvenance = {
   kind: 'remote',

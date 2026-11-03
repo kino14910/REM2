@@ -1,10 +1,11 @@
-import { ipc } from '@/frontend/lib/ipc-client'
-import { channels } from '@/shared/ipc-contract'
-import type { AppearanceSettingsDto } from '@/shared/ipc-contract'
-import { applyColorMode, applyTheme } from '@/frontend/lib/theme/vars'
-import type { ColorMode } from '@/frontend/lib/theme/vars'
-import { parseAppearanceSettings } from '@/frontend/lib/dto-guards'
 import type { ThemeCatalogDto, ThemeDto } from '@/frontend/lib/bridge-types'
+import type { ColorMode } from '@/frontend/lib/theme/vars'
+import type { AppearanceSettingsDto } from '@/shared/ipc-contract'
+
+import { parseAppearanceSettings } from '@/frontend/lib/dto-guards'
+import { ipc } from '@/frontend/lib/ipc-client'
+import { applyColorMode, applyTheme } from '@/frontend/lib/theme/vars'
+import { channels } from '@/shared/ipc-contract'
 
 /** Follow-system entries stay `system` even after the host materializes their palette. */
 function colorModeOf(theme: ThemeDto): ColorMode {

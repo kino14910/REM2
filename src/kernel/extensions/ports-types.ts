@@ -2,13 +2,13 @@
  * Input/output shapes for the loader port (helper types for ports.ts, avoiding circular imports).
  */
 
-import type { PluginContext } from '../contracts/context.js'
-import type { PluginFactoryHooks } from '../contracts/plugin.js'
-import type { PluginManifest } from '../contracts/manifest.js'
-import type { PluginStateT } from '../contracts/plugins.js'
 import type { Container } from '../contracts/container.js'
-import type { PermissionSet } from '../contracts/permission.js'
+import type { PluginContext } from '../contracts/context.js'
 import type { HealthStatus } from '../contracts/health.js'
+import type { PluginManifest } from '../contracts/manifest.js'
+import type { PermissionSet } from '../contracts/permission.js'
+import type { PluginFactoryHooks } from '../contracts/plugin.js'
+import type { PluginStateT } from '../contracts/plugins.js'
 
 export interface PluginLoaderOptions {
   /**

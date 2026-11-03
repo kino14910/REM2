@@ -2,8 +2,10 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Kernel } from '@/kernel/kernel.js'
+
 import { ConfigService } from '@/kernel/config/config-service.js'
+import { Kernel } from '@/kernel/kernel.js'
+
 import { tryInjectJsonProvider } from '../fixtures/json-provider.js'
 
 describe('integration · config-plugins', () => {

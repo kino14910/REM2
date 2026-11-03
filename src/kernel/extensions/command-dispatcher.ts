@@ -8,8 +8,8 @@
  * to itself, once a real RangeError defect) is structurally impossible.
  */
 
-import type { ExtensionPointRegistry } from './registry.js'
 import type { CommandHandler } from './ports.js'
+import type { ExtensionPointRegistry } from './registry.js'
 
 /**
  * Result of a command dispatch.

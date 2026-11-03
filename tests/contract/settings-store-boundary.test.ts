@@ -10,6 +10,7 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+
 import { collectSourceFiles, extractSpecifiers } from './helpers/source-scan.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))

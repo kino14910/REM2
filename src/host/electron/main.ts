@@ -6,32 +6,35 @@ import {
   nativeTheme,
   session,
 } from 'electron'
-import process from 'node:process'
 import path from 'node:path'
-import { Kernel } from '@/kernel/kernel.js'
-import { createDeps } from '@/kernel/composition.js'
-import { KernelTokens } from '@/kernel/contracts/kernel-tokens.js'
-import { Topics } from '@/kernel/topics.js'
+import process from 'node:process'
+
+import type { AppearanceSettingsService } from '@/host/settings/appearance-settings.js'
+import type { ProxySettingsService } from '@/host/settings/proxy-settings-service.js'
+import type { EventBus } from '@/kernel/contracts/event-bus.js'
+
+import { builtinPluginsRoot } from '@/host/cli/paths.js'
 import { IpcBridge } from '@/host/ipc/bridge.js'
 import { EVENT_FORWARD_MAP } from '@/host/ipc/forward-map.js'
 import {
   createMethodHandlers,
   createThemeRefreshHandler,
 } from '@/host/ipc/method-handlers.js'
-import { builtinPluginsRoot } from '@/host/cli/paths.js'
-import { createWindow, applyTitleBarColors } from './window.js'
-import type { EventBus } from '@/kernel/contracts/event-bus.js'
-import { ThemeRegistryImpl } from './theme-registry.js'
-import { LocalPluginManager } from '@/host/plugins/local-plugin-manager.js'
-import { PluginStateStore } from '@/host/plugins/state-store.js'
-import { PluginProvenanceStore } from '@/host/plugins/provenance-store.js'
 import { PluginGrantStore } from '@/host/plugins/grant-store.js'
+import { LocalPluginManager } from '@/host/plugins/local-plugin-manager.js'
+import { PluginProvenanceStore } from '@/host/plugins/provenance-store.js'
 import { PluginRemovedStore } from '@/host/plugins/removed-plugin-store.js'
-import { ElectronProxySettingsService } from './proxy-settings-service.js'
+import { PluginStateStore } from '@/host/plugins/state-store.js'
+import { createDeps } from '@/kernel/composition.js'
+import { KernelTokens } from '@/kernel/contracts/kernel-tokens.js'
+import { Kernel } from '@/kernel/kernel.js'
+import { Topics } from '@/kernel/topics.js'
+
 import { ElectronAppSettingsStore } from './app-settings-store.js'
+import { ElectronProxySettingsService } from './proxy-settings-service.js'
 import { createSessionFetch } from './session-fetch.js'
-import type { ProxySettingsService } from '@/host/settings/proxy-settings-service.js'
-import type { AppearanceSettingsService } from '@/host/settings/appearance-settings.js'
+import { ThemeRegistryImpl } from './theme-registry.js'
+import { createWindow, applyTitleBarColors } from './window.js'
 
 let kernel: Kernel | null = null
 let bridge: IpcBridge | null = null

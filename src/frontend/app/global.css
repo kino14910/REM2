@@ -16,8 +16,8 @@
  */
 
 @import 'tailwindcss';
-@import '@skeletonlabs/skeleton'; 
-@import '@skeletonlabs/skeleton-svelte'; 
+@import '@skeletonlabs/skeleton';
+@import '@skeletonlabs/skeleton-svelte';
 @import './themes/rem.css';
 
 @source '../../';

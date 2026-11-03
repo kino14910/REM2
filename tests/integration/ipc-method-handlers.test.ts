@@ -15,17 +15,20 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Kernel } from '@/kernel/kernel.js'
-import { createDeps } from '@/kernel/composition.js'
-import { KernelTokens } from '@/kernel/contracts/kernel-tokens.js'
-import type { EventBus } from '@/kernel/contracts/event-bus.js'
-import type { ThemeDefinition } from '@/kernel/contracts/ui.js'
-import type { HealthReport } from '@/kernel/contracts/health.js'
-import { ThemeRegistryImpl } from '@/host/electron/theme-registry.js'
-import { createMethodHandlers } from '@/host/ipc/method-handlers.js'
-import { ALLOWED_METHODS, channels } from '@/shared/ipc-contract.js'
+
 import type { AppearanceSettingsService } from '@/host/settings/appearance-settings.js'
 import type { ProxySettingsService } from '@/host/settings/proxy-settings-service.js'
+import type { EventBus } from '@/kernel/contracts/event-bus.js'
+import type { HealthReport } from '@/kernel/contracts/health.js'
+import type { ThemeDefinition } from '@/kernel/contracts/ui.js'
+
+import { ThemeRegistryImpl } from '@/host/electron/theme-registry.js'
+import { createMethodHandlers } from '@/host/ipc/method-handlers.js'
+import { createDeps } from '@/kernel/composition.js'
+import { KernelTokens } from '@/kernel/contracts/kernel-tokens.js'
+import { Kernel } from '@/kernel/kernel.js'
+import { ALLOWED_METHODS, channels } from '@/shared/ipc-contract.js'
+
 import {
   cleanupTestPluginDataRoots,
   createTestPluginDataRoot,
@@ -231,10 +234,14 @@ describe('integration · allowlisted method implementation table', () => {
 
       expect(
         await handlers[channels.settingsAppearanceGet]!(undefined),
-      ).toEqual({ colorMode: 'dark' })
+      ).toEqual({
+        colorMode: 'dark',
+      })
       expect(
         await handlers[channels.settingsAppearanceSet]!({ colorMode: 'light' }),
-      ).toEqual({ colorMode: 'light' })
+      ).toEqual({
+        colorMode: 'light',
+      })
       await expect(async () =>
         handlers[channels.settingsAppearanceSet]!({ colorMode: 'sepia' }),
       ).rejects.toThrow(/colorMode/)

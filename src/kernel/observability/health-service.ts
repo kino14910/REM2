@@ -4,8 +4,8 @@ import type {
   HealthStatus,
   PluginHealthInfo,
 } from '../contracts/health.js'
-import type { PluginsRegistry } from '../registry/plugins-registry.js'
 import type { ExtensionPointRegistry } from '../extensions/registry.js'
+import type { PluginsRegistry } from '../registry/plugins-registry.js'
 
 function aggregate(statuses: HealthStatus[]): HealthStatus {
   if (statuses.length === 0) return 'healthy'

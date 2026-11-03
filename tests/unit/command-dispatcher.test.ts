@@ -16,10 +16,12 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { CommandDispatcher } from '@/kernel/extensions/command-dispatcher.js'
-import { ExtensionPointRegistry } from '@/kernel/extensions/registry.js'
-import { EXTENSION_POINT_DEFS } from '@/kernel/extensions/definitions.js'
+
 import type { CommandHandler } from '@/kernel/extensions/ports.js'
+
+import { CommandDispatcher } from '@/kernel/extensions/command-dispatcher.js'
+import { EXTENSION_POINT_DEFS } from '@/kernel/extensions/definitions.js'
+import { ExtensionPointRegistry } from '@/kernel/extensions/registry.js'
 
 function createRegistry(): ExtensionPointRegistry {
   const registry = new ExtensionPointRegistry()
@@ -47,7 +49,10 @@ describe('unit · command dispatcher', () => {
     // Deep equality on purpose: a wrapper like { ok: true, output: {...} } fails here.
     expect(
       await dispatcher.dispatch({ command: 'hello', args: { name: 'x' } }),
-    ).toEqual({ ok: true, output: 'Hello, x!' })
+    ).toEqual({
+      ok: true,
+      output: 'Hello, x!',
+    })
   })
 
   it('forwards args to the handler', async () => {

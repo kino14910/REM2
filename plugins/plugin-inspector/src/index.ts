@@ -10,7 +10,6 @@
  *   the new table via `Topics.PanelDataChanged`, demonstrating the push path.
  */
 
-import { definePlugin, defineToken, KernelTokens, Topics } from 'rem2-kernel'
 import type {
   HealthReport,
   PanelContribution,
@@ -18,6 +17,8 @@ import type {
   RouteContribution,
   Unsubscribe,
 } from 'rem2-kernel'
+
+import { definePlugin, defineToken, KernelTokens, Topics } from 'rem2-kernel'
 
 /** Private data topic (reverse-DNS prefix: no collision with kernel topics). */
 const DATA_TOPIC = 'com.rem2.plugin-inspector.data'

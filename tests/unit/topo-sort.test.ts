@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
+
 import type { Candidate } from '@/kernel/discovery/candidate.js'
-import { sourcePriorityRank } from '@/kernel/discovery/candidate.js'
+
 import { buildGraph } from '@/kernel/dependency/graph.js'
 import { topoSortedLoadOrder } from '@/kernel/dependency/topo-sort.js'
+import { sourcePriorityRank } from '@/kernel/discovery/candidate.js'
 
 function cand(
   id: string,

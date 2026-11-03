@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { timeoutFor } from '@/host/ipc/bridge.js'
 import { channels } from '@/shared/ipc-contract.js'
 

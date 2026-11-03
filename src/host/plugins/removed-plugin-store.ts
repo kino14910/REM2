@@ -1,9 +1,12 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
+
 import type { PluginManifest } from '@/kernel/contracts/manifest.js'
-import { validateManifest } from '@/kernel/discovery/manifest-validator.js'
 import type { PluginOriginDto } from '@/shared/ipc-contract.js'
+
+import { validateManifest } from '@/kernel/discovery/manifest-validator.js'
+
 import { PluginManagementError } from './errors.js'
 import { isSha256 } from './integrity.js'
 
@@ -144,7 +147,9 @@ export class PluginRemovedStore {
       throw new PluginManagementError(
         'E_STATE_WRITE',
         'failed to persist removed plugin records',
-        { cause: error },
+        {
+          cause: error,
+        },
       )
     }
   }

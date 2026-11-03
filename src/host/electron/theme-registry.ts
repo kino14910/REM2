@@ -5,10 +5,7 @@
  * kernel contract direction (`kernel/contracts/ui.js`).
  */
 
-import type {
-  ThemeDefinition,
-  ThemeRegistry,
-} from '@/kernel/contracts/ui.js'
+import type { ThemeDefinition, ThemeRegistry } from '@/kernel/contracts/ui.js'
 
 /** In-memory theme registry: cache of the `ui.theme` slot plus the active id (selection is host state). */
 export class ThemeRegistryImpl implements ThemeRegistry {

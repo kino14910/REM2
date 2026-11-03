@@ -1,9 +1,10 @@
 import type { Candidate, CandidateSource } from '../discovery/candidate.js'
+
 import { sourcePriorityRank } from '../discovery/candidate.js'
 import { satisfies, isValidRange } from '../semver/range.js'
 import { parseVersion, type SemVer } from '../semver/semver.js'
-import { buildGraph, mergeEdges, type DependencyGraph } from './graph.js'
 import { findCycles, cycleNodes } from './cycles.js'
+import { buildGraph, mergeEdges, type DependencyGraph } from './graph.js'
 import { topoSortedLoadOrder } from './topo-sort.js'
 
 export type ResolveIssueLevel = 'error' | 'warn'

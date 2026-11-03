@@ -10,6 +10,7 @@ import type {
   PluginManifest,
   ManifestContribution,
 } from '../contracts/manifest.js'
+
 import { EXTENSION_POINT_IDS } from '../extensions/definitions.js'
 import { isValidRange } from '../semver/range.js'
 import { isValidVersion } from '../semver/semver.js'

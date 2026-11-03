@@ -13,6 +13,7 @@
 import { mkdir, writeFile, access } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
+
 import { KERNEL_VERSION } from '@/kernel/version.js'
 
 export interface ScaffoldOptions {

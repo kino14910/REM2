@@ -24,6 +24,7 @@
 import { BrowserWindow } from 'electron'
 import path from 'node:path'
 import process from 'node:process'
+
 import { moduleDirectory } from '@/host/cli/paths.js'
 
 export interface TitleBarColors {

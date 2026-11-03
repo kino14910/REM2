@@ -73,7 +73,9 @@ export function parseAppSettingsDocument(value: unknown): AppSettingsDocument {
     throw new ProxySettingsError(
       'E_SETTINGS_INVALID',
       'settings contain invalid values',
-      { cause: error },
+      {
+        cause: error,
+      },
     )
   }
 }

@@ -9,6 +9,7 @@ import type {
   LogSink,
   Logger,
 } from '../contracts/logging.js'
+
 import { LOG_LEVEL_ORDER } from '../contracts/logging.js'
 import { NullLogSink } from './null-sink.js'
 

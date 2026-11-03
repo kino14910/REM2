@@ -2,6 +2,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+
 import { PluginStateStore } from '@/host/plugins/state-store.js'
 
 describe('unit · plugin state store', () => {

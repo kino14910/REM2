@@ -10,15 +10,7 @@ import {
 } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
-import { Kernel } from '@/kernel/kernel.js'
-import { CONTRACT_VERSION } from '@/kernel/version.js'
-import { PluginDiscovery } from '@/kernel/discovery/discovery.js'
-import {
-  validateManifest,
-  isValidPluginId,
-} from '@/kernel/discovery/manifest-validator.js'
-import { DependencyResolver } from '@/kernel/dependency/resolver.js'
-import { resolveEntry } from '@/kernel/loader/module-resolver.js'
+
 import type {
   Candidate,
   CandidateSource,
@@ -33,35 +25,46 @@ import type {
   PluginUpdateCheckDto,
   PluginUpdateDto,
 } from '@/shared/ipc-contract.js'
+
+import { DependencyResolver } from '@/kernel/dependency/resolver.js'
+import { PluginDiscovery } from '@/kernel/discovery/discovery.js'
+import {
+  validateManifest,
+  isValidPluginId,
+} from '@/kernel/discovery/manifest-validator.js'
+import { Kernel } from '@/kernel/kernel.js'
+import { resolveEntry } from '@/kernel/loader/module-resolver.js'
+import { PermissionManager } from '@/kernel/security/permission-manager.js'
+import { trustLevelFor } from '@/kernel/security/trust-policy.js'
+import { CONTRACT_VERSION } from '@/kernel/version.js'
+
 import { PluginManagementError } from './errors.js'
-import { PluginStateStore } from './state-store.js'
+import { PluginGrantStore } from './grant-store.js'
 import { isSha256, verifyFileDigest } from './integrity.js'
-import { downloadPackage } from './remote-download.js'
-import { extractZipSafe } from './zip-extract.js'
-import { resolveRemoteRelease, type RemoteRelease } from './release-source.js'
 import {
   PluginProvenanceStore,
   type PluginProvenance,
 } from './provenance-store.js'
+import { resolveRemoteRelease, type RemoteRelease } from './release-source.js'
+import { downloadPackage } from './remote-download.js'
 import {
   PluginRemovedStore,
   type RemovedPluginRecord,
 } from './removed-plugin-store.js'
-import { PluginGrantStore } from './grant-store.js'
-import {
-  PluginUpdateJournal,
-  type UpdateTransactionRecord,
-  type UpdateTransactionStage,
-} from './transaction-journal.js'
-import { isNewerVersion } from './update-compare.js'
-import { PermissionManager } from '@/kernel/security/permission-manager.js'
-import { trustLevelFor } from '@/kernel/security/trust-policy.js'
 import {
   assertInside,
   assertRealDirectoryInside,
   copyDirectorySafe,
   readJsonFile,
 } from './safe-fs.js'
+import { PluginStateStore } from './state-store.js'
+import {
+  PluginUpdateJournal,
+  type UpdateTransactionRecord,
+  type UpdateTransactionStage,
+} from './transaction-journal.js'
+import { isNewerVersion } from './update-compare.js'
+import { extractZipSafe } from './zip-extract.js'
 
 /** Downloaded packages stay reusable for this long; after that a source change is picked up. */
 const PACKAGE_CACHE_TTL_MS = 10 * 60 * 1000
@@ -2154,7 +2157,9 @@ async function readCandidate(
     throw new PluginManagementError(
       'E_ENTRY_INVALID',
       'entry file does not exist',
-      { cause: error },
+      {
+        cause: error,
+      },
     )
   })
   if (entryStat.isSymbolicLink() || !entryStat.isFile()) {

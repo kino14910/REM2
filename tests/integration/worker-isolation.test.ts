@@ -16,7 +16,9 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+
 import { Kernel } from '@/kernel/kernel.js'
+
 import { makeManifest } from '../helpers/make-manifest.js'
 
 /**

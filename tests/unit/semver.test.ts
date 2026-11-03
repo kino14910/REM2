@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+
+import { isValidRange, satisfies, withinRange } from '@/kernel/semver/range.js'
 import {
   compare,
   compareVersions,
@@ -6,11 +8,6 @@ import {
   isValidVersion,
   parseVersion,
 } from '@/kernel/semver/semver.js'
-import {
-  isValidRange,
-  satisfies,
-  withinRange,
-} from '@/kernel/semver/range.js'
 
 describe('semver · parseVersion', () => {
   it('parses three-segment versions', () => {

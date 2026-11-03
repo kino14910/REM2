@@ -13,16 +13,17 @@ import type {
   ExtensionContribution,
 } from '../contracts/extension-point.js'
 import type { PermissionManager } from '../security/permission-manager.js'
-import {
-  MultiContributionSlot,
-  SingleContributionSlot,
-  type SlotEntry,
-} from './contrib-slot.js'
+
 import {
   CapabilityDeniedError,
   ExtensionConflictError,
   UnknownExtensionPointError,
 } from '../errors.js'
+import {
+  MultiContributionSlot,
+  SingleContributionSlot,
+  type SlotEntry,
+} from './contrib-slot.js'
 
 /** pluginId used for host default implementations (a convention value, not a real plugin). */
 export const HOST_PLUGIN_ID = 'kernel'

@@ -12,6 +12,10 @@
  */
 
 import { describe, expect, it } from 'vitest'
+
+import type { PanelDto, RouteDto } from '@/frontend/lib/bridge-types.js'
+import type { PluginDetailDto } from '@/shared/ipc-contract.js'
+
 import {
   parseDownloadProgress,
   parsePanelData,
@@ -23,8 +27,6 @@ import {
   parseProxySettings,
   parseRouteList,
 } from '@/frontend/lib/dto-guards.js'
-import type { PluginDetailDto } from '@/shared/ipc-contract.js'
-import type { PanelDto, RouteDto } from '@/frontend/lib/bridge-types.js'
 
 function validPanel(): PanelDto {
   return {
@@ -174,7 +176,11 @@ describe('unit · dto guards · parsePanelData', () => {
     // an array of string|number cells; an empty row satisfies that vacuously.
     expect(
       parsePanelData({ kind: 'table', columns: ['a'], rows: [[]] }),
-    ).toEqual({ kind: 'table', columns: ['a'], rows: [[]] })
+    ).toEqual({
+      kind: 'table',
+      columns: ['a'],
+      rows: [[]],
+    })
   })
 
   it.each([
@@ -323,7 +329,10 @@ describe('unit · dto guards · proxy settings', () => {
   it('accepts system settings with the resolved proxy diagnostic', () => {
     expect(
       parseProxySettings({ mode: 'system', resolved: 'PROXY 127.0.0.1:7890' }),
-    ).toEqual({ mode: 'system', resolved: 'PROXY 127.0.0.1:7890' })
+    ).toEqual({
+      mode: 'system',
+      resolved: 'PROXY 127.0.0.1:7890',
+    })
   })
 
   it('accepts manual settings with address and bypass', () => {
@@ -561,7 +570,10 @@ describe('unit · dto guards · remote install DTOs', () => {
     })
     expect(
       parseDownloadProgress({ operationId: 'op-1', phase: 'installing' }),
-    ).toEqual({ operationId: 'op-1', phase: 'installing' })
+    ).toEqual({
+      operationId: 'op-1',
+      phase: 'installing',
+    })
     for (const value of [
       null,
       {},

@@ -182,7 +182,9 @@ describe('contract · kernel has zero third-party runtime dependencies', () => {
   it('R5 · package.json dependencies is empty', async () => {
     const pkg = JSON.parse(
       await readFile(path.join(PROJECT_ROOT, 'package.json'), 'utf8'),
-    ) as { dependencies?: Record<string, string> }
+    ) as {
+      dependencies?: Record<string, string>
+    }
     expect(Object.keys(pkg.dependencies ?? {})).toEqual([])
   })
 })

@@ -8,8 +8,9 @@
  * contract.
  */
 
-import { defineToken } from './service-token.js'
 import type { Scheduler } from '../scheduler/scheduler.js'
+
+import { defineToken } from './service-token.js'
 
 export const KernelTokens = {
   EventBus: defineToken<import('./event-bus.js').EventBus>({

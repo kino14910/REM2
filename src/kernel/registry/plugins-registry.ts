@@ -1,9 +1,9 @@
-import type { LoadedPlugin, PluginHealth } from '../extensions/ports-types.js'
 import type {
   PluginInfo,
   PluginsRegistryView,
   PluginStateT,
 } from '../contracts/plugins.js'
+import type { LoadedPlugin, PluginHealth } from '../extensions/ports-types.js'
 
 export class PluginsRegistry implements PluginsRegistryView {
   private readonly plugins = new Map<string, LoadedPlugin>()

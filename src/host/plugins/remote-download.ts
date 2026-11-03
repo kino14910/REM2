@@ -1,8 +1,10 @@
+import type { FileHandle } from 'node:fs/promises'
+
 import { createHash, randomBytes } from 'node:crypto'
 import { open, mkdir, rename, rm } from 'node:fs/promises'
-import type { FileHandle } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
+
 import { PluginManagementError } from './errors.js'
 
 const DEFAULT_MAX_BYTES = 50 * 1024 * 1024
@@ -70,7 +72,9 @@ export async function downloadPackage(
     controller.signal.addEventListener(
       'abort',
       () => reject(controller.signal.reason),
-      { once: true },
+      {
+        once: true,
+      },
     )
   })
   const timeout = setTimeout(() => {

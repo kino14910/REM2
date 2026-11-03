@@ -1,6 +1,7 @@
+import type { CommandResultDto } from '@/frontend/lib/bridge-types'
+
 import { ipc } from '@/frontend/lib/ipc-client'
 import { channels } from '@/shared/ipc-contract'
-import type { CommandResultDto } from '@/frontend/lib/bridge-types'
 
 class CommandStore {
   last = $state<CommandResultDto | undefined>(undefined)

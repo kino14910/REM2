@@ -1,6 +1,9 @@
+import ElectronStore from 'electron-store'
 import { existsSync, readFileSync, renameSync } from 'node:fs'
 import path from 'node:path'
-import ElectronStore from 'electron-store'
+
+import type { AppSettingsRepository } from '@/host/settings/app-settings-repository.js'
+
 import {
   defaultAppSettingsDocument,
   parseAppSettingsDocument,
@@ -9,7 +12,6 @@ import {
   SETTINGS_SCHEMA_VERSION,
   type AppSettingsDocument,
 } from '@/host/settings/app-settings.js'
-import type { AppSettingsRepository } from '@/host/settings/app-settings-repository.js'
 import {
   DEFAULT_APPEARANCE_SETTINGS,
   normalizeAppearanceSettings,
@@ -247,6 +249,8 @@ function invalidSettingsError(error: unknown): ProxySettingsError {
   return new ProxySettingsError(
     'E_SETTINGS_INVALID',
     'settings.json is not valid',
-    { cause: error },
+    {
+      cause: error,
+    },
   )
 }

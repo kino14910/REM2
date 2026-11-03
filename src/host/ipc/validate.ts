@@ -12,7 +12,6 @@
  * meaningless empty-string lookup.
  */
 
-import { isValidPluginId } from '@/kernel/discovery/manifest-validator.js'
 import { isSha256 } from '@/host/plugins/integrity.js'
 import {
   normalizeAppearanceSettings,
@@ -22,6 +21,7 @@ import {
   normalizeProxySettings,
   type ProxySettings,
 } from '@/host/settings/proxy-settings.js'
+import { isValidPluginId } from '@/kernel/discovery/manifest-validator.js'
 
 const MAX_URL_LENGTH = 2048
 const OPERATION_ID_RE = /^[A-Za-z0-9._:-]{1,64}$/

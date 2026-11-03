@@ -4,17 +4,18 @@
  * an explicit extension point declaration.
  */
 
-import type { LogService } from './log-service.js'
-import type { MetricsService } from './metrics-service.js'
-import type { TracingService } from './tracing-service.js'
-import type { ExtensionPointRegistry } from '../extensions/registry.js'
-import { NullLogSink } from './null-sink.js'
-import { NoopMetricSink } from './noop-metrics-sink.js'
-import { ReadOnlyMemoryConfigProvider } from '../config/memory-provider.js'
+import type { ConfigProvider } from '../contracts/config.js'
 import type { LogSink } from '../contracts/logging.js'
 import type { MetricSink } from '../contracts/metrics.js'
 import type { TraceExporter, SpanData } from '../contracts/tracing.js'
-import type { ConfigProvider } from '../contracts/config.js'
+import type { ExtensionPointRegistry } from '../extensions/registry.js'
+import type { LogService } from './log-service.js'
+import type { MetricsService } from './metrics-service.js'
+import type { TracingService } from './tracing-service.js'
+
+import { ReadOnlyMemoryConfigProvider } from '../config/memory-provider.js'
+import { NoopMetricSink } from './noop-metrics-sink.js'
+import { NullLogSink } from './null-sink.js'
 
 /** Built-in span buffering exporter (host default for `trace.exporter`). */
 class BufferedTraceExporter implements TraceExporter {

@@ -8,14 +8,15 @@
  * `onStart` to enter `Active`.
  */
 
+import type { PluginContext } from '../contracts/context.js'
 import type { LifecyclePhase, StopReason } from '../contracts/lifecycle.js'
+import type { PhaseOutcome } from '../contracts/lifecycle.js'
 import type { PluginFactoryHooks } from '../contracts/plugin.js'
 import type { PluginStateT } from '../contracts/plugins.js'
-import type { PluginContext } from '../contracts/context.js'
-import type { PhaseOutcome } from '../contracts/lifecycle.js'
+
+import { callWithTimeout } from '../util/timeout.js'
 import { START_PIPELINE, STOP_PIPELINE, type PipelineStep } from './pipeline.js'
 import { rollbackHooks } from './rollback.js'
-import { callWithTimeout } from '../util/timeout.js'
 
 export interface LifecycleState {
   pluginId: string

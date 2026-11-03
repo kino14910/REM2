@@ -8,26 +8,28 @@
  */
 
 import path from 'node:path'
-import type { PluginContext } from '../contracts/context.js'
-import type { PluginManifest } from '../contracts/manifest.js'
-import type { LifecyclePhase } from '../contracts/lifecycle.js'
-import type { PluginStateT } from '../contracts/plugins.js'
-import type { PermissionSet } from '../contracts/permission.js'
-import type { Container } from '../contracts/container.js'
-import type { ServicesView } from '../contracts/service.js'
-import type { EventBus } from '../contracts/event-bus.js'
+
 import type { ConfigAccess } from '../contracts/config.js'
-import type { Logger } from '../contracts/logging.js'
-import type { MetricsApi } from '../contracts/metrics.js'
-import type { PluginsRegistryView } from '../contracts/plugins.js'
+import type { Container } from '../contracts/container.js'
+import type { PluginContext } from '../contracts/context.js'
+import type { EventBus } from '../contracts/event-bus.js'
 import type { ExtensionContributorView } from '../contracts/extension-point.js'
-import { PluginApiImpl } from './plugin-api.js'
-import type { PluginApiHooks } from './plugin-api.js'
+import type { LifecyclePhase } from '../contracts/lifecycle.js'
+import type { Logger } from '../contracts/logging.js'
+import type { PluginManifest } from '../contracts/manifest.js'
+import type { MetricsApi } from '../contracts/metrics.js'
+import type { PermissionSet } from '../contracts/permission.js'
+import type { PluginStateT } from '../contracts/plugins.js'
+import type { PluginsRegistryView } from '../contracts/plugins.js'
+import type { ServicesView } from '../contracts/service.js'
 import type { Container as DiContainer } from '../di/container.js'
-import type { CapabilityGuard } from '../security/capability-guard.js'
 import type { PluginsRegistry } from '../registry/plugins-registry.js'
-import { PHASE_OF_STATE } from '../state-machine.js'
+import type { CapabilityGuard } from '../security/capability-guard.js'
+import type { PluginApiHooks } from './plugin-api.js'
+
 import { EntryEscapeError } from '../errors.js'
+import { PHASE_OF_STATE } from '../state-machine.js'
+import { PluginApiImpl } from './plugin-api.js'
 
 /** Kernel facilities required to construct a context. */
 export interface ContextDeps {

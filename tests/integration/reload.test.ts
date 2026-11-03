@@ -1,7 +1,9 @@
 import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+
 import { Kernel } from '@/kernel/kernel.js'
+
 import { materializePlugins } from '../fixtures/fake-kernel.js'
 
 /** Overwrites the index.js of a plugin directory (simulates a disk change). */

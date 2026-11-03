@@ -7,6 +7,7 @@ import type {
   MetricSink,
   MetricsApi,
 } from '../contracts/metrics.js'
+
 import { NoopMetricSink } from './noop-metrics-sink.js'
 
 class CounterImpl implements Counter {

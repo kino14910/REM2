@@ -13,8 +13,9 @@ import type {
   ConfigLayer,
 } from '../contracts/config.js'
 import type { Unsubscribe } from '../contracts/event-bus.js'
-import { deepMerge, getPath } from '../util/deep-merge.js'
+
 import { NotWritableError } from '../errors.js'
+import { deepMerge, getPath } from '../util/deep-merge.js'
 
 /** Record of a config provider load failure (motivation: never degrade silently). */
 export interface ConfigProviderFailure {

@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
+
+import type { PluginStateT } from '@/kernel/contracts/plugins.js'
+import type { LoadedPlugin } from '@/kernel/extensions/ports-types.js'
+
+import { EXTENSION_POINT_DEFS } from '@/kernel/extensions/definitions.js'
+import { ExtensionPointRegistry } from '@/kernel/extensions/registry.js'
 import { HealthService } from '@/kernel/observability/health-service.js'
 import { PluginsRegistry } from '@/kernel/registry/plugins-registry.js'
-import { ExtensionPointRegistry } from '@/kernel/extensions/registry.js'
-import { EXTENSION_POINT_DEFS } from '@/kernel/extensions/definitions.js'
-import type { LoadedPlugin } from '@/kernel/extensions/ports-types.js'
-import type { PluginStateT } from '@/kernel/contracts/plugins.js'
+
 import { makeManifest } from '../helpers/make-manifest.js'
 
 function fakeLoaded(id: string, state: PluginStateT): LoadedPlugin {

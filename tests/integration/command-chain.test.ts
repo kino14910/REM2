@@ -16,12 +16,15 @@ import { execFile } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { Kernel } from '@/kernel/kernel.js'
+
+import type { EventBus } from '@/kernel/contracts/event-bus.js'
+
+import { IpcBridge } from '@/host/ipc/bridge.js'
 import { KernelTokens } from '@/kernel/contracts/kernel-tokens.js'
+import { Kernel } from '@/kernel/kernel.js'
 import { Topics } from '@/kernel/topics.js'
 import { ALLOWED_METHOD_SET, Ipc } from '@/shared/ipc-contract.js'
-import { IpcBridge } from '@/host/ipc/bridge.js'
-import type { EventBus } from '@/kernel/contracts/event-bus.js'
+
 import { createTmpPluginsDir } from '../helpers/tmp-plugins-dir.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))

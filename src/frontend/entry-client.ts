@@ -8,6 +8,7 @@
 
 import './app/global.css'
 import { mount } from 'svelte'
+
 import App from './app/App.svelte'
 
 const target = document.getElementById('app')

@@ -1,5 +1,3 @@
-import { ipc } from '@/frontend/lib/ipc-client'
-import { channels, events } from '@/shared/ipc-contract'
 import type {
   AllowedMethod,
   PluginDetailDto,
@@ -9,6 +7,7 @@ import type {
   PluginRemoteInspectionDto,
   PluginUpdateDto,
 } from '@/shared/ipc-contract'
+
 import {
   parseDownloadProgress,
   parsePluginInspection,
@@ -16,6 +15,8 @@ import {
   parsePluginOperation,
   parsePluginUpdateCheck,
 } from '@/frontend/lib/dto-guards'
+import { ipc } from '@/frontend/lib/ipc-client'
+import { channels, events } from '@/shared/ipc-contract'
 
 type PluginAction =
   | 'installFromDirectory'
@@ -219,7 +220,10 @@ class PluginsStore {
       this.inspection = parsePluginInspection(
         await ipc.request<PluginRemoteInspectionDto>(
           channels.pluginRemoteInspect,
-          { url, operationId: this.activeOperationId },
+          {
+            url,
+            operationId: this.activeOperationId,
+          },
         ),
       )
     } catch (error) {

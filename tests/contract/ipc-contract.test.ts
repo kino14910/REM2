@@ -27,6 +27,9 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+
+import { EVENT_FORWARD_MAP } from '@/host/ipc/forward-map.js'
+import { METHOD_FACTORIES } from '@/host/ipc/method-handlers.js'
 import {
   ALLOWED_EVENTS,
   ALLOWED_METHODS,
@@ -35,8 +38,7 @@ import {
   type AllowedEvent,
   type AllowedMethod,
 } from '@/shared/ipc-contract.js'
-import { EVENT_FORWARD_MAP } from '@/host/ipc/forward-map.js'
-import { METHOD_FACTORIES } from '@/host/ipc/method-handlers.js'
+
 import {
   collectSourceFiles,
   extractStringLiterals,

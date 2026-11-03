@@ -25,15 +25,17 @@
  *   through the event bus (the forced decoupling of "capability as service").
  */
 
-import { Worker } from 'node:worker_threads'
 import path from 'node:path'
-import type { EventBus, Unsubscribe } from '../contracts/event-bus.js'
-import type { LogService } from '../observability/log-service.js'
-import type { MetricsApi } from '../contracts/metrics.js'
+import { Worker } from 'node:worker_threads'
+
 import type { ConfigService } from '../config/config-service.js'
+import type { EventBus, Unsubscribe } from '../contracts/event-bus.js'
+import type { MetricsApi } from '../contracts/metrics.js'
 import type { Candidate } from '../discovery/candidate.js'
-import { resolveEntry } from '../loader/module-resolver.js'
+import type { LogService } from '../observability/log-service.js'
+
 import { KernelError, TimeoutError } from '../errors.js'
+import { resolveEntry } from '../loader/module-resolver.js'
 import { WORKER_BOOTSTRAP_SOURCE } from './worker-bootstrap.js'
 import {
   HOST_TO_WORKER,

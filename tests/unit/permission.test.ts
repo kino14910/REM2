@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
+
+import { CapabilityDeniedError } from '@/kernel/errors.js'
 import { CapabilityGuard } from '@/kernel/security/capability-guard.js'
 import { PermissionManager } from '@/kernel/security/permission-manager.js'
-import { CapabilityDeniedError } from '@/kernel/errors.js'
+
 import { makeManifest } from '../helpers/make-manifest.js'
 
 describe('permission · authorization decisions', () => {

@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+
 import { PluginGrantStore } from '@/host/plugins/grant-store.js'
 
 describe('unit · plugin grant store', () => {
@@ -100,6 +101,8 @@ describe('unit · plugin grant store', () => {
     })
     await expect(
       store.set('com.example.plugin', ['ui.panel', 'ui.panel']),
-    ).rejects.toMatchObject({ code: 'E_STATE_INVALID' })
+    ).rejects.toMatchObject({
+      code: 'E_STATE_INVALID',
+    })
   })
 })

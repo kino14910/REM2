@@ -1,13 +1,15 @@
 import type { Session } from 'electron'
+
+import type { ProxySettingsRepository } from '@/host/settings/app-settings-repository.js'
+import type { ProxySettingsService } from '@/host/settings/proxy-settings-service.js'
 import type { ProxySettingsDto } from '@/shared/ipc-contract.js'
+
 import {
   normalizeProxySettings,
   ProxySettingsError,
   toProxyConfig,
   type ProxySettings,
 } from '@/host/settings/proxy-settings.js'
-import type { ProxySettingsRepository } from '@/host/settings/app-settings-repository.js'
-import type { ProxySettingsService } from '@/host/settings/proxy-settings-service.js'
 
 /** Resolved through Chromium so the UI can show which proxy is actually in effect. */
 const RESOLVE_URL = 'https://api.github.com/'

@@ -6,8 +6,9 @@
  * factory".
  */
 
-import { expect } from 'vitest'
 import type { PluginFactoryHooks, PluginManifest } from 'rem2-kernel'
+
+import { expect } from 'vitest'
 
 /**
  * Asserts:

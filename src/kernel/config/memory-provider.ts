@@ -7,6 +7,7 @@
  */
 
 import type { ConfigProvider } from '../contracts/config.js'
+
 import { NotWritableError } from '../errors.js'
 
 /** In-memory config provider (writable). */

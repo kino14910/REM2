@@ -1,6 +1,7 @@
+import type { HealthDto } from '@/frontend/lib/bridge-types'
+
 import { ipc } from '@/frontend/lib/ipc-client'
 import { channels } from '@/shared/ipc-contract'
-import type { HealthDto } from '@/frontend/lib/bridge-types'
 
 class HealthStore {
   report = $state<HealthDto | undefined>(undefined)

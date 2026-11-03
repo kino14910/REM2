@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-  cycleNodes,
-  findCycles,
-  hasCycle,
-} from '@/kernel/dependency/cycles.js'
+
+import { cycleNodes, findCycles, hasCycle } from '@/kernel/dependency/cycles.js'
 
 const make = (): Map<string, string[]> =>
   new Map<string, string[]>([

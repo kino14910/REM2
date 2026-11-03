@@ -11,6 +11,7 @@
  */
 
 import type { Candidate } from '../discovery/candidate.js'
+
 import { compareVersions } from '../semver/semver.js'
 
 export interface TopoSortOptions {

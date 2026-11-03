@@ -22,20 +22,22 @@ import {
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Kernel } from '@/kernel/kernel.js'
-import { KernelTokens } from '@/kernel/contracts/kernel-tokens.js'
+
 import type { EventBus } from '@/kernel/contracts/event-bus.js'
-import { Topics } from '@/kernel/topics.js'
-import { LocalPluginManager } from '@/host/plugins/local-plugin-manager.js'
-import { PluginStateStore } from '@/host/plugins/state-store.js'
-import { PluginProvenanceStore } from '@/host/plugins/provenance-store.js'
-import { PluginGrantStore } from '@/host/plugins/grant-store.js'
-import { PluginRemovedStore } from '@/host/plugins/removed-plugin-store.js'
-import { copyDirectorySafe } from '@/host/plugins/safe-fs.js'
+
 import { ThemeRegistryImpl } from '@/host/electron/theme-registry.js'
-import { createMethodHandlers } from '@/host/ipc/method-handlers.js'
 import { IpcBridge } from '@/host/ipc/bridge.js'
 import { EVENT_FORWARD_MAP } from '@/host/ipc/forward-map.js'
+import { createMethodHandlers } from '@/host/ipc/method-handlers.js'
+import { PluginGrantStore } from '@/host/plugins/grant-store.js'
+import { LocalPluginManager } from '@/host/plugins/local-plugin-manager.js'
+import { PluginProvenanceStore } from '@/host/plugins/provenance-store.js'
+import { PluginRemovedStore } from '@/host/plugins/removed-plugin-store.js'
+import { copyDirectorySafe } from '@/host/plugins/safe-fs.js'
+import { PluginStateStore } from '@/host/plugins/state-store.js'
+import { KernelTokens } from '@/kernel/contracts/kernel-tokens.js'
+import { Kernel } from '@/kernel/kernel.js'
+import { Topics } from '@/kernel/topics.js'
 import {
   Ipc,
   channels,
@@ -43,6 +45,7 @@ import {
   type IpcEventPayload,
   type IpcResponse,
 } from '@/shared/ipc-contract.js'
+
 import { makeManifest } from '../helpers/make-manifest.js'
 import { buildZip, type ZipBuilderEntry } from '../helpers/zip-builder.js'
 
@@ -370,7 +373,10 @@ describe('integration · remote plugin inspect and install', () => {
 
     const provenance = JSON.parse(
       await readFile(env.provenanceFile, 'utf8'),
-    ) as { version: number; entries: Record<string, unknown> }
+    ) as {
+      version: number
+      entries: Record<string, unknown>
+    }
     expect(provenance.version).toBe(1)
     expect(provenance.entries[PLUGIN_ID]).toMatchObject({
       kind: 'remote',
@@ -1021,7 +1027,9 @@ describe('integration · remote plugin updates', () => {
 
     const provenance = JSON.parse(
       await readFile(env.provenanceFile, 'utf8'),
-    ) as { entries: Record<string, { sha256: string }> }
+    ) as {
+      entries: Record<string, { sha256: string }>
+    }
     expect(provenance.entries[PLUGIN_ID]?.sha256).toBe(secondDigest)
 
     expect(await listEntries(env.userRoot)).toEqual([PLUGIN_ID])
@@ -1188,7 +1196,9 @@ export default function factory() {
     ).rejects.toMatchObject({ code: 'E_PROVENANCE_MISSING' })
     await expect(
       env.manager.checkUpdates('com.acme.local'),
-    ).rejects.toMatchObject({ code: 'E_PROVENANCE_MISSING' })
+    ).rejects.toMatchObject({
+      code: 'E_PROVENANCE_MISSING',
+    })
   })
 })
 

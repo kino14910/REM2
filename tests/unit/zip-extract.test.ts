@@ -2,7 +2,9 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+
 import { extractZipSafe } from '@/host/plugins/zip-extract.js'
+
 import { buildZip, type ZipBuilderEntry } from '../helpers/zip-builder.js'
 
 describe('unit · safe ZIP extraction', () => {
@@ -101,7 +103,9 @@ describe('unit · safe ZIP extraction', () => {
     ])
     await expect(
       extractZipSafe(zipPath, destination, { maxFiles: 1 }),
-    ).rejects.toMatchObject({ code: 'E_PACKAGE_TOO_LARGE' })
+    ).rejects.toMatchObject({
+      code: 'E_PACKAGE_TOO_LARGE',
+    })
     expect(await readdir(destination)).toEqual([])
   })
 
@@ -112,7 +116,9 @@ describe('unit · safe ZIP extraction', () => {
     ])
     await expect(
       extractZipSafe(zipPath, destination, { maxTotalBytes: 5 }),
-    ).rejects.toMatchObject({ code: 'E_PACKAGE_TOO_LARGE' })
+    ).rejects.toMatchObject({
+      code: 'E_PACKAGE_TOO_LARGE',
+    })
     expect(await readdir(destination)).toEqual([])
   })
 
@@ -120,7 +126,9 @@ describe('unit · safe ZIP extraction', () => {
     await archive([{ name: 'large.txt', content: 'abcd', method: 8 }])
     await expect(
       extractZipSafe(zipPath, destination, { maxEntryBytes: 3 }),
-    ).rejects.toMatchObject({ code: 'E_PACKAGE_TOO_LARGE' })
+    ).rejects.toMatchObject({
+      code: 'E_PACKAGE_TOO_LARGE',
+    })
     expect(await readdir(destination)).toEqual([])
   })
 

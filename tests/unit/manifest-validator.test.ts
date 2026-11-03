@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { validateManifest } from '@/kernel/discovery/manifest-validator.js'
 
 const valid = {

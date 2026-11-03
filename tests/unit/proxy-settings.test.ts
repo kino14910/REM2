@@ -1,3 +1,5 @@
+import type { Session } from 'electron'
+
 import {
   chmodSync,
   mkdtempSync,
@@ -7,8 +9,8 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import type { Session } from 'electron'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
 import { ElectronAppSettingsStore } from '@/host/electron/app-settings-store.js'
 import { ElectronProxySettingsService } from '@/host/electron/proxy-settings-service.js'
 import {

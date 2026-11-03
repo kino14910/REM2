@@ -13,9 +13,10 @@ import type {
   ServiceToken,
   ServiceFactory,
 } from '../contracts/service-token.js'
-import { Lifetime, normalizeLifetime } from './lifetime.js'
-import { CircularDependencyError, NoProviderError } from '../errors.js'
 import type { ServiceRegistry } from '../contracts/service.js'
+
+import { CircularDependencyError, NoProviderError } from '../errors.js'
+import { Lifetime, normalizeLifetime } from './lifetime.js'
 
 interface Registration<T = unknown> {
   token: ServiceToken<T>

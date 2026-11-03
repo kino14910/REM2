@@ -9,6 +9,7 @@ import {
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
 import { ElectronAppSettingsStore } from '@/host/electron/app-settings-store.js'
 
 function readSettings(directory: string): unknown {

@@ -8,8 +8,9 @@
  * Shape: the only form is `export default definePlugin(manifest, setup)`.
  */
 
-import { definePlugin, defineToken, KernelTokens } from 'rem2-kernel'
 import type { Logger, LogEntry, LogSink, PluginContext } from 'rem2-kernel'
+
+import { definePlugin, defineToken, KernelTokens } from 'rem2-kernel'
 
 class ConsoleLogSink implements LogSink {
   readonly name = 'console'

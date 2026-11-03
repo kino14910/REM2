@@ -8,9 +8,11 @@
 
 import { readdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
+
 import type { Candidate, CandidateSource } from './candidate.js'
-import { validateManifest } from './manifest-validator.js'
+
 import { MANIFEST_FILENAME, LEGACY_MANIFEST_FILENAME } from '../version.js'
+import { validateManifest } from './manifest-validator.js'
 
 export interface DiscoverOptions {
   /** Scan roots (absolute paths). */

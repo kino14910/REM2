@@ -7,6 +7,7 @@
  */
 
 import type { PermissionSet } from '../contracts/permission.js'
+
 import { CapabilityDeniedError } from '../errors.js'
 
 export class CapabilityGuard {

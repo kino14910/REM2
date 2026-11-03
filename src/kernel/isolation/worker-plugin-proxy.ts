@@ -13,9 +13,10 @@
  * `ExtensionPointRegistry`.
  */
 
-import type { PluginFactoryHooks } from '../contracts/plugin.js'
 import type { StopReason } from '../contracts/lifecycle.js'
+import type { PluginFactoryHooks } from '../contracts/plugin.js'
 import type { WorkerPluginHost } from './worker-host.js'
+
 import { WORKER_ALLOWED_EXTENSION_POINTS } from './worker-protocol.js'
 
 /** Worker-contributable extension points (shared definition used by `worker-bootstrap` and this file). */

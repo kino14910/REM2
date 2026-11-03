@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Kernel } from '@/kernel/kernel.js'
+
 import { KernelTokens } from '@/kernel/contracts/kernel-tokens.js'
-import { MemoryLogSink } from '@/kernel/observability/null-sink.js'
+import { Kernel } from '@/kernel/kernel.js'
 import { MemoryMetricSink } from '@/kernel/observability/noop-metrics-sink.js'
+import { MemoryLogSink } from '@/kernel/observability/null-sink.js'
+
 import { materializePlugins } from '../fixtures/fake-kernel.js'
 
 describe('integration · observability', () => {

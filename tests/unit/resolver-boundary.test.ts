@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
+
 import { DependencyResolver } from '@/kernel/dependency/resolver.js'
+
 import { makeCandidate } from '../helpers/make-manifest.js'
 
 const OPTS = { kernelVersion: '1.0.0', contractVersion: '1' } as const

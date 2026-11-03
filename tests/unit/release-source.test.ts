@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+
 import { resolveRemoteRelease } from '@/host/plugins/release-source.js'
 
 const digest = 'a'.repeat(64)
