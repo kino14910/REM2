@@ -12,12 +12,16 @@
  * meaningless empty-string lookup.
  */
 
-import { isValidPluginId } from '../../kernel/discovery/manifest-validator.js'
-import { isSha256 } from '../plugins/integrity.js'
+import { isValidPluginId } from '@/kernel/discovery/manifest-validator.js'
+import { isSha256 } from '@/host/plugins/integrity.js'
+import {
+  normalizeAppearanceSettings,
+  type AppearanceSettings,
+} from '@/host/settings/appearance-settings.js'
 import {
   normalizeProxySettings,
   type ProxySettings,
-} from '../settings/proxy-settings.js'
+} from '@/host/settings/proxy-settings.js'
 
 const MAX_URL_LENGTH = 2048
 const OPERATION_ID_RE = /^[A-Za-z0-9._:-]{1,64}$/
@@ -64,6 +68,31 @@ export function uiEventArgsOf(args: unknown): {
 /** Validates `{ themeId: string }` and returns the theme id. */
 export function themeIdOf(args: unknown): string {
   return nonEmptyString(asObject(args).themeId, 'themeId')
+}
+
+/** Longest accepted CSS color literal (a computed `rgb()` / `color()` value fits well below this). */
+const MAX_CSS_COLOR_LENGTH = 64
+
+function cssColor(value: unknown, field: string): string {
+  const color = nonEmptyString(value, field).trim()
+  if (color.length === 0 || color.length > MAX_CSS_COLOR_LENGTH) {
+    throw new Error(
+      `invalid args: ${field} must be a CSS color (1-${MAX_CSS_COLOR_LENGTH} characters)`,
+    )
+  }
+  return color
+}
+
+/** Validates `{ color, symbolColor }` for the native title bar overlay. */
+export function titleBarColorsOf(args: unknown): {
+  color: string
+  symbolColor: string
+} {
+  const obj = asObject(args)
+  return {
+    color: cssColor(obj.color, 'color'),
+    symbolColor: cssColor(obj.symbolColor, 'symbolColor'),
+  }
 }
 
 export function pluginIdOf(args: unknown): string {
@@ -137,6 +166,11 @@ export function noArgsOf(args: unknown): void {
 /** Validates `{ mode, address?, bypass? }` for `settings.proxy.set`. */
 export function proxySettingsArgsOf(args: unknown): ProxySettings {
   return normalizeProxySettings(asObject(args))
+}
+
+/** Validates `{ colorMode }` for `settings.appearance.set`. */
+export function appearanceSettingsArgsOf(args: unknown): AppearanceSettings {
+  return normalizeAppearanceSettings(asObject(args))
 }
 
 /**

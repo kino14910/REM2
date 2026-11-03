@@ -8,35 +8,33 @@ import {
 } from 'electron'
 import process from 'node:process'
 import path from 'node:path'
-import { Kernel } from '../../kernel/kernel.js'
-import { createDeps } from '../../kernel/composition.js'
-import { KernelTokens } from '../../kernel/contracts/kernel-tokens.js'
-import { Topics } from '../../kernel/topics.js'
-import type { ThemeDefinition } from '../../kernel/contracts/ui.js'
-import { IpcBridge } from '../ipc/bridge.js'
-import { EVENT_FORWARD_MAP } from '../ipc/forward-map.js'
+import { Kernel } from '@/kernel/kernel.js'
+import { createDeps } from '@/kernel/composition.js'
+import { KernelTokens } from '@/kernel/contracts/kernel-tokens.js'
+import { Topics } from '@/kernel/topics.js'
+import { IpcBridge } from '@/host/ipc/bridge.js'
+import { EVENT_FORWARD_MAP } from '@/host/ipc/forward-map.js'
 import {
   createMethodHandlers,
   createThemeRefreshHandler,
-} from '../ipc/method-handlers.js'
-import { builtinPluginsRoot } from '../cli/paths.js'
-import { createWindow, applyTitleBarTheme } from './window.js'
-import type { EventBus } from '../../kernel/contracts/event-bus.js'
+} from '@/host/ipc/method-handlers.js'
+import { builtinPluginsRoot } from '@/host/cli/paths.js'
+import { createWindow, applyTitleBarColors } from './window.js'
+import type { EventBus } from '@/kernel/contracts/event-bus.js'
 import { ThemeRegistryImpl } from './theme-registry.js'
-import { LocalPluginManager } from '../plugins/local-plugin-manager.js'
-import { PluginStateStore } from '../plugins/state-store.js'
-import { PluginProvenanceStore } from '../plugins/provenance-store.js'
-import { PluginGrantStore } from '../plugins/grant-store.js'
-import { PluginRemovedStore } from '../plugins/removed-plugin-store.js'
-import { ProxySettingsStore } from '../settings/proxy-settings-store.js'
+import { LocalPluginManager } from '@/host/plugins/local-plugin-manager.js'
+import { PluginStateStore } from '@/host/plugins/state-store.js'
+import { PluginProvenanceStore } from '@/host/plugins/provenance-store.js'
+import { PluginGrantStore } from '@/host/plugins/grant-store.js'
+import { PluginRemovedStore } from '@/host/plugins/removed-plugin-store.js'
 import { ElectronProxySettingsService } from './proxy-settings-service.js'
+import { ElectronAppSettingsStore } from './app-settings-store.js'
 import { createSessionFetch } from './session-fetch.js'
-import type { ProxySettingsService } from '../settings/proxy-settings-service.js'
+import type { ProxySettingsService } from '@/host/settings/proxy-settings-service.js'
+import type { AppearanceSettingsService } from '@/host/settings/appearance-settings.js'
 
 let kernel: Kernel | null = null
 let bridge: IpcBridge | null = null
-/** Unsubscribes the native title-bar overlay from theme changes (see `startKernel`). */
-let themeUnsubscribe: (() => void) | null = null
 /** Unsubscribes OS light/dark changes when the shell exits. */
 let systemThemeUnsubscribe: (() => void) | null = null
 
@@ -94,6 +92,7 @@ function registerWhitelistedMethods(
   kernelRef: Kernel,
   pluginManager: LocalPluginManager,
   proxySettings: ProxySettingsService,
+  appearanceSettings: AppearanceSettingsService,
 ): void {
   const bus = kernelRef.root.resolve<EventBus>(KernelTokens.EventBus)
   const methodContext = {
@@ -101,8 +100,16 @@ function registerWhitelistedMethods(
     bus,
     themeRegistry,
     isSystemDark: () => nativeTheme.shouldUseDarkColors,
+    // The renderer reports the title bar's measured colors; the OS-painted
+    // overlay cannot follow the renderer's CSS variables by itself.
+    applyTitleBarOverlay: colors => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        applyTitleBarColors(win, colors)
+      }
+    },
     pluginManager,
     proxySettings,
+    appearanceSettings,
     // Renderer dialogs are not a sufficient trust boundary: compromised renderer
     // code could invoke these methods directly. The main process asks the user
     // again using values it has validated.
@@ -139,16 +146,19 @@ function registerWhitelistedMethods(
 
 async function startKernel(): Promise<void> {
   const userData = app.getPath('userData')
-  // Apply the proxy before any plugin starts: kernel startup itself may not
-  // touch the network, but plugins and the window are created right after.
-  const proxyStore = new ProxySettingsStore(
-    path.join(userData, 'proxy-settings.json'),
-  )
+  // One app-level settings store for both namespaces. Proxy initialization loads
+  // it before any network use; a corrupt file only loses the affected values
+  // (the proxy falls back to the system proxy, the renderer to the OS color mode).
+  const appSettings = new ElectronAppSettingsStore(userData)
   const proxySettings = new ElectronProxySettingsService(
     session.defaultSession,
-    proxyStore,
+    appSettings,
   )
   await proxySettings.initialize()
+  const appearanceSettings: AppearanceSettingsService = {
+    get: () => appSettings.getAppearance(),
+    set: settings => appSettings.setAppearance(settings),
+  }
   /**
    * Host downloads and release metadata use Chromium's network stack (and thus
    * the configured proxy). `ClientRequest` is used instead of `net.fetch` so
@@ -218,7 +228,12 @@ async function startKernel(): Promise<void> {
   // plugins; otherwise it could start a half-installed or missing version.
   await pluginManager.prepare()
   disabledPlugins.splice(0, disabledPlugins.length, ...state.ids())
-  registerWhitelistedMethods(kernel, pluginManager, proxySettings)
+  registerWhitelistedMethods(
+    kernel,
+    pluginManager,
+    proxySettings,
+    appearanceSettings,
+  )
   await kernel.start()
 
   const bus = kernel.root.resolve<EventBus>(KernelTokens.EventBus)
@@ -236,15 +251,10 @@ async function startKernel(): Promise<void> {
     },
   })
 
-  // The window-controls overlay is painted by the OS, so it cannot follow the
-  // renderer's CSS variables; drive it from the same topic that feeds the
-  // renderer's `ui.theme.changed` event.
-  themeUnsubscribe = bus.on(Topics.UiThemeChanged, payload => {
-    const theme = (payload as ThemeDefinition | null) ?? null
-    for (const win of BrowserWindow.getAllWindows()) {
-      applyTitleBarTheme(win, theme)
-    }
-  })
+  // The renderer owns the title bar's colors: it measures the bar and reports
+  // them over the IPC contract, and `applyTitleBarOverlay` repaints the native
+  // window controls. Nothing here re-derives colors from theme data, which
+  // would fight the renderer and desync the overlay from the actual bar.
 
   const onSystemThemeChange = (): void => {
     const activeId = themeRegistry.active()
@@ -261,17 +271,14 @@ async function startKernel(): Promise<void> {
   }
 }
 
-/** Create the shell window, applying the active theme to the native overlay (macOS reactivation included). */
+/** Create the shell window (macOS reactivation included). */
 function createAppWindow(): BrowserWindow {
-  const window = createWindow()
-  const activeId = themeRegistry.active()
-  applyTitleBarTheme(
-    window,
-    activeId ? (themeRegistry.get(activeId) ?? null) : null,
-  )
-  return window
+  return createWindow()
 }
 
+// Must stay `.then`: Electron waits for the ESM entry module to finish evaluating
+// before emitting `ready`, so a top-level `await app.whenReady()` would deadlock.
+// Async work that must precede ready may be top-level awaited, but not this event.
 app.whenReady().then(async () => {
   try {
     await startKernel()
@@ -304,8 +311,6 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', async () => {
   bridge?.unbind()
-  themeUnsubscribe?.()
-  themeUnsubscribe = null
   systemThemeUnsubscribe?.()
   systemThemeUnsubscribe = null
   if (kernel) {

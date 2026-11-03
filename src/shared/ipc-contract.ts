@@ -51,6 +51,12 @@ export const channels = {
   themeList: 'ui.theme.list',
   /** Switch the active theme. */
   themeSet: 'ui.theme.set',
+  /**
+   * Report the title bar's resolved colors. The window-controls overlay is
+   * painted by the OS, so only the renderer knows the colors the bar actually
+   * renders with; the host applies them to the native buttons.
+   */
+  titleBarColors: 'ui.titlebar.colors',
   /** Report a UI interaction. */
   uiEvent: 'ui.event',
   pluginList: 'plugin.list',
@@ -89,6 +95,10 @@ export const channels = {
   settingsProxyGet: 'settings.proxy.get',
   /** Replace proxy settings; applied to the default session immediately. */
   settingsProxySet: 'settings.proxy.set',
+  /** Read the persisted appearance settings (the renderer color mode). */
+  settingsAppearanceGet: 'settings.appearance.get',
+  /** Persist the renderer color mode; the renderer applies it on the next start. */
+  settingsAppearanceSet: 'settings.appearance.set',
   /** Execute a command (responded directly by a command plugin; the host does not implement it). */
   commandExecute: 'command.execute',
   /** Fetch the health report. */
@@ -150,6 +160,14 @@ export interface ProxySettingsDto {
    * Never persisted and may be absent on platforms that cannot resolve it.
    */
   resolved?: string
+}
+
+/** Renderer color mode (also the theme catalog's `ThemeMode`). */
+export type ColorModeDto = 'light' | 'dark' | 'system'
+
+/** Host-persisted appearance settings (renderer UI preferences, not kernel state). */
+export interface AppearanceSettingsDto {
+  colorMode: ColorModeDto
 }
 
 export type PluginRuntimeStateDto =

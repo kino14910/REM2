@@ -1,7 +1,7 @@
 import type {
   ProxyModeDto,
   ProxySettingsDto,
-} from '../../shared/ipc-contract.js'
+} from '@/shared/ipc-contract.js'
 
 /** Persisted proxy settings; `resolved` is a runtime diagnostic and never stored. */
 export type ProxySettings = Omit<ProxySettingsDto, 'resolved'>

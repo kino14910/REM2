@@ -1,4 +1,4 @@
-import type { ProxySettingsDto } from '../../shared/ipc-contract.js'
+import type { ProxySettingsDto } from '@/shared/ipc-contract.js'
 import type { ProxySettings } from './proxy-settings.js'
 
 /**

@@ -4,7 +4,7 @@
  * Split out from `main.ts` because it owns the renderer security boundary:
  * - `contextIsolation: true` + `sandbox: true` → the renderer has no Node
  *   capabilities under contextIsolation.
- * - `preload: path.join(__dirname, 'preload.cjs')` — the file name is an
+ * - `preload: path.join(moduleDirectory(), 'preload.cjs')` — the file name is an
  *   implicit contract: `vite.preload.config.mts` must guarantee the build
  *   output is named `preload.cjs`.
  *
@@ -15,44 +15,53 @@
  * minimize/maximize/close buttons are needed; on macOS the traffic lights stay
  * visible. The overlay height must equal the bar height in CSS
  * (`TITLE_BAR_HEIGHT` ↔ `--rem2-titlebar-height`).
+ *
+ * Because the overlay is OS-painted it cannot read CSS variables; the renderer
+ * measures the bar and reports its colors (`ui.titlebar.colors`), so the native
+ * buttons always follow the theme that is currently applied.
  */
 
 import { BrowserWindow } from 'electron'
 import path from 'node:path'
-import type { ThemeDefinition } from '../../kernel/contracts/ui.js'
+import process from 'node:process'
+import { moduleDirectory } from '@/host/cli/paths.js'
+
+export interface TitleBarColors {
+  /** CSS color filling the window-controls area. */
+  color: string
+  /** CSS color of the minimize/maximize/close glyphs. */
+  symbolColor: string
+}
 
 /** Renderer title bar height; the Windows/Linux overlay takes an integer and must match it. */
 export const TITLE_BAR_HEIGHT = 36
 
-/** Overlay colors when no theme is applied yet; matches the dark fallbacks in `global.css`. */
-const FALLBACK_OVERLAY_COLORS = { color: '#161922', symbolColor: '#e6e6e6' }
-
 /**
- * Theme -> native overlay colors (the overlay is painted by the OS, so it does not
- * follow the renderer's CSS variables by itself).
+ * Overlay colors used before the renderer reports the real bar colors. They are
+ * the rendered dark-mode values of the title bar tokens (`themes/rem.css`), so
+ * first paint does not flash a differently colored block in the corner.
  */
-function overlayColorsFor(theme: ThemeDefinition | null): {
-  color: string
-  symbolColor: string
-} {
-  return {
-    color: theme?.colors['surface'] ?? FALLBACK_OVERLAY_COLORS.color,
-    symbolColor: theme?.colors['text'] ?? FALLBACK_OVERLAY_COLORS.symbolColor,
-  }
+const INITIAL_OVERLAY_COLORS: TitleBarColors = {
+  color: '#222222',
+  symbolColor: '#858585',
 }
 
 /**
- * Apply theme colors to the window-controls overlay (Windows/Linux).
+ * Apply renderer-measured colors to the window-controls overlay (Windows/Linux).
+ *
+ * The overlay is painted by the OS, so it does not follow the renderer's CSS
+ * variables: the renderer measures its title bar and reports the colors over
+ * `ui.titlebar.colors`, keeping the native buttons on the active theme.
  *
  * No-op on macOS: the traffic lights are native and carry their own colors.
  */
-export function applyTitleBarTheme(
+export function applyTitleBarColors(
   window: BrowserWindow,
-  theme: ThemeDefinition | null,
+  colors: TitleBarColors,
 ): void {
   if (process.platform === 'darwin') return
   window.setTitleBarOverlay({
-    ...overlayColorsFor(theme),
+    ...colors,
     height: TITLE_BAR_HEIGHT,
   })
 }
@@ -77,6 +86,7 @@ export interface CreateWindowOptions {
 }
 
 export function createWindow(opts: CreateWindowOptions = {}): BrowserWindow {
+  const hostDir = moduleDirectory()
   const window = new BrowserWindow({
     width: opts.width ?? 960,
     height: opts.height ?? 720,
@@ -87,12 +97,12 @@ export function createWindow(opts: CreateWindowOptions = {}): BrowserWindow {
       ? { trafficLightPosition: { x: 14, y: 11 } }
       : {
           titleBarOverlay: {
-            ...overlayColorsFor(null),
+            ...INITIAL_OVERLAY_COLORS,
             height: TITLE_BAR_HEIGHT,
           },
         }),
     webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
+      preload: path.join(hostDir, 'preload.cjs'),
       contextIsolation: true,
       // The renderer runs Svelte (needs window/DOM) and sandbox still works:
       // under sandbox the preload keeps contextBridge and ipcRenderer,
@@ -116,7 +126,7 @@ export function createWindow(opts: CreateWindowOptions = {}): BrowserWindow {
     void window.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL)
   } else {
     void window.loadFile(
-      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
+      path.join(hostDir, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
     )
   }
 

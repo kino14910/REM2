@@ -1,13 +1,13 @@
 import type { Session } from 'electron'
-import type { ProxySettingsDto } from '../../shared/ipc-contract.js'
+import type { ProxySettingsDto } from '@/shared/ipc-contract.js'
 import {
   normalizeProxySettings,
   ProxySettingsError,
   toProxyConfig,
   type ProxySettings,
-} from '../settings/proxy-settings.js'
-import { ProxySettingsStore } from '../settings/proxy-settings-store.js'
-import type { ProxySettingsService } from '../settings/proxy-settings-service.js'
+} from '@/host/settings/proxy-settings.js'
+import type { ProxySettingsRepository } from '@/host/settings/app-settings-repository.js'
+import type { ProxySettingsService } from '@/host/settings/proxy-settings-service.js'
 
 /** Resolved through Chromium so the UI can show which proxy is actually in effect. */
 const RESOLVE_URL = 'https://api.github.com/'
@@ -21,7 +21,7 @@ export class ElectronProxySettingsService implements ProxySettingsService {
 
   constructor(
     private readonly electronSession: Session,
-    private readonly store: ProxySettingsStore,
+    private readonly store: ProxySettingsRepository,
   ) {}
 
   /** Load before any network use, then apply; a corrupt file degrades to the system default. */
@@ -30,9 +30,9 @@ export class ElectronProxySettingsService implements ProxySettingsService {
       try {
         await this.store.load()
       } catch (error) {
-        console.error('[rem2-kernel] Proxy settings failed to load:', error)
+        console.error('[rem2-kernel] App settings failed to load:', error)
       }
-      await this.electronSession.setProxy(toProxyConfig(this.store.get()))
+      await this.electronSession.setProxy(toProxyConfig(this.store.getProxy()))
     })
   }
 
@@ -42,11 +42,11 @@ export class ElectronProxySettingsService implements ProxySettingsService {
 
   async set(settings: ProxySettings): Promise<ProxySettingsDto> {
     return await this.enqueue(async () => {
-      const previous = this.store.get()
+      const previous = this.store.getProxy()
       const next = normalizeProxySettings(settings)
       await this.electronSession.setProxy(toProxyConfig(next))
       try {
-        await this.store.set(next)
+        await this.store.setProxy(next)
       } catch (error) {
         // Keep the in-memory session consistent with the persisted value.
         try {
@@ -74,7 +74,7 @@ export class ElectronProxySettingsService implements ProxySettingsService {
   }
 
   private async snapshot(): Promise<ProxySettingsDto> {
-    const settings = this.store.get()
+    const settings = this.store.getProxy()
     let resolved: string | undefined
     try {
       const value = await this.electronSession.resolveProxy(RESOLVE_URL)

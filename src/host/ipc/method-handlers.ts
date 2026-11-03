@@ -31,19 +31,20 @@
  * in `tests/integration/command-chain.test.ts`.
  */
 
-import { Topics } from '../../kernel/topics.js'
-import { channels } from '../../shared/ipc-contract.js'
-import type { AllowedMethod } from '../../shared/ipc-contract.js'
-import type { Kernel } from '../../kernel/kernel.js'
-import type { EventBus } from '../../kernel/contracts/event-bus.js'
-import type { HealthReport } from '../../kernel/contracts/health.js'
+import { Topics } from '@/kernel/topics.js'
+import { channels } from '@/shared/ipc-contract.js'
+import type { AllowedMethod } from '@/shared/ipc-contract.js'
+import type { Kernel } from '@/kernel/kernel.js'
+import type { EventBus } from '@/kernel/contracts/event-bus.js'
+import type { HealthReport } from '@/kernel/contracts/health.js'
 import type {
   PanelContribution,
   RouteContribution,
   ThemeDefinition,
   ThemeRegistry,
-} from '../../kernel/contracts/ui.js'
+} from '@/kernel/contracts/ui.js'
 import {
+  appearanceSettingsArgsOf,
   inspectRemoteArgsOf,
   installRemoteArgsOf,
   noArgsOf,
@@ -54,6 +55,7 @@ import {
   pluginIdOf,
   proxySettingsArgsOf,
   themeIdOf,
+  titleBarColorsOf,
   uiEventArgsOf,
   updateCheckArgsOf,
   updateInstallArgsOf,
@@ -61,10 +63,11 @@ import {
 import type {
   LocalPluginManager,
   RemoteProgress,
-} from '../plugins/local-plugin-manager.js'
-import { PluginManagementError } from '../plugins/errors.js'
-import type { ProxySettingsService } from '../settings/proxy-settings-service.js'
-import { ProxySettingsError } from '../settings/proxy-settings.js'
+} from '@/host/plugins/local-plugin-manager.js'
+import { PluginManagementError } from '@/host/plugins/errors.js'
+import type { AppearanceSettingsService } from '@/host/settings/appearance-settings.js'
+import type { ProxySettingsService } from '@/host/settings/proxy-settings-service.js'
+import { ProxySettingsError } from '@/host/settings/proxy-settings.js'
 
 /** Handler for a single method (args come from the renderer and are untrusted at runtime). */
 export type MethodHandler = (args: unknown) => unknown | Promise<unknown>
@@ -90,9 +93,20 @@ export interface MethodContext {
   themeRegistry: ThemeRegistry
   /** Electron nativeTheme in production; deterministic injection for tests. */
   isSystemDark?: () => boolean
+  /**
+   * Applies renderer-measured title bar colors to the native window-controls
+   * overlay (Windows/Linux). The overlay is OS-painted, so this cannot be driven
+   * from theme data alone: the renderer reports what the bar actually renders.
+   */
+  applyTitleBarOverlay?: (colors: {
+    color: string
+    symbolColor: string
+  }) => void
   pluginManager?: LocalPluginManager
   /** Host proxy settings (Electron session in production, fake in tests). */
   proxySettings?: ProxySettingsService
+  /** Host appearance settings (JSON store in production, fake in tests). */
+  appearanceSettings?: AppearanceSettingsService
   choosePluginDirectory?: () => Promise<string | undefined>
   /**
    * Main-process consent boundary for sensitive plugin actions. The browser UI
@@ -141,6 +155,13 @@ function proxySettingsOf(ctx: MethodContext): ProxySettingsService {
     )
   }
   return ctx.proxySettings
+}
+
+function appearanceSettingsOf(ctx: MethodContext): AppearanceSettingsService {
+  if (!ctx.appearanceSettings) {
+    throw new Error('appearance settings service is unavailable')
+  }
+  return ctx.appearanceSettings
 }
 
 /**
@@ -285,7 +306,7 @@ export const METHOD_FACTORIES = {
   },
 
   [channels.themeSet]: (ctx): MethodHandler => {
-    return args => {
+    return async args => {
       const id = themeIdOf(args)
       syncThemeFromExtension(ctx)
       // Emit only on a real change: emitting on a no-op switch made the renderer
@@ -298,7 +319,38 @@ export const METHOD_FACTORIES = {
           ctx.themeRegistry.get(id) ?? null,
         )
       }
+      // Mirror the selection into the JSON appearance settings, so the color
+      // mode survives even if the catalog later disappears (plugin removed).
+      if (ok && ctx.appearanceSettings) {
+        const activated = ctx.themeRegistry.get(id)
+        const colorMode =
+          activated?.followSystem === true || activated?.mode === 'system'
+            ? 'system'
+            : activated?.mode
+        if (colorMode) {
+          try {
+            await ctx.appearanceSettings.set({ colorMode })
+          } catch (error) {
+            console.error(
+              '[rem2-kernel] Failed to persist the color mode:',
+              error,
+            )
+          }
+        }
+      }
       return { ok }
+    }
+  },
+
+  /**
+   * Title bar colors measured by the renderer. Fire-and-forget styling: a host
+   * without a native overlay (macOS, tests) just accepts the values.
+   */
+  [channels.titleBarColors]: ({ applyTitleBarOverlay }): MethodHandler => {
+    return args => {
+      const colors = titleBarColorsOf(args)
+      applyTitleBarOverlay?.(colors)
+      return { ok: true }
     }
   },
 
@@ -585,6 +637,20 @@ export const METHOD_FACTORIES = {
         ].join('\n'),
       })
       return await proxySettingsOf(ctx).set(settings)
+    }
+  },
+
+  [channels.settingsAppearanceGet]: (ctx): MethodHandler => {
+    return args => {
+      noArgsOf(args)
+      return appearanceSettingsOf(ctx).get()
+    }
+  },
+
+  [channels.settingsAppearanceSet]: (ctx): MethodHandler => {
+    return async args => {
+      const settings = appearanceSettingsArgsOf(args)
+      return await appearanceSettingsOf(ctx).set(settings)
     }
   },
 
