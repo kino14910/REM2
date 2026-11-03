@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { ConfigProvider } from '@/kernel/contracts/config.js'
 
 import { ConfigService } from '@/kernel/config/config-service.js'
 import { MemoryConfigProvider } from '@/kernel/config/memory-provider.js'
+import { NotWritableError } from '@/kernel/errors.js'
 
 describe('config-service · layered merging', () => {
   it('higher priority overrides lower priority', async () => {
@@ -110,5 +111,167 @@ describe('config-service · change notifications', () => {
     notify!(['watched'])
     await svc.refresh()
     expect(svc.get<number>('watched')).toBeGreaterThanOrEqual(before)
+  })
+})
+
+describe('config-service · provider lifecycle', () => {
+  it('replaces a provider registered under the same name', async () => {
+    const svc = new ConfigService()
+    svc.registerProvider(new MemoryConfigProvider({ v: 1 }, 'same', 10))
+    svc.registerProvider(new MemoryConfigProvider({ v: 2 }, 'same', 10))
+    await svc.refresh()
+
+    expect(svc.layers()).toEqual(['same'])
+    expect(svc.get('v')).toBe(2)
+  })
+
+  it('unregisterProvider drops the layer and its change subscription', () => {
+    const svc = new ConfigService()
+    const unsub = vi.fn()
+    svc.registerProvider({
+      name: 'watch',
+      priority: 10,
+      load: async () => ({ watched: 1 }),
+      onDidChange: () => unsub,
+    })
+
+    svc.unregisterProvider('watch')
+
+    expect(unsub).toHaveBeenCalledTimes(1)
+    expect(svc.layers()).toEqual([])
+  })
+
+  it('layerDetails reports names with priorities in merge order', () => {
+    const svc = new ConfigService()
+    svc.registerProvider(new MemoryConfigProvider({}, 'high', 100))
+    svc.registerProvider(new MemoryConfigProvider({}, 'low', 10))
+
+    expect(svc.layerDetails()).toEqual([
+      { name: 'low', priority: 10 },
+      { name: 'high', priority: 100 },
+    ])
+  })
+})
+
+describe('config-service · provider failures', () => {
+  it('records a load failure and reports it to onProviderError', async () => {
+    const onProviderError = vi.fn()
+    const svc = new ConfigService({ onProviderError })
+    svc.registerProvider({
+      name: 'broken',
+      priority: 10,
+      load: async () => {
+        throw new Error('boom')
+      },
+    })
+
+    await svc.refresh()
+
+    expect(svc.loadFailures).toHaveLength(1)
+    expect(svc.loadFailures[0]).toMatchObject({
+      provider: 'broken',
+      error: 'boom',
+    })
+    expect(onProviderError).toHaveBeenCalledTimes(1)
+  })
+
+  it('clearLoadFailures empties the record', async () => {
+    const svc = new ConfigService()
+    svc.registerProvider({
+      name: 'broken',
+      priority: 1,
+      load: async () => {
+        throw new Error('x')
+      },
+    })
+    await svc.refresh()
+
+    svc.clearLoadFailures()
+
+    expect(svc.loadFailures).toEqual([])
+  })
+
+  it('set notifies subscribers even when the follow-up load fails', async () => {
+    const svc = new ConfigService()
+    svc.registerProvider({
+      name: 'flaky',
+      priority: 10,
+      load: async () => {
+        throw new Error('load boom')
+      },
+      set: async () => undefined,
+    })
+    const changed = vi.fn()
+    svc.onDidChange(changed)
+
+    await svc.set('k', 1)
+
+    expect(changed).toHaveBeenCalledWith(['k'], 'k')
+    expect(svc.loadFailures[0]).toMatchObject({
+      provider: 'flaky',
+      error: 'load boom',
+    })
+  })
+
+  it('set throws when no provider is writable', async () => {
+    const svc = new ConfigService()
+    svc.registerProvider({
+      name: 'readonly',
+      priority: 10,
+      load: async () => ({}),
+    })
+
+    await expect(svc.set('k', 1)).rejects.toThrow(NotWritableError)
+  })
+})
+
+describe('config-service · subscribers and lazy refresh', () => {
+  it('a throwing subscriber does not block the others', async () => {
+    const svc = new ConfigService()
+    svc.registerProvider(new MemoryConfigProvider({}, 'm', 10))
+    await svc.refresh()
+    const good = vi.fn()
+    svc.onDidChange(() => {
+      throw new Error('boom')
+    })
+    svc.onDidChange(good)
+
+    await svc.set('a', 1)
+
+    expect(good).toHaveBeenCalledTimes(1)
+  })
+
+  it('unsubscribe stops notifications', async () => {
+    const svc = new ConfigService()
+    svc.registerProvider(new MemoryConfigProvider({}, 'm', 10))
+    const cb = vi.fn()
+    svc.onDidChange(cb)()
+
+    await svc.set('a', 1)
+
+    expect(cb).not.toHaveBeenCalled()
+  })
+
+  it('a dirty service serves the old snapshot and refreshes on a microtask', async () => {
+    const svc = new ConfigService()
+    svc.registerProvider(new MemoryConfigProvider({ v: 1 }, 'm', 10))
+    await svc.refresh()
+
+    svc.registerProvider(new MemoryConfigProvider({ v: 2 }, 'late', 20))
+    expect(svc.isDirty).toBe(true)
+    expect(svc.get('v')).toBe(1)
+
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(svc.isDirty).toBe(false)
+    expect(svc.get('v')).toBe(2)
+  })
+
+  it('snapshotOf exposes the merged snapshot', async () => {
+    const svc = new ConfigService()
+    svc.registerProvider(new MemoryConfigProvider({ a: 1 }, 'm', 10))
+    await svc.refresh()
+
+    expect(svc.snapshotOf()).toEqual({ a: 1 })
   })
 })
