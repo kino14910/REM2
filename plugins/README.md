@@ -4,14 +4,10 @@ This directory holds rem2-kernel's **built-in sample plugins**. During discovery
 
 The theme UI lives in the sibling [`REM2-plugins/theme-switcher`](../../REM2-plugins/theme-switcher) repository (light/dark/system, accent form, persisted preference). It is **not** a built-in plugin: `pnpm build:external` builds it into `plugins-external-dist` for release packaging and tests, and users install it from its GitHub release (source=user, sandboxed, explicit capability grant required).
 
-| Plugin             | Provides                                                         | Depends on                       | Architecture point demonstrated                                                       |
-| ------------------ | ---------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------- |
-| `logger-console`   | `log.sink`                                                       | —                                | Observability is a plugin                                                             |
-| `config-json`      | `config.provider`                                                | —                                | Config sources are plugins                                                            |
-| `hello-command`    | `command.provide`                                                | soft-depends on `config-json`    | Business features are plugins + soft-dependency degradation                           |
-| `health-http`      | `health.check` (requires `health.expose` + `net.listen`)         | hard-depends on `logger-console` | Ops is a plugin + hard-dependency ordering                                            |
-| `plugin-inspector` | `ui.panel` + `ui.route` (live plugin table over a private topic) | —                                | The runtime inspector is itself a plugin (panel data path end to end)                 |
-| `notify-worker`    | `log.sink`                                                       | —                                | **Worker-thread isolation** (process-level error isolation; source stays pure `.mjs`) |
+| Plugin             | Provides                                                         | Depends on | Architecture point demonstrated                                       |
+| ------------------ | ---------------------------------------------------------------- | ---------- | --------------------------------------------------------------------- |
+| `logger-console`   | `log.sink`                                                       | —          | Observability is a plugin                                             |
+| `plugin-inspector` | `ui.panel` + `ui.route` (live plugin table over a private topic) | —          | The runtime inspector is itself a plugin (panel data path end to end) |
 
 ## Structure of each plugin
 
@@ -43,14 +39,10 @@ pnpm cli scaffold com.example.my-plugin --name "My Plugin"
 
 主题 UI 已迁到同级 [`REM2-plugins/theme-switcher`](../../REM2-plugins/theme-switcher) 仓库（亮/暗/跟随系统、强调色表单、偏好持久化）。它**不是**内置插件：`pnpm build:external` 把它构建到 `plugins-external-dist`，用于发布打包与测试；用户从它的 GitHub Release 安装（source=user，沙箱策略，需要显式授权能力）。本目录不再保留主题源码。
 
-| 插件               | 提供能力                                               | 依赖                    | 演示的架构点                                           |
-| ------------------ | ------------------------------------------------------ | ----------------------- | ------------------------------------------------------ |
-| `logger-console`   | `log.sink`                                             | —                       | 可观测性是插件                                         |
-| `config-json`      | `config.provider`                                      | —                       | 配置来源是插件                                         |
-| `hello-command`    | `command.provide`                                      | 软依赖 `config-json`    | 业务功能是插件 + 软依赖降级                            |
-| `health-http`      | `health.check`（需 `health.expose` + `net.listen`）    | 硬依赖 `logger-console` | 运维是插件 + 硬依赖排序                                |
-| `plugin-inspector` | `ui.panel` + `ui.route`（私有 topic 提供实时插件表格） | —                       | 运行时检查器自身也是插件（面板数据链路端到端）         |
-| `notify-worker`    | `log.sink`                                             | —                       | **Worker 线程隔离**（进程级错误隔离；源码为纯 `.mjs`） |
+| 插件               | 提供能力                                               | 依赖 | 演示的架构点                                   |
+| ------------------ | ------------------------------------------------------ | ---- | ---------------------------------------------- |
+| `logger-console`   | `log.sink`                                             | —    | 可观测性是插件                                 |
+| `plugin-inspector` | `ui.panel` + `ui.route`（私有 topic 提供实时插件表格） | —    | 运行时检查器自身也是插件（面板数据链路端到端） |
 
 ## 每个插件的结构
 

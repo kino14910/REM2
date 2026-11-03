@@ -2,8 +2,8 @@
  * In-memory config source (the kernel's default provider; the kernel deliberately
  * ships only this minimal source).
  *
- * The kernel has no built-in file config source: the JSON config source is a plugin
- * (plugins/config-json).
+ * The kernel has no built-in file config source: a file / environment source can be
+ * supplied by a plugin through the `config.provider` extension point.
  */
 
 import type { ConfigProvider } from '../contracts/config.js'

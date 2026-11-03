@@ -2,11 +2,8 @@
 
 This directory shows how to extend the system through plugins **without modifying the kernel**.
 
-## Contents
-
-- `config/app.config.json` — a sample config loaded by the `com.rem2.config-json` plugin.
-  The plugin registers a `ConfigProvider` through the kernel's `KernelTokens.ConfigService`;
-  the kernel itself never parses this file.
+The repository ships two built-in samples under `plugins/`: `logger-console` (a `log.sink`)
+and `plugin-inspector` (a `ui.panel` + `ui.route`). `pnpm dev` loads them automatically.
 
 ## Running the kernel with built-in plugins
 
@@ -22,12 +19,8 @@ pnpm dev
 3. Load and start plugins in order (with timeouts and error isolation).
 4. Print `loadOrder / started / degraded / failed` plus the health report.
 
-## Using the sample config
-
-Copy or link `examples/config/app.config.json` somewhere the plugin can reach, or override
-the path at startup via `config.json.path`. `hello-command` reads `app.greeting` as its
-greeting; when the key is missing it falls back to `Hello` (soft dependency, the plugin
-still starts normally).
+No built-in command is shipped: until a plugin contributes `command.provide`, command execution
+returns an explicit `unknown command` result.
 
 ## Writing your own plugin
 
@@ -35,7 +28,11 @@ still starts normally).
 pnpm cli scaffold my-plugin
 ```
 
-The generated plugin contains a `plugin.json` + `package.json` + `tsconfig.json` + `src/index.ts` skeleton whose default export is the `definePlugin(manifest, setup)` factory; implement any optional lifecycle hook inside it, then run the plugin's `build` script to produce `dist/index.js` (the single canonical entry). Plugins import types and tokens **only** from the `rem2-kernel` public entry.
+The generated plugin contains a `plugin.json` + `package.json` + `tsconfig.json` + `src/index.ts`
+skeleton whose default export is the `definePlugin(manifest, setup)` factory; implement any
+optional lifecycle hook inside it, then run the plugin's `build` script to produce
+`dist/index.js` (the single canonical entry). Plugins import types and tokens **only** from the
+`rem2-kernel` public entry.
 
 ---
 
@@ -43,10 +40,8 @@ The generated plugin contains a `plugin.json` + `package.json` + `tsconfig.json`
 
 本目录演示如何在**不修改内核**的前提下，通过插件扩展系统能力。
 
-## 目录
-
-- `config/app.config.json` —— 由 `com.rem2.config-json` 插件加载的示例配置。
-  插件通过内核 `KernelTokens.ConfigService` 注册 `ConfigProvider`；内核本身不解析该文件。
+仓库在 `plugins/` 下内置两个示例：`logger-console`（`log.sink`）和 `plugin-inspector`
+（`ui.panel` + `ui.route`）。`pnpm dev` 会自动加载它们。
 
 ## 运行内核并加载内建插件
 
@@ -62,11 +57,8 @@ pnpm dev
 3. 按序加载并启动插件（带超时与错误隔离）。
 4. 输出 `loadOrder / started / degraded / failed` 与健康报告。
 
-## 使用示例配置
-
-将 `examples/config/app.config.json` 复制/链接到插件可访问的位置，或在启动时通过
-`config.json.path` 覆盖。`hello-command` 会读取 `app.greeting` 作为问候语；
-该配置缺失时使用默认 `Hello`（软依赖，插件仍正常启动）。
+默认不附带命令插件：在插件贡献 `command.provide` 之前，命令执行会返回明确的
+`unknown command`。
 
 ## 编写你自己的插件
 

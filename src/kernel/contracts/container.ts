@@ -18,7 +18,7 @@ import type { ServiceRegistry } from './service.js'
  *    by default; they must be exported explicitly.
  */
 export interface Container extends ServiceRegistry {
-  /** Scope name, e.g. 'root' / 'plugin:com.rem2.hello-command'. */
+  /** Scope name, e.g. 'root' / 'plugin:com.example.my-plugin'. */
   readonly scope: string
   /** Whether a parent container exists (the parent reference itself is not exposed). */
   readonly hasParent: boolean
