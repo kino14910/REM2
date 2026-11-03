@@ -1,17 +1,13 @@
 /**
  * Runtime path resolution (shared by CLI bootstrap and the Electron shell).
  *
- * Must support three runtime forms:
- * 1. ESM (`tsx` / native ESM): `import.meta.url` is available.
- * 2. CJS bundle (Electron main process, Vite/Rollup output
- *    `.vite/build/main.cjs`): `import.meta.url` compiles to `undefined`,
- *    so fall back to `__dirname`.
- * 3. Last resort: `process.cwd()`.
+ * Both runtime forms are native ESM:
+ * 1. Electron main bundle: `import.meta.url` points at `.vite/build/main.mjs`.
+ * 2. CLI (`tsx` / compiled kernel): `import.meta.url` points at the executing module.
  *
- * Historical bug: an early implementation used
- * `fileURLToPath(import.meta.url)` as a default parameter; in the Electron
- * main process `import.meta.url === undefined`, so `fileURLToPath(undefined)`
- * threw `ERR_INVALID_ARG_TYPE` and the shell crashed on startup.
+ * The old `__dirname` fallback was removed together with the CJS main bundle. Keep
+ * the module-directory calculation centralized here instead of scattering
+ * `import.meta.url` handling across host modules.
  */
 
 import { existsSync } from 'node:fs'
@@ -19,33 +15,14 @@ import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
-/** Module directory in CJS (undefined in ESM). */
-declare const __dirname: string | undefined
-
 /**
- * Directory of the current module (ESM / CJS compatible).
+ * Directory of the current module.
  *
- * Every step must null-check before use: never pass `undefined` to
- * `fileURLToPath`.
+ * Under the bundled Electron main process this resolves to `.vite/build`, which is
+ * where `preload.cjs` and the sibling `renderer/` output live.
  */
-function moduleDir(): string | undefined {
-  // 1) CJS bundle: taken by the Electron main process.
-  //    The `typeof` check is equally safe under ESM (yields 'undefined' rather than throwing).
-  if (typeof __dirname === 'string' && __dirname.length > 0) {
-    return __dirname
-  }
-
-  // 2) ESM: `import.meta.url`; compiled to undefined in CJS output.
-  const metaUrl = (import.meta as { url?: string }).url
-  if (typeof metaUrl === 'string' && metaUrl.length > 0) {
-    try {
-      return path.dirname(fileURLToPath(metaUrl))
-    } catch {
-      // Invalid URL → fall through to the next strategy.
-    }
-  }
-
-  return undefined
+export function moduleDirectory(): string {
+  return path.dirname(fileURLToPath(import.meta.url))
 }
 
 function findUp(start: string): string | undefined {
@@ -71,9 +48,7 @@ export function projectRoot(fromFile?: string): string {
   const anchors: string[] = []
   if (fromFile) anchors.push(path.dirname(fromFile))
 
-  const dir = moduleDir()
-  if (dir) anchors.push(dir)
-
+  anchors.push(moduleDirectory())
   anchors.push(process.cwd())
 
   for (const anchor of anchors) {

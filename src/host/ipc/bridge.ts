@@ -10,8 +10,8 @@
  * 2. `bus.on('*')` is not forwarded (that would leak every internal topic).
  */
 
-import type { EventBus, Unsubscribe } from '../../kernel/contracts/event-bus.js'
-import type { TopicValue } from '../../kernel/topics.js'
+import type { EventBus, Unsubscribe } from '@/kernel/contracts/event-bus.js'
+import type { TopicValue } from '@/kernel/topics.js'
 import {
   ALLOWED_EVENT_SET,
   ALLOWED_METHOD_SET,
@@ -21,7 +21,7 @@ import {
   type IpcEventPayload,
   type IpcRequest,
   type IpcResponse,
-} from '../../shared/ipc-contract.js'
+} from '@/shared/ipc-contract.js'
 
 /** Host transport abstraction (adapts Electron's ipcRenderer / ipcMain). */
 export interface IpcTransport {

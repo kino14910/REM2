@@ -1,4 +1,4 @@
-import { compareVersions, parseVersion } from '../../kernel/semver/semver.js'
+import { compareVersions, parseVersion } from '@/kernel/semver/semver.js'
 
 export function normalizeVersion(value: string): string {
   return value.trim().replace(/^v/i, '')

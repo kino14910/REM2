@@ -1,5 +1,5 @@
 import { defineConfig } from 'vitest/config'
-import { KERNEL_ALIAS } from './vite.shared.mjs'
+import { KERNEL_RESOLVE } from './vite.shared.mjs'
 
 /**
  * Vitest configuration.
@@ -7,8 +7,8 @@ import { KERNEL_ALIAS } from './vite.shared.mjs'
  * - environment: node (the kernel is a pure Node library; it never depends on
  *   Electron or the DOM).
  * - pool: threads (good isolation, fast startup).
- * - alias rem2-kernel -> src/kernel/index.ts: shares one source with the vite
- *   configs, eliminating drift from declaring the same alias in several places.
+ * - aliases (`@` -> src, rem2-kernel -> src/kernel/index.ts): shared with the
+ *   vite configs, eliminating drift from declaring the same alias in several places.
  *
  * ## Concurrency and timeouts (important)
  *
@@ -54,8 +54,6 @@ export default defineConfig({
     },
   },
   resolve: {
-    alias: {
-      'rem2-kernel': KERNEL_ALIAS,
-    },
+    alias: KERNEL_RESOLVE.alias,
   },
 })

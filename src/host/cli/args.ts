@@ -4,7 +4,7 @@
  */
 
 import process from 'node:process'
-import type { LogLevel } from '../../kernel/contracts/logging.js'
+import type { LogLevel } from '@/kernel/contracts/logging.js'
 
 export interface KernelBootstrapArgs {
   id: string

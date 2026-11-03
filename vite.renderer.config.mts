@@ -1,18 +1,23 @@
 /**
- * Renderer build configuration — the ONLY config that mounts the svelte plugin.
+ * Renderer build configuration — the ONLY config that mounts the renderer plugins
+ * (Tailwind/Skeleton CSS pipeline + Svelte).
  *
  * CSP compatible: Svelte 5's `$state` / `$derived` compile to plain JS, no `eval`
  * needed, so `index.html`'s `script-src 'self'` does not require `unsafe-eval`.
+ * Tailwind emits a static CSS asset, so no runtime style generation is involved.
  */
 
 import { defineConfig } from 'vite'
+import tailwindcss from '@tailwindcss/vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { KERNEL_RESOLVE, KERNEL_BUILD } from './vite.shared.mjs'
 
 export default defineConfig({
   // The renderer entry is index.html at the repo root (it references /src/frontend/entry-client.ts).
   root: '.',
-  plugins: [svelte()],
+  // Tailwind compiles global.css (which imports Skeleton) into a static CSS
+  // asset, so the CSP needs no relaxation; no runtime style generation.
+  plugins: [tailwindcss(), svelte()],
   resolve: {
     // The frontend never imports the kernel in practice, but stay consistent to prevent misuse.
     ...KERNEL_RESOLVE,

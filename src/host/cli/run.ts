@@ -7,8 +7,8 @@
 
 import path from 'node:path'
 import process from 'node:process'
-import { Kernel } from '../../kernel/kernel.js'
-import { createDeps } from '../../kernel/composition.js'
+import { Kernel } from '@/kernel/kernel.js'
+import { createDeps } from '@/kernel/composition.js'
 import { parseArgs } from './args.js'
 import { projectRoot, builtinPluginsRoot } from './paths.js'
 

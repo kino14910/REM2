@@ -1,11 +1,18 @@
 /**
  * Main-process build configuration.
  *
- * Shared bits (alias / conditions / ssr.noExternal / sourcemap) come from `vite.shared.mts`.
- * `ssr.noExternal: ['rem2-kernel']` is the critical entry: default externalization would
- * leave `require('rem2-kernel')` in the bundle, and at package time resolving to the
- * `.ts` entry fails with `ERR_UNKNOWN_FILE_EXTENSION`. That error only shows up
- * after packaging, never in dev mode.
+ * Shared bits (alias / conditions / sourcemap) come from `vite.shared.mts`.
+ *
+ * Output format is declared explicitly as an ESM library. Forge's Vite plugin
+ * injects a CJS `build.lib` default only when `build.lib` is absent; declaring
+ * it here keeps the main bundle native ESM (`main.mjs`) instead of `main.cjs`.
+ *
+ * `ssr.noExternal: true` is deliberate: Forge's Vite plugin restricts the
+ * packaged files to `.vite`, so anything left external (electron-store and its
+ * ESM-only dependency tree) would be unresolvable inside `app.asar`. Bundling
+ * every runtime dependency keeps `main.mjs` self-contained and avoids Rollup
+ * emitting `require()` for an ESM-only package; `electron` and Node built-ins
+ * remain external.
  */
 
 import { defineConfig } from 'vite'
@@ -13,6 +20,10 @@ import { NODE_SHARED } from './vite.shared.mjs'
 
 export default defineConfig({
   ...NODE_SHARED,
+  ssr: {
+    ...NODE_SHARED.ssr,
+    noExternal: true,
+  },
   build: {
     ...NODE_SHARED.build,
     // Must be declared as an SSR (Node) build: otherwise Vite treats it as a browser
@@ -27,11 +38,26 @@ export default defineConfig({
     // main-process build wipe the kernel artifacts.
     // .vite/build is also where forge's VitePlugin emits at package time.
     outDir: '.vite/build',
+    // Both main and preload emit into the same directory; each build must not
+    // wipe the other target's artifact (Forge also sets this in its base config).
+    emptyOutDir: false,
+    lib: {
+      entry: 'src/main.ts',
+      formats: ['es'],
+      fileName: (_format, entryName) => `${entryName}.mjs`,
+    },
     rollupOptions: {
       // electron is provided at runtime and must not be bundled.
       external: ['electron'],
       // Keep the forwarder-shell shape so forge.config.mts's entry needs no change.
       input: 'src/main.ts',
+      output: {
+        // `ssr` would otherwise default the entry name to `[name].js`; the explicit
+        // `.mjs` extension makes Electron's ESM classification unambiguous.
+        format: 'es',
+        entryFileNames: '[name].mjs',
+        chunkFileNames: '[name]-[hash].mjs',
+      },
     },
   },
 })

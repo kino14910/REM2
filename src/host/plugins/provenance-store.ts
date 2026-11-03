@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
-import { isValidPluginId } from '../../kernel/discovery/manifest-validator.js'
+import { isValidPluginId } from '@/kernel/discovery/manifest-validator.js'
 import { PluginManagementError } from './errors.js'
 
 export interface PluginProvenance {

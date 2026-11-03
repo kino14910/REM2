@@ -2,8 +2,8 @@
   "compilerOptions": {
     "target": "ESNext",
     "lib": ["ESNext"],
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "preserve",
+    "moduleResolution": "bundler",
     "strict": true,
     "noImplicitAny": true,
     "noImplicitOverride": true,
@@ -18,13 +18,14 @@
     "sourceMap": true,
     "declaration": false,
     "noEmit": true,
-    "allowJs": false,
+    "allowJs": true,
     "isolatedModules": true,
-    "verbatimModuleSyntax": false,
+    "verbatimModuleSyntax": true,
     "types": ["node"],
     "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
+      "@/*": ["src/*"],
       "rem2-kernel": ["src/kernel/index.ts"]
     }
   },

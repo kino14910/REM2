@@ -10,19 +10,19 @@ import {
 } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
-import { Kernel } from '../../kernel/kernel.js'
-import { CONTRACT_VERSION } from '../../kernel/version.js'
-import { PluginDiscovery } from '../../kernel/discovery/discovery.js'
+import { Kernel } from '@/kernel/kernel.js'
+import { CONTRACT_VERSION } from '@/kernel/version.js'
+import { PluginDiscovery } from '@/kernel/discovery/discovery.js'
 import {
   validateManifest,
   isValidPluginId,
-} from '../../kernel/discovery/manifest-validator.js'
-import { DependencyResolver } from '../../kernel/dependency/resolver.js'
-import { resolveEntry } from '../../kernel/loader/module-resolver.js'
+} from '@/kernel/discovery/manifest-validator.js'
+import { DependencyResolver } from '@/kernel/dependency/resolver.js'
+import { resolveEntry } from '@/kernel/loader/module-resolver.js'
 import type {
   Candidate,
   CandidateSource,
-} from '../../kernel/discovery/candidate.js'
+} from '@/kernel/discovery/candidate.js'
 import type {
   PluginDetailDto,
   PluginDownloadPhase,
@@ -32,7 +32,7 @@ import type {
   PluginRemoteInspectionDto,
   PluginUpdateCheckDto,
   PluginUpdateDto,
-} from '../../shared/ipc-contract.js'
+} from '@/shared/ipc-contract.js'
 import { PluginManagementError } from './errors.js'
 import { PluginStateStore } from './state-store.js'
 import { isSha256, verifyFileDigest } from './integrity.js'
@@ -54,8 +54,8 @@ import {
   type UpdateTransactionStage,
 } from './transaction-journal.js'
 import { isNewerVersion } from './update-compare.js'
-import { PermissionManager } from '../../kernel/security/permission-manager.js'
-import { trustLevelFor } from '../../kernel/security/trust-policy.js'
+import { PermissionManager } from '@/kernel/security/permission-manager.js'
+import { trustLevelFor } from '@/kernel/security/trust-policy.js'
 import {
   assertInside,
   assertRealDirectoryInside,

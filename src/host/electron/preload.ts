@@ -14,7 +14,7 @@ import {
   Ipc,
   type IpcEventPayload,
   type IpcResponse,
-} from '../../shared/ipc-contract.js'
+} from '@/shared/ipc-contract.js'
 
 /** Shape of the API exposed to the renderer (mirrored by the frontend `lib/ipc-client.ts`). */
 export interface Rem2Bridge {

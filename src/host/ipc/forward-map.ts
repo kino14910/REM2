@@ -26,11 +26,11 @@
  * leak).
  */
 
-import { Topics } from '../../kernel/topics.js'
-import { events } from '../../shared/ipc-contract.js'
+import { Topics } from '@/kernel/topics.js'
+import { events } from '@/shared/ipc-contract.js'
 import type { EventForwardMap } from './bridge.js'
-import type { ThemeDefinition } from '../../kernel/contracts/ui.js'
-import type { PluginStateT } from '../../kernel/contracts/plugins.js'
+import type { ThemeDefinition } from '@/kernel/contracts/ui.js'
+import type { PluginStateT } from '@/kernel/contracts/plugins.js'
 
 export const EVENT_FORWARD_MAP = {
   [events.themeChanged]: {

@@ -37,6 +37,7 @@ export const KERNEL_ALIAS = fileURLToPath(
  */
 export const KERNEL_RESOLVE = {
   alias: {
+    '@': fileURLToPath(new URL('./src', import.meta.url)),
     'rem2-kernel': KERNEL_ALIAS,
   },
 } satisfies UserConfig['resolve']
