@@ -60,7 +60,6 @@ export class ElectronAppSettingsStore implements AppSettingsRepository {
 
   async load(): Promise<void> {
     if (this.loaded) return
-    this.loaded = true
 
     if (existsSync(this.settingsPath)) {
       let recovered: AppSettingsRecovery
@@ -70,14 +69,24 @@ export class ElectronAppSettingsStore implements AppSettingsRepository {
         recovered = recoverAppSettingsDocument(store.store)
       } catch (error) {
         this.settings = defaultAppSettingsDocument()
-        this.invalidFile = true
-        this.baseWritePending = true
         this.store = null
-        throw invalidSettingsError(error)
+        this.baseWritePending = true
+        // Only confirmed content damage may trigger backup/seed. A transient
+        // read failure (lock, permissions) keeps the file and stays retryable;
+        // nothing is written until a later load succeeds, so an unknown file
+        // is never replaced with in-memory defaults.
+        if (isSettingsContentError(error)) {
+          this.invalidFile = true
+          this.loaded = true
+          throw invalidSettingsError(error)
+        }
+        this.invalidFile = false
+        throw unavailableSettingsError(error)
       }
 
       this.store = store
       this.settings = recovered.document
+      this.loaded = true
       if (recovered.damaged) {
         // Keep the valid namespace in memory, but treat the file as damaged:
         // the original is backed up before the first write replaces it.
@@ -99,6 +108,7 @@ export class ElectronAppSettingsStore implements AppSettingsRepository {
       appearance: legacy.appearance,
     }
     this.baseWritePending = true
+    this.loaded = true
     if (legacy.found) {
       this.persistBase(this.settings, 'failed to import legacy settings')
     }
@@ -114,11 +124,12 @@ export class ElectronAppSettingsStore implements AppSettingsRepository {
 
   async setProxy(value: unknown): Promise<void> {
     const next = normalizeProxySettings(value)
+    await this.ensureLoaded()
     if (this.baseWritePending) {
       this.persistBase({ ...this.settings, proxy: next }, PROXY_WRITE_MESSAGE)
       return
     }
-    const store = this.prepareForWrite()
+    const store = this.prepareForWrite(PROXY_WRITE_MESSAGE)
     try {
       store.set('proxy', next)
     } catch (error) {
@@ -129,6 +140,7 @@ export class ElectronAppSettingsStore implements AppSettingsRepository {
 
   async setAppearance(value: unknown): Promise<AppearanceSettings> {
     const next = normalizeAppearanceSettings(value)
+    await this.ensureLoaded()
     if (this.baseWritePending) {
       this.persistBase(
         { ...this.settings, appearance: next },
@@ -136,7 +148,7 @@ export class ElectronAppSettingsStore implements AppSettingsRepository {
       )
       return { ...next }
     }
-    const store = this.prepareForWrite()
+    const store = this.prepareForWrite(APPEARANCE_WRITE_MESSAGE)
     try {
       store.set('appearance', next)
     } catch (error) {
@@ -144,6 +156,22 @@ export class ElectronAppSettingsStore implements AppSettingsRepository {
     }
     this.settings = { ...this.settings, appearance: next }
     return { ...next }
+  }
+
+  /**
+   * Retry a load that failed on I/O before any write, so a lock that cleared
+   * cannot make this store overwrite the file with in-memory defaults. A
+   * recoverable namespace damage already published usable state and is not
+   * retried.
+   */
+  private async ensureLoaded(): Promise<void> {
+    if (this.loaded) return
+    try {
+      await this.load()
+    } catch (error) {
+      if (isSettingsContentError(error)) return
+      throw error
+    }
   }
 
   /** One-time import from the two legacy files. Valid values win; bad files are logged and defaulted. */
@@ -194,7 +222,7 @@ export class ElectronAppSettingsStore implements AppSettingsRepository {
    */
   private persistBase(document: AppSettingsDocument, message: string): void {
     const validated = parseAppSettingsDocument(document)
-    const store = this.prepareForWrite()
+    const store = this.prepareForWrite(message)
     try {
       store.set({
         schemaVersion: validated.schemaVersion,
@@ -209,17 +237,30 @@ export class ElectronAppSettingsStore implements AppSettingsRepository {
   }
 
   /** Preserve a damaged/unsupported file once, then prepare a fresh unified store. */
-  private prepareForWrite(): ElectronStore<AppSettingsDocument> {
+  private prepareForWrite(message: string): ElectronStore<AppSettingsDocument> {
     if (this.invalidFile) {
       this.backupInvalidFile()
       this.invalidFile = false
       this.baseWritePending = true
       this.store = null
     }
-    if (!this.store) this.store = this.createStore()
+    if (!this.store) {
+      try {
+        this.store = this.createStore()
+      } catch (error) {
+        throw writeFailure(message, error)
+      }
+    }
     return this.store
   }
 
+  /**
+   * Preserve the damaged file by renaming it, not copying it: electron-store
+   * parses the file during construction, so a copy would leave the damaged
+   * original in place and make every later `set()` fail before it is written.
+   * A failed rename leaves the original untouched and `invalidFile` set, so a
+   * later write retries the backup.
+   */
   private backupInvalidFile(): void {
     if (!existsSync(this.settingsPath)) return
     const stamp = new Date().toISOString().replace(/[:.]/g, '-')
@@ -254,6 +295,27 @@ export class ElectronAppSettingsStore implements AppSettingsRepository {
 
 function writeFailure(message: string, cause: unknown): ProxySettingsError {
   return new ProxySettingsError('E_SETTINGS_WRITE', message, { cause })
+}
+
+/**
+ * Content damage is the only case that may be backed up and replaced: JSON
+ * that electron-store cannot parse (`SyntaxError`) or a document whose schema
+ * version/namespaces are unusable. Anything else, such as a lock or a
+ * permission error, is a transient read failure.
+ */
+function isSettingsContentError(error: unknown): boolean {
+  if (error instanceof ProxySettingsError) {
+    return error.code === 'E_SETTINGS_INVALID'
+  }
+  return error instanceof SyntaxError
+}
+
+function unavailableSettingsError(error: unknown): ProxySettingsError {
+  return new ProxySettingsError(
+    'E_SETTINGS_UNAVAILABLE',
+    'settings.json could not be read',
+    { cause: error },
+  )
 }
 
 function invalidSettingsError(error: unknown): ProxySettingsError {

@@ -32,7 +32,14 @@ export class ElectronProxySettingsService implements ProxySettingsService {
       try {
         await this.store.load()
       } catch (error) {
-        console.error('[rem2-kernel] App settings failed to load:', error)
+        // Startup must not fail on settings: damaged namespaces keep their
+        // valid values, and an unreadable file stays on disk for a later retry.
+        const reason =
+          error instanceof ProxySettingsError &&
+          error.code === 'E_SETTINGS_INVALID'
+            ? 'settings.json is damaged; usable values were kept'
+            : 'settings.json could not be loaded; defaults are in effect'
+        console.error(`[rem2-kernel] ${reason}:`, error)
       }
       await this.electronSession.setProxy(toProxyConfig(this.store.getProxy()))
     })

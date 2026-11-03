@@ -267,6 +267,124 @@ describe('unit · proxy settings', () => {
     })
   })
 
+  it('keeps the service usable when settings.json is damaged at startup', async () => {
+    const directory = prepareRoot()
+    const file = settingsPath(directory)
+    writeFileSync(file, '{"schemaVersion":1', 'utf8')
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const store = new ElectronAppSettingsStore(directory)
+      const setProxy = vi.fn(async (_config: ProxyConfigLike) => {})
+      const session = {
+        setProxy,
+        resolveProxy: vi.fn(async () => 'DIRECT'),
+      } as unknown as Session
+      const service = new ElectronProxySettingsService(session, store)
+
+      // 启动不失败：损坏的文件回落为系统代理，随后仍能正常读写
+      await service.initialize()
+      expect(setProxy).toHaveBeenCalledWith({ mode: 'system' })
+      expect(store.getProxy()).toEqual({ mode: 'system' })
+
+      const result = await service.set({
+        mode: 'manual',
+        address: '127.0.0.1:7890',
+      })
+      expect(result).toMatchObject({
+        mode: 'manual',
+        address: 'http://127.0.0.1:7890',
+        resolved: 'DIRECT',
+      })
+      expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({
+        schemaVersion: 1,
+        proxy: { mode: 'manual', address: 'http://127.0.0.1:7890' },
+        appearance: { colorMode: 'system' },
+      })
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
+  it('keeps appearance usable when only the proxy namespace is damaged', async () => {
+    const directory = prepareRoot()
+    const file = settingsPath(directory)
+    writeFileSync(
+      file,
+      JSON.stringify({
+        schemaVersion: 1,
+        proxy: { mode: 'manual' },
+        appearance: { colorMode: 'dark' },
+      }),
+      'utf8',
+    )
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const store = new ElectronAppSettingsStore(directory)
+      const setProxy = vi.fn(async (_config: ProxyConfigLike) => {})
+      const session = {
+        setProxy,
+        resolveProxy: vi.fn(async () => 'DIRECT'),
+      } as unknown as Session
+      const service = new ElectronProxySettingsService(session, store)
+
+      await service.initialize()
+      expect(setProxy).toHaveBeenCalledWith({ mode: 'system' })
+      expect(store.getAppearance()).toEqual({ colorMode: 'dark' })
+      expect(await service.get()).toEqual({
+        mode: 'system',
+        resolved: 'DIRECT',
+      })
+      expect(errorSpy).toHaveBeenCalled()
+
+      await service.set({ mode: 'direct' })
+      expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({
+        schemaVersion: 1,
+        proxy: { mode: 'direct' },
+        appearance: { colorMode: 'dark' },
+      })
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
+  it('applies the valid proxy when only the appearance namespace is damaged', async () => {
+    const directory = prepareRoot()
+    writeFileSync(
+      settingsPath(directory),
+      JSON.stringify({
+        schemaVersion: 1,
+        proxy: { mode: 'manual', address: '127.0.0.1:7890' },
+        appearance: { colorMode: 'sepia' },
+      }),
+      'utf8',
+    )
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const store = new ElectronAppSettingsStore(directory)
+      const setProxy = vi.fn(async (_config: ProxyConfigLike) => {})
+      const session = {
+        setProxy,
+        resolveProxy: vi.fn(async () => 'DIRECT'),
+      } as unknown as Session
+      const service = new ElectronProxySettingsService(session, store)
+
+      await service.initialize()
+      expect(setProxy).toHaveBeenCalledWith({
+        mode: 'fixed_servers',
+        proxyRules: 'http=http://127.0.0.1:7890;https=http://127.0.0.1:7890',
+      })
+      expect(store.getAppearance()).toEqual({ colorMode: 'system' })
+      expect(await service.get()).toMatchObject({
+        mode: 'manual',
+        address: 'http://127.0.0.1:7890',
+        resolved: 'DIRECT',
+      })
+      expect(errorSpy).toHaveBeenCalled()
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
   it('serializes concurrent sets and coordinates snapshots with them', async () => {
     const directory = prepareRoot()
     const store = new ElectronAppSettingsStore(directory)

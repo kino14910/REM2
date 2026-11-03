@@ -1,5 +1,6 @@
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -398,6 +399,139 @@ describe('unit · app settings document', () => {
     )
     expect(backup).toBeDefined()
     expect(readFileSync(path.join(directory, backup!), 'utf8')).toBe(original)
+  })
+
+  it('treats an unreadable file as unavailable and retries after it clears', async () => {
+    const directory = prepareRoot()
+    const file = path.join(directory, 'settings.json')
+    // 目录让读取抛 EISDIR：这是 I/O 失败，不是内容损坏
+    mkdirSync(file)
+    const store = new ElectronAppSettingsStore(directory)
+
+    await expect(store.load()).rejects.toMatchObject({
+      code: 'E_SETTINGS_UNAVAILABLE',
+    })
+    expect(store.getProxy()).toEqual({ mode: 'system' })
+    expect(
+      readdirSync(directory).filter(name =>
+        name.startsWith('settings.invalid-'),
+      ),
+    ).toEqual([])
+    expect(existsSync(file)).toBe(true)
+
+    // 未成功加载的配置可以被重新加载
+    rmSync(file, { recursive: true, force: true })
+    await store.load()
+    expect(store.getProxy()).toEqual({ mode: 'system' })
+    expect(store.getAppearance()).toEqual({ colorMode: 'system' })
+  })
+
+  it('retries a failed load before the first write instead of seeding defaults', async () => {
+    const directory = prepareRoot()
+    const file = path.join(directory, 'settings.json')
+    mkdirSync(file)
+    const store = new ElectronAppSettingsStore(directory)
+    await expect(store.load()).rejects.toMatchObject({
+      code: 'E_SETTINGS_UNAVAILABLE',
+    })
+
+    rmSync(file, { recursive: true, force: true })
+    await store.setAppearance({ colorMode: 'dark' })
+    expect(readSettings(directory)).toEqual({
+      schemaVersion: 1,
+      proxy: { mode: 'system' },
+      appearance: { colorMode: 'dark' },
+    })
+  })
+
+  it('keeps the damaged file when the backup fails and retries it on the next write', async () => {
+    const directory = prepareRoot()
+    const file = path.join(directory, 'settings.json')
+    const original = JSON.stringify({
+      schemaVersion: 1,
+      proxy: { mode: 'manual' },
+      appearance: { colorMode: 'dark' },
+    })
+    writeFileSync(file, original, 'utf8')
+    const store = new ElectronAppSettingsStore(directory)
+    await expect(store.load()).rejects.toMatchObject({
+      code: 'E_SETTINGS_INVALID',
+    })
+
+    const backupSpy = vi
+      .spyOn(
+        store as unknown as { backupInvalidFile(): void },
+        'backupInvalidFile',
+      )
+      .mockImplementationOnce(() => {
+        throw new Error('rename failed')
+      })
+    try {
+      await expect(store.setAppearance({ colorMode: 'light' })).rejects.toThrow(
+        'rename failed',
+      )
+      expect(readFileSync(file, 'utf8')).toBe(original)
+      expect(
+        readdirSync(directory).filter(name =>
+          name.startsWith('settings.invalid-'),
+        ),
+      ).toEqual([])
+    } finally {
+      backupSpy.mockRestore()
+    }
+
+    await store.setAppearance({ colorMode: 'light' })
+    expect(readSettings(directory)).toEqual({
+      schemaVersion: 1,
+      proxy: { mode: 'system' },
+      appearance: { colorMode: 'light' },
+    })
+    const backup = readdirSync(directory).find(name =>
+      name.startsWith('settings.invalid-'),
+    )
+    expect(readFileSync(path.join(directory, backup!), 'utf8')).toBe(original)
+  })
+
+  it('reseeds the document when the first write fails after the backup', async () => {
+    const directory = prepareRoot()
+    const file = path.join(directory, 'settings.json')
+    const original = JSON.stringify({
+      schemaVersion: 2,
+      proxy: { mode: 'direct' },
+      appearance: { colorMode: 'dark' },
+    })
+    writeFileSync(file, original, 'utf8')
+    const store = new ElectronAppSettingsStore(directory)
+    await expect(store.load()).rejects.toMatchObject({
+      code: 'E_SETTINGS_INVALID',
+    })
+
+    const createSpy = vi
+      .spyOn(store as unknown as { createStore(): unknown }, 'createStore')
+      .mockImplementationOnce(() => {
+        throw new Error('disk full')
+      })
+    try {
+      await expect(
+        store.setAppearance({ colorMode: 'light' }),
+      ).rejects.toMatchObject({ code: 'E_SETTINGS_WRITE' })
+      // 原文件已被保留为备份，当前路径暂时为空
+      expect(existsSync(file)).toBe(false)
+      expect(
+        readdirSync(directory).filter(name =>
+          name.startsWith('settings.invalid-'),
+        ),
+      ).toHaveLength(1)
+    } finally {
+      createSpy.mockRestore()
+    }
+
+    await store.setAppearance({ colorMode: 'light' })
+    expect(readSettings(directory)).toEqual({
+      schemaVersion: 1,
+      proxy: { mode: 'system' },
+      appearance: { colorMode: 'light' },
+    })
   })
 
   it('updates one namespace without dropping unrelated top-level keys', async () => {
