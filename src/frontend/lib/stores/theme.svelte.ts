@@ -4,7 +4,11 @@ import type { AppearanceSettingsDto } from '@/shared/ipc-contract'
 
 import { parseAppearanceSettings } from '@/frontend/lib/dto-guards'
 import { ipc } from '@/frontend/lib/ipc-client'
-import { applyColorMode, applyTheme } from '@/frontend/lib/theme/vars'
+import {
+  applyColorMode,
+  applyTheme,
+  clearTheme,
+} from '@/frontend/lib/theme/vars'
 import { channels } from '@/shared/ipc-contract'
 
 /** Follow-system entries stay `system` even after the host materializes their palette. */
@@ -30,6 +34,9 @@ class ThemeStore {
   colorMode = $state<ColorMode>('system')
   error = $state<string | undefined>(undefined)
 
+  /** Latest optimistic switch; an older response must not roll it back. */
+  private switchSequence = 0
+
   active = $derived(this.list.find(t => t.id === this.activeId))
   light = $derived(this.list.find(t => t.mode === 'light'))
   dark = $derived(this.list.find(t => t.id === 'dark' || t.mode === 'dark'))
@@ -38,28 +45,70 @@ class ThemeStore {
   canSwitchMode = $derived(this.light !== undefined && this.dark !== undefined)
 
   applyCatalog(catalog: ThemeCatalogDto): void {
+    // The host is authoritative: a pending optimistic switch is now obsolete.
+    this.switchSequence += 1
     this.list = catalog.themes
     this.activeId = catalog.activeId
     this.error = undefined
     const active = this.list.find(t => t.id === catalog.activeId)
-    if (!active) return
+    if (!active) {
+      clearTheme()
+      return
+    }
     this.colorMode = colorModeOf(active)
     applyTheme(active)
   }
 
   /** Apply a theme pushed by the host. No IPC write back: that is what caused a set→emit→set loop. */
   applyRemote(theme: ThemeDto): void {
+    this.switchSequence += 1
     this.activeId = theme.id
     this.colorMode = colorModeOf(theme)
     applyTheme(theme)
   }
 
-  /** Theme switch: apply locally first, then notify the main process. */
-  setActive(theme: ThemeDto): void {
+  /**
+   * Theme switch: apply locally first, then notify the main process.
+   *
+   * A rejection (transport failure or `{ ok: false }`) means the host did not
+   * accept the switch. The optimistic local state is rolled back so the
+   * renderer and the host keep the same active theme; a later switch makes the
+   * older response stale and is therefore ignored.
+   */
+  async setActive(theme: ThemeDto): Promise<void> {
+    const sequence = ++this.switchSequence
+    const previousId = this.activeId
+    const previousMode = this.colorMode
     this.activeId = theme.id
     this.colorMode = colorModeOf(theme)
     applyTheme(theme)
-    void ipc.request<{ ok: boolean }>(channels.themeSet, { themeId: theme.id })
+    try {
+      const result = await ipc.request<{ ok?: boolean }>(channels.themeSet, {
+        themeId: theme.id,
+      })
+      if (sequence !== this.switchSequence) return
+      if (result?.ok !== true) {
+        throw new Error(`theme switch was not accepted: ${theme.id}`)
+      }
+      this.error = undefined
+    } catch (error) {
+      if (sequence !== this.switchSequence) return
+      this.restore(previousId, previousMode)
+      this.error = error instanceof Error ? error.message : String(error)
+    }
+  }
+
+  /** Re-apply the state that was current before a failed optimistic switch. */
+  private restore(id: string | undefined, mode: ColorMode): void {
+    this.activeId = id
+    this.colorMode = mode
+    const previous = this.list.find(t => t.id === id)
+    if (previous) {
+      applyTheme(previous)
+    } else {
+      clearTheme()
+      applyColorMode(mode)
+    }
   }
 
   setMode(mode: ThemeDto['mode']): void {

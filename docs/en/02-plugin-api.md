@@ -256,7 +256,7 @@ pnpm build:external         # external plugins → plugins-external-dist/<id>/di
 ```
 
 - `plugins/*/package.json` are pnpm workspace members (`@rem2/plugin-<id>`, private).
-- The plugin `tsconfig.json` is **standalone**, declaring only `paths: { "rem2-kernel": ["../../src/kernel/index.ts"] }`. The kernel's `NodeNext` + DOM-exclusion strategy does not suit plugins; extending the root config would drag tests and the frontend in.
+- The plugin `tsconfig.json` is **standalone**, declaring only `paths: { "rem2-kernel": ["../../src/kernel/index.ts"] }`. The root config's `Bundler` resolution and repo-wide `include` (tests, frontend, host) do not suit plugins; extending it would drag tests and the frontend in.
 - The packaged form is a self-contained ESM bundle (`target: node20`), identical in dev and prod.
 
 ---

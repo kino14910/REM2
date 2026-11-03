@@ -37,7 +37,7 @@ const EXTERNAL_PLUGINS_DIR =
   process.env.REM2_EXTERNAL_PLUGINS_DIR ??
   path.resolve(PROJECT_ROOT, '..', 'REM2-plugins')
 
-/** esbuild target: Node 20 (aligned with `engines.node: '>=20'`). */
+/** esbuild target: Node 20, a conservative floor compatible with Electron's bundled runtime. */
 const ESBUILD_TARGET = 'node20'
 
 /** `--external` selects the plugin repository instead of the built-in samples. */

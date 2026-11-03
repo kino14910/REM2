@@ -177,14 +177,14 @@ rem2-kernel/
 ├── plugins-dist/                      # built-in plugin artifacts (goes into extraResource, git-ignored)
 ├── plugins-external-dist/             # external plugin artifacts for releases/tests (not packaged, git-ignored)
 ├── scripts/build-plugins.mjs          # esbuild bundling (honors REM2_EXTERNAL_PLUGINS_DIR; build-time code, outside src/)
-├── tests/{unit,integration,contract}  # test layers + fixtures/ + helpers/
+├── tests/{unit,integration,contract,browser}  # test layers + fixtures/ + helpers/
 ├── examples/README.md                 # plugin extension examples and scaffolding notes
 │
 ├── vite.shared.mts                    # ★ single source for alias / ssr.noExternal (conditions differ per target)
 ├── vite.main.config.mts               #   main process build (target node20)
 ├── vite.preload.config.mts            #   preload build (output must be named preload.cjs)
 ├── vite.renderer.config.mts           #   renderer build (the only config that mounts the svelte plugin)
-├── vitest.config.ts                   #   node environment + limited concurrency
+├── vitest.config.ts                   #   two projects: node + browser (Playwright Chromium; node concurrency capped)
 ├── tsconfig.json                      #   baseline: kernel + host(cli/ipc) + plugins + tests
 ├── tsconfig.build.json                # ★ the only config with noEmit:false (kernel artifact)
 ├── tsconfig.electron.json             #   main + preload (DOM + node)

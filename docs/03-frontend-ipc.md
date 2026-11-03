@@ -68,7 +68,8 @@ src/frontend/
 │   │   ├── HealthBadge.svelte   # 健康徽标：读 health 报告
 │   │   ├── PluginManager.svelte # 宿主常驻插件管理：列表 / 详情 / 本地与远程安装 / 更新 / 启停 / 卸载 / 确认
 │   │   └── CommandPrompt.svelte # 命令输入与结果展示
-│   └── global.css               # 全局样式 + 主题变量的 fallback 默认值
+│   ├── global.css               # Tailwind source(none) + Skeleton + rem.css；主题变量 fallback
+│   └── themes/rem.css           # 唯一注册的 Skeleton 调色板（blue.css 已移除）
 └── lib/
     ├── ipc-client.ts            # window.rem2 的类型化唯一封装（方法 / 事件参数是白名单联合类型）
     ├── bridge-types.ts          # DTO：Panel / Route / PanelTable / Theme / ThemeCatalog / Health / CommandResult / PluginStateChanged
@@ -182,10 +183,11 @@ interface PanelTableDto {
 }
 interface ThemeDto {
   id
-  mode: 'light' | 'dark'
+  mode: 'light' | 'dark' | 'system'
   colors
   fonts
   spacing
+  followSystem?: boolean
 }
 interface ThemeCatalogDto {
   themes: ThemeDto[]
@@ -345,6 +347,13 @@ $effect(() => {
 
 ## 5. 主题通路
 
+界面同时受两个维度控制，二者不互相替代：
+
+| 维度            | 来源                                                                | 切换方式                                                                                                    |
+| --------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Skeleton 调色板 | `themes/rem.css`（`[data-theme='rem']`）                            | 静态：`index.html` 固定 `data-theme="rem"`，运行期不切换。仓库只注册这一套 Skeleton 主题，`blue.css` 已删除 |
+| 宿主主题目录    | 插件贡献的 `ui.theme`（light / dark / system）→ `ThemeRegistryImpl` | `ui.theme.set` 选中的主题由 `lib/theme/vars.ts` 写成内联 CSS 变量；`data-mode` 由主题模式驱动               |
+
 ```mermaid
 sequenceDiagram
   participant TD as theme-switcher 插件
@@ -360,7 +369,7 @@ sequenceDiagram
   TH->>BR: ui.theme.list → ThemeCatalogDto
   TH->>V: applyTheme(dto)
   V->>V: token → CSS 变量映射
-  V-->>TH: document.documentElement.style.setProperty('--rem2-color-bg', …)
+  V-->>TH: document.documentElement.style.setProperty('--rem2-color-*', …)
 ```
 
 三条不变量：
@@ -372,6 +381,10 @@ sequenceDiagram
 **pull 模型**：扩展点槽是单一真相源，`ThemeRegistry` 退化为缓存，每次读时同步。插件卸载时内核按 `pluginId` 强制回收贡献，下次 pull 自然为空 —— 不需要监听卸载事件。
 
 **宿主推来的主题走 `applyRemote()`，不回写主进程**：它只更新本地状态与 CSS 变量。
+
+**切换失败必须回滚**：`setActive()` 先乐观应用本地主题，再发 `ui.theme.set`；若 IPC 拒绝或返回 `{ ok: false }`，`lib/stores/theme.svelte.ts` 恢复切换前的 `activeId` / `colorMode` 并重新应用旧主题，避免 renderer 显示的主题与宿主激活项不一致。连续切换用序号丢弃过期响应。
+
+**CSS 变量不残留**：`applyTheme()` 记录本次写入的变量集合，下一次应用前删除新主题未定义的旧变量（如上一主题的 accent、font），让 `global.css` / `rem.css` 的默认值重新生效；目录清空时调用 `clearTheme()`。
 
 ### 5.1 token → CSS 变量
 
@@ -402,7 +415,7 @@ const SPACING_KEYS = ['xs', 'sm', 'md', 'lg'] as const
 | ----------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `resolve.alias`   | `{ 'rem2-kernel': <abs>/src/kernel/index.ts }`      | 让 Vite 把内核当源码处理，`.js` → `.ts` 由 Vite 内建回退                                                                                                                                                                                                    |
 | `ssr.noExternal`  | 共享 `['rem2-kernel']`，main 覆盖为 `true`          | **关键**。默认会 externalize 裸包名，主进程产物留下 `require('rem2-kernel')`，打包态解析到 `.ts` 入口即炸。main 用 `true` 是为了把 `electron-store` 这类 ESM-only 运行时依赖一并打进 `main.mjs`——forge 只打包 `.vite`，留在 external 的包在 asar 内无法解析 |
-| `build.target`    | `node20`（main / preload）· `chrome120`（renderer） | 与 `engines.node`、Electron 44 的 Chromium 对齐                                                                                                                                                                                                             |
+| `build.target`    | `node20`（main / preload）· `chrome120`（renderer） | `node20` 是保守下限，兼容 Electron 44 内置的 Node；`chrome120` 对齐 Electron 44 的 Chromium。`engines.node` 只约束开发/构建环境，不改变产物 target                                                                                                          |
 | `build.sourcemap` | `true`                                              | 与 `tsconfig.json` 的 `sourceMap` 一致；契约测试靠 sourcemap 判定产物是浏览器版 svelte                                                                                                                                                                      |
 
 **`resolve.conditions` 不共享，必须按目标环境分化**：

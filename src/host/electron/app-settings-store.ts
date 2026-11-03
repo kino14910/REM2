@@ -9,8 +9,10 @@ import {
   parseAppSettingsDocument,
   parseLegacyAppearanceSettings,
   parseLegacyProxySettings,
+  recoverAppSettingsDocument,
   SETTINGS_SCHEMA_VERSION,
   type AppSettingsDocument,
+  type AppSettingsRecovery,
 } from '@/host/settings/app-settings.js'
 import {
   DEFAULT_APPEARANCE_SETTINGS,
@@ -61,10 +63,11 @@ export class ElectronAppSettingsStore implements AppSettingsRepository {
     this.loaded = true
 
     if (existsSync(this.settingsPath)) {
+      let recovered: AppSettingsRecovery
+      let store: ElectronStore<AppSettingsDocument>
       try {
-        this.store = this.createStore()
-        this.settings = parseAppSettingsDocument(this.store.store)
-        this.baseWritePending = false
+        store = this.createStore()
+        recovered = recoverAppSettingsDocument(store.store)
       } catch (error) {
         this.settings = defaultAppSettingsDocument()
         this.invalidFile = true
@@ -72,6 +75,20 @@ export class ElectronAppSettingsStore implements AppSettingsRepository {
         this.store = null
         throw invalidSettingsError(error)
       }
+
+      this.store = store
+      this.settings = recovered.document
+      if (recovered.damaged) {
+        // Keep the valid namespace in memory, but treat the file as damaged:
+        // the original is backed up before the first write replaces it.
+        this.invalidFile = true
+        this.baseWritePending = true
+        const message =
+          'settings.json contains a damaged namespace; valid values were kept'
+        console.error(`[rem2-kernel] ${message}`)
+        throw new ProxySettingsError('E_SETTINGS_INVALID', message)
+      }
+      this.baseWritePending = false
       return
     }
 

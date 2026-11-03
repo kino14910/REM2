@@ -68,7 +68,8 @@ src/frontend/
 │   │   ├── HealthBadge.svelte   # health badge reading the health report
 │   │   ├── PluginManager.svelte # host-owned plugin management: list / detail / install / enable / disable / uninstall
 │   │   └── CommandPrompt.svelte # command input and result display
-│   └── global.css               # global styles + fallback values for theme variables
+│   ├── global.css               # Tailwind source(none) + Skeleton + rem.css; theme variable fallbacks
+│   └── themes/rem.css           # the only registered Skeleton palette (blue.css was removed)
 └── lib/
     ├── ipc-client.ts            # the only typed wrapper around window.rem2 (method/event params are allowlist unions)
     ├── bridge-types.ts          # DTOs: Panel / Route / PanelTable / Theme / ThemeCatalog / Health / CommandResult / PluginStateChanged
@@ -182,10 +183,11 @@ interface PanelTableDto {
 }
 interface ThemeDto {
   id
-  mode: 'light' | 'dark'
+  mode: 'light' | 'dark' | 'system'
   colors
   fonts
   spacing
+  followSystem?: boolean
 }
 interface ThemeCatalogDto {
   themes: ThemeDto[]
@@ -347,6 +349,13 @@ The data sets load **in parallel and each degrades to empty**: no failure blocks
 
 ## 5. Theme path
 
+The UI is driven by two dimensions, and neither replaces the other:
+
+| Dimension        | Source                                                                           | Switching                                                                                                                              |
+| ---------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Skeleton palette | `themes/rem.css` (`[data-theme='rem']`)                                          | static: `index.html` pins `data-theme="rem"` and it never changes at runtime; only this palette is registered (`blue.css` was removed) |
+| Host catalog     | plugin contributions to `ui.theme` (light / dark / system) → `ThemeRegistryImpl` | the theme selected by `ui.theme.set` is written as inline CSS variables by `lib/theme/vars.ts`; `data-mode` follows its mode           |
+
 ```mermaid
 sequenceDiagram
   participant TD as "theme-switcher plugin"
@@ -362,7 +371,7 @@ sequenceDiagram
   TH->>BR: ui.theme.list → ThemeCatalogDto
   TH->>V: applyTheme(dto)
   V->>V: token → CSS variable mapping
-  V-->>TH: document.documentElement.style.setProperty('--rem2-color-bg', …)
+  V-->>TH: document.documentElement.style.setProperty('--rem2-color-*', …)
 ```
 
 Three invariants:
@@ -374,6 +383,10 @@ Three invariants:
 **Pull model**: the extension slot is the single source of truth and `ThemeRegistry` degrades to a cache that syncs on every read. On unload the kernel force-reclaims contributions by `pluginId`, so the next pull is naturally empty — no unload listener needed.
 
 **Themes pushed by the host go through `applyRemote()` and never write back**: it only updates local state and CSS variables.
+
+**A rejected switch must roll back**: `setActive()` applies the theme optimistically, then sends `ui.theme.set`. If IPC rejects or returns `{ ok: false }`, `lib/stores/theme.svelte.ts` restores the previous `activeId` / `colorMode` and re-applies the old theme, so the renderer cannot claim a theme the host did not activate. A sequence number makes older responses stale.
+
+**No stale CSS variables**: `applyTheme()` records the variables it wrote and removes, before the next theme, every one the new theme does not define (e.g. the previous accent or font), so the `global.css` / `rem.css` defaults take over again; an empty catalog calls `clearTheme()`.
 
 ### 5.1 token → CSS variable
 
@@ -404,7 +417,7 @@ const SPACING_KEYS = ['xs', 'sm', 'md', 'lg'] as const
 | ----------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `resolve.alias`   | `{ 'rem2-kernel': <abs>/src/kernel/index.ts }`        | lets Vite treat the kernel as source; `.js` → `.ts` falls back automatically                                                                                                                                                                                                                                                                                       |
 | `ssr.noExternal`  | shared `['rem2-kernel']`; main overrides it to `true` | **critical**. By default the bare name is externalized, leaving `require('rem2-kernel')` in the main bundle, which resolves to the `.ts` entry in a packaged app and explodes. Main uses `true` so ESM-only runtime deps such as `electron-store` are bundled into `main.mjs` — forge packs only `.vite`, so anything left external cannot resolve inside the asar |
-| `build.target`    | `node20` (main / preload) · `chrome120` (renderer)    | aligned with `engines.node` and Electron 44's Chromium                                                                                                                                                                                                                                                                                                             |
+| `build.target`    | `node20` (main / preload) · `chrome120` (renderer)    | `node20` is a conservative floor compatible with Electron 44's bundled Node; `chrome120` matches Electron 44's Chromium. `engines.node` only constrains the dev/build environment, not artifact targets                                                                                                                                                            |
 | `build.sourcemap` | `true`                                                | matches `tsconfig.json` `sourceMap`; the contract test uses the sourcemap to prove the artifact is the browser build                                                                                                                                                                                                                                               |
 
 **`resolve.conditions` must not be shared — it differs per target**:

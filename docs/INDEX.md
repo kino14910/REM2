@@ -35,8 +35,10 @@
 pnpm install
 pnpm dev                      # 终端形态启动内核（内置插件）
 pnpm start                    # Electron 桌面应用（renderer 是 Svelte 5）
-pnpm test:run                 # 全量测试
-pnpm typecheck:all            # 全部 tsconfig 类型检查
+pnpm test:run                 # Node project（单元 / 集成 / 契约）
+pnpm test:browser             # browser project（先 pnpm exec playwright install chromium）
+pnpm test:all                 # 两个 Vitest project
+pnpm typecheck:all            # 全部 tsconfig + svelte-check
 ```
 
 ## 边界由契约测试把关

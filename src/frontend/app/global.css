@@ -5,7 +5,9 @@
  *   Tailwind v4 -> Skeleton core (design tokens, presets, components) -> rem theme.
  *
  * Theme switching works in two dimensions:
- *   - palette: `data-theme="rem"` picks the registered Skeleton theme (themes/rem.css).
+ *   - palette: `data-theme="rem"` picks the only registered Skeleton palette
+ *              (themes/rem.css). It is static; host theme catalog entries change
+ *              the `--rem2-*` / brand variables at runtime instead.
  *   - mode:    `data-mode="light|dark"` drives the `dark` variant. It is defined
  *              explicitly below because Tailwind's default `dark` variant is the
  *              OS media query, which would ignore the host's light/dark selection.
@@ -15,12 +17,13 @@
  * artifacts would contribute unrelated utility classes to the bundle.
  */
 
-@import 'tailwindcss';
+@import 'tailwindcss' source(none);
 @import '@skeletonlabs/skeleton';
 @import '@skeletonlabs/skeleton-svelte';
 @import './themes/rem.css';
 
-@source '../../';
+/* Relative to this stylesheet: `..` = src/frontend (app + lib + entry-client.ts). */
+@source '../';
 
 @custom-variant dark (&:where([data-mode='dark'], [data-mode='dark'] *));
 

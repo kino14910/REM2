@@ -17,9 +17,10 @@
     "name": "rem2-team"
   },
   "main": ".vite/build/main.mjs",
+  "packageManager": "pnpm@12.16.1",
   "engines": {
-    "node": ">=22.13.0",
-    "pnpm": ">=9"
+    "node": ">=26.13.0",
+    "pnpm": ">=12.16.1"
   },
   "exports": {
     ".": {
@@ -52,8 +53,9 @@
     "typecheck:electron": "tsc --noEmit -p tsconfig.electron.json",
     "typecheck:frontend": "tsc --noEmit -p src/frontend/tsconfig.json",
     "typecheck:browser": "tsc --noEmit -p tests/browser/tsconfig.json",
+    "typecheck:svelte": "svelte-check --tsconfig ./src/frontend/tsconfig.json",
     "typecheck:shell": "tsc --noEmit -p tsconfig.shell.json",
-    "typecheck:all": "pnpm typecheck && pnpm typecheck:electron && pnpm typecheck:frontend && pnpm typecheck:browser",
+    "typecheck:all": "pnpm typecheck && pnpm typecheck:electron && pnpm typecheck:frontend && pnpm typecheck:browser && pnpm typecheck:svelte",
     "lint": "oxlint && oxfmt --check",
     "lint:fix": "oxlint --fix && oxfmt --write",
     "verify:render": "electron scripts/verify-render.cjs",
@@ -90,6 +92,7 @@
     "oxlint": "^1.86.0",
     "playwright": "^1.64.1",
     "svelte": "^5.57.1",
+    "svelte-check": "^4.7.8",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",

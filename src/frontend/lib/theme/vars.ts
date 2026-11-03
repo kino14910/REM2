@@ -32,6 +32,12 @@ export type ColorMode = ColorModeDto
 
 let requestedMode: ColorMode = 'system'
 let listening = false
+/**
+ * Variables written by the last `applyTheme` call. Removing them before the
+ * next theme is what prevents a palette from leaking tokens the new theme does
+ * not define (e.g. an accent or font from the previous catalog entry).
+ */
+let appliedThemeVars = new Set<string>()
 
 /** `textMuted` -> `text-muted` (CSS variable names are kebab-case). */
 function kebab(key: string): string {
@@ -158,24 +164,40 @@ export function initThemeMode(): void {
 export function applyTheme(theme: ThemeDto): void {
   if (typeof document === 'undefined') return
   const root = document.documentElement
-  for (const [name, value] of themeToCssVars(theme)) {
-    root.style.setProperty(name, value)
-  }
+  const next = new Map(themeToCssVars(theme))
 
   const accent = theme.colors.accent
   if (accent !== undefined) {
-    root.style.setProperty('--color-brand-light', accent)
-    root.style.setProperty('--color-brand-dark', accent)
+    next.set('--color-brand-light', accent)
+    next.set('--color-brand-dark', accent)
   }
 
   const background = theme.colors.background
   if (background !== undefined) {
     const resolved = resolveColorMode(theme.mode)
-    root.style.setProperty(
+    next.set(
       resolved === 'dark' ? '--color-root-bg-dark' : '--color-root-bg-light',
       background,
     )
   }
 
+  // Retract the previous theme before writing: a partial theme (no accent,
+  // no custom font) must fall back to the stylesheet defaults instead of
+  // inheriting tokens from the theme it replaced.
+  for (const name of appliedThemeVars) {
+    if (!next.has(name)) root.style.removeProperty(name)
+  }
+  for (const [name, value] of next) root.style.setProperty(name, value)
+  appliedThemeVars = new Set(next.keys())
+
   applyColorMode(theme.mode)
+}
+
+/** Remove every variable injected by `applyTheme` (e.g. the theme catalog became empty). */
+export function clearTheme(): void {
+  if (typeof document === 'undefined') return
+  const root = document.documentElement
+  for (const name of appliedThemeVars) root.style.removeProperty(name)
+  appliedThemeVars.clear()
+  syncTitleBarColors()
 }

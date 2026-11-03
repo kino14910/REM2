@@ -231,10 +231,18 @@ Plugins may import **only** from the public entry `rem2-kernel`; deep-linking in
 
 ## Testing
 
+There are two Vitest projects: `node` (kernel/host/contract suites) and `browser`
+(Svelte component tests in a real Chromium page). Browser tests need Chromium
+once per machine:
+
 ```bash
-pnpm test:run        # full suite
-pnpm test:coverage   # coverage
-pnpm typecheck:all   # kernel + electron + frontend type checks
+pnpm exec playwright install chromium
+
+pnpm test:run        # Node project only (unit / integration / contract)
+pnpm test:browser    # browser project only (Playwright Chromium)
+pnpm test:all        # both projects, single run
+pnpm test:coverage   # coverage for the Node project (src/kernel/**)
+pnpm typecheck:all   # tsc for kernel/electron/frontend/browser + svelte-check
 ```
 
 | Layer       | Focus                      | Coverage                                                                                                                                                                                                                                                                                                                                                                                                    |
@@ -242,7 +250,7 @@ pnpm typecheck:all   # kernel + electron + frontend type checks
 | Unit        | module behavior            | semver / topological sort / cycle detection / DI container / container isolation / event bus / lifecycle / manifest validation / permissions / config service / health service / command dispatcher / DTO guards / route→panel resolution / builtin plugins root / plugin state store / integrity / remote download / ZIP extraction / release source / provenance store / proxy settings / version compare |
 | Integration | cross-module collaboration | startup order / soft-dep fallback / hard-dep cascade / fault isolation / config plugin / observability / hot reload / unload cascade / security boundary / worker isolation / command chain / theme chain / UI chain / inspector data chain / local plugin manager / remote install, update and rollback                                                                                                    |
 | Contract    | architectural boundaries   | plugin import boundary / kernel dependency whitelist / extension-point catalog consistency / svelte built as browser bundle / IPC whitelist vs kernel Topics                                                                                                                                                                                                                                                |
-| **Full**    | **layered coverage**       |                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Browser     | Svelte component behavior  | UI primitives (Badge) / theme application, switching and failure rollback                                                                                                                                                                                                                                                                                                                                   |
 
 ---
 

@@ -297,6 +297,75 @@ describe('unit · app settings document', () => {
     expect(readFileSync(file, 'utf8')).toBe(text)
   })
 
+  it('keeps the valid appearance namespace when proxy is damaged', async () => {
+    const directory = prepareRoot()
+    const file = path.join(directory, 'settings.json')
+    const original = JSON.stringify({
+      schemaVersion: 1,
+      proxy: { mode: 'manual' },
+      appearance: { colorMode: 'dark' },
+    })
+    writeFileSync(file, original, 'utf8')
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const store = new ElectronAppSettingsStore(directory)
+    await expect(store.load()).rejects.toMatchObject({
+      code: 'E_SETTINGS_INVALID',
+    })
+    expect(store.getProxy()).toEqual({ mode: 'system' })
+    expect(store.getAppearance()).toEqual({ colorMode: 'dark' })
+    expect(readFileSync(file, 'utf8')).toBe(original)
+
+    await store.setAppearance({ colorMode: 'light' })
+    expect(readSettings(directory)).toEqual({
+      schemaVersion: 1,
+      proxy: { mode: 'system' },
+      appearance: { colorMode: 'light' },
+    })
+    const backup = readdirSync(directory).find(name =>
+      name.startsWith('settings.invalid-'),
+    )
+    expect(backup).toBeDefined()
+    expect(readFileSync(path.join(directory, backup!), 'utf8')).toBe(original)
+    errorSpy.mockRestore()
+  })
+
+  it('keeps the valid proxy namespace when appearance is damaged', async () => {
+    const directory = prepareRoot()
+    const file = path.join(directory, 'settings.json')
+    const original = JSON.stringify({
+      schemaVersion: 1,
+      proxy: { mode: 'manual', address: '127.0.0.1:7890' },
+      appearance: { colorMode: 'sepia' },
+    })
+    writeFileSync(file, original, 'utf8')
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const store = new ElectronAppSettingsStore(directory)
+    await expect(store.load()).rejects.toMatchObject({
+      code: 'E_SETTINGS_INVALID',
+    })
+    expect(store.getProxy()).toEqual({
+      mode: 'manual',
+      address: 'http://127.0.0.1:7890',
+    })
+    expect(store.getAppearance()).toEqual({ colorMode: 'system' })
+    expect(readFileSync(file, 'utf8')).toBe(original)
+
+    await store.setAppearance({ colorMode: 'dark' })
+    expect(readSettings(directory)).toEqual({
+      schemaVersion: 1,
+      proxy: { mode: 'manual', address: 'http://127.0.0.1:7890' },
+      appearance: { colorMode: 'dark' },
+    })
+    const backup = readdirSync(directory).find(name =>
+      name.startsWith('settings.invalid-'),
+    )
+    expect(backup).toBeDefined()
+    expect(readFileSync(path.join(directory, backup!), 'utf8')).toBe(original)
+    errorSpy.mockRestore()
+  })
+
   it('preserves a damaged file before the first successful write', async () => {
     const directory = prepareRoot()
     const file = path.join(directory, 'settings.json')

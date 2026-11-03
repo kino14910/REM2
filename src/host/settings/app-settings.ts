@@ -32,12 +32,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+export interface AppSettingsRecovery {
+  document: AppSettingsDocument
+  /** At least one namespace was missing or invalid and fell back to its defaults. */
+  damaged: boolean
+}
+
 /**
- * Validate the persisted document structure, then run the same business
- * normalization as IPC input (address parsing, field cleanup, cross-field rules).
- * An unknown `schemaVersion` is rejected instead of guessed at or downgraded.
+ * Recover a persisted document one namespace at a time.
+ *
+ * A document-level problem (not an object, or an unknown `schemaVersion`) still
+ * rejects the whole file: the semantics of a newer layout cannot be guessed.
+ * Once the version is known, a damaged `proxy` block must not discard a valid
+ * `appearance` value (and vice versa); the damaged side alone falls back to its
+ * domain default and the caller preserves the original file for diagnosis.
  */
-export function parseAppSettingsDocument(value: unknown): AppSettingsDocument {
+export function recoverAppSettingsDocument(
+  value: unknown,
+): AppSettingsRecovery {
   if (!isRecord(value)) {
     throw new ProxySettingsError(
       'E_SETTINGS_INVALID',
@@ -50,34 +62,68 @@ export function parseAppSettingsDocument(value: unknown): AppSettingsDocument {
       `settings schemaVersion must be ${SETTINGS_SCHEMA_VERSION}`,
     )
   }
-  if (!('proxy' in value)) {
-    throw new ProxySettingsError(
+
+  let proxy: ProxySettings | undefined
+  let appearance: AppearanceSettings | undefined
+  let firstError: unknown
+
+  if ('proxy' in value) {
+    try {
+      proxy = normalizeProxySettings(value.proxy)
+    } catch (error) {
+      firstError ??= error
+    }
+  } else {
+    firstError ??= new ProxySettingsError(
       'E_SETTINGS_INVALID',
       'settings must contain a proxy block',
     )
   }
-  if (!('appearance' in value)) {
-    throw new ProxySettingsError(
+
+  if ('appearance' in value) {
+    try {
+      appearance = normalizeAppearanceSettings(value.appearance)
+    } catch (error) {
+      firstError ??= error
+    }
+  } else {
+    firstError ??= new ProxySettingsError(
       'E_SETTINGS_INVALID',
       'settings must contain an appearance block',
     )
   }
-  try {
-    return {
-      schemaVersion: SETTINGS_SCHEMA_VERSION,
-      proxy: normalizeProxySettings(value.proxy),
-      appearance: normalizeAppearanceSettings(value.appearance),
-    }
-  } catch (error) {
-    if (error instanceof ProxySettingsError) throw error
+
+  if (proxy === undefined && appearance === undefined) {
     throw new ProxySettingsError(
       'E_SETTINGS_INVALID',
-      'settings contain invalid values',
-      {
-        cause: error,
-      },
+      'settings contain no valid namespace',
+      { cause: firstError },
     )
   }
+
+  return {
+    document: {
+      schemaVersion: SETTINGS_SCHEMA_VERSION,
+      proxy: proxy ?? { ...DEFAULT_PROXY_SETTINGS },
+      appearance: appearance ?? { ...DEFAULT_APPEARANCE_SETTINGS },
+    },
+    damaged: proxy === undefined || appearance === undefined,
+  }
+}
+
+/**
+ * Strict whole-document parse used before seeding a fresh file. An unknown
+ * `schemaVersion` is rejected instead of guessed at or downgraded.
+ */
+export function parseAppSettingsDocument(value: unknown): AppSettingsDocument {
+  const recovered = recoverAppSettingsDocument(value)
+  if (recovered.damaged) {
+    throw new ProxySettingsError(
+      'E_SETTINGS_INVALID',
+      'settings contain an invalid namespace',
+    )
+  }
+  return recovered.document
 }
 
 /** Validate the legacy `proxy-settings.json` shape (`{ version: 1, proxy }`). */

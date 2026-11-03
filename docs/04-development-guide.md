@@ -10,13 +10,19 @@
 
 | 项       | 要求                                                              |
 | -------- | ----------------------------------------------------------------- |
-| Node     | >= 22.13.0（`package.json` → `engines`）                          |
-| pnpm     | >= 9；仓库未设 `packageManager`，不固定版本（本机验证 12.16.1）   |
+| Node     | >= 26.13.0（`package.json` → `engines`）                          |
+| pnpm     | `packageManager: pnpm@12.16.1`；`engines.pnpm >= 12.16.1`         |
 | 平台     | Windows / macOS / Linux 均可；Windows 下测试并发必须受限（见 §6） |
 | 第三方包 | 只有 devDependencies。`dependencies` 恒为 `{}`（硬红线）          |
 
+`pnpm-workspace.yaml` 设置 `minimumReleaseAge: 1440`（分钟），新发布的版本需满 24 小时才会被解析；
+`minimumReleaseAgeExclude` 仅用于明确豁免的固定版本（当前为 `vite@8.3.2`）。
+
 ```bash
 pnpm install
+
+# 浏览器组件测试所需（每台机器一次）
+pnpm exec playwright install chromium
 ```
 
 ---
@@ -34,9 +40,12 @@ pnpm install
 | `pnpm build:plugins`          | esbuild 逐插件 → `plugins-dist/<id>/dist/index.js`                 | 改内置插件源码后        |
 | `pnpm build:external`         | 构建同级 `REM2-plugins` → `plugins-external-dist/`                 | 改外部插件 / 打发布包时 |
 | `pnpm build:renderer`         | 单独构建 renderer                                                  | 调试前端产物            |
-| `pnpm typecheck:all`          | `typecheck` + `typecheck:electron` + `typecheck:frontend`          | 提交前                  |
-| `pnpm test:run`               | 全量测试（一次）                                                   | 提交前                  |
-| `pnpm test:watch`             | 监听模式                                                           | 开发中                  |
+| `pnpm typecheck:all`          | 4 个 tsc 项目 + `typecheck:svelte`（svelte-check 检查 `.svelte`）  | 提交前                  |
+| `pnpm test:run`               | 仅 Node project（单元 / 集成 / 契约）                              | 提交前                  |
+| `pnpm test:watch`             | Node project 监听模式                                              | 开发中                  |
+| `pnpm test:browser`           | 仅 browser project（Playwright Chromium，需先安装浏览器）          | 改 Svelte 组件后        |
+| `pnpm test:browser:watch`     | browser project 监听模式                                           | 改 Svelte 组件时        |
+| `pnpm test:all`               | 两个 Vitest project 一次跑完（Node + Browser）                     | 提交前 / 发布前         |
 | `pnpm lint` / `pnpm lint:fix` | oxlint + oxfmt 检查 / 修复                                         | 提交前                  |
 | `pnpm cli scaffold <id>`      | 生成插件骨架                                                       | 新建插件                |
 | `pnpm cli validate <path>`    | 校验 `plugin.json`                                                 | 新建 / 改清单后         |
@@ -47,8 +56,8 @@ pnpm install
 终态验证基线：
 
 ```
-pnpm typecheck:all    → 全部 tsconfig 零错误
-pnpm test:run         → 全量测试全绿
+pnpm typecheck:all    → 全部 tsconfig 与 svelte-check 零错误
+pnpm test:all         → Node + Browser 两个 project 全绿
 pnpm dev --exit-after-start → 全部插件启动、failed=0
 ```
 
@@ -87,15 +96,17 @@ plugins-dist                  →  resources/plugins-dist/（extraResource，★
 
 tsconfig 由基线、按运行形态特化的配置与转发壳组成，`strict` / `noUnused*` 全局一致。
 
-| 配置                         | `include`                                                                                                  | `lib` / `types`                                      | `moduleResolution` | 为什么这样切                                                                                                                                                                                                                                       |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tsconfig.json`（基线）      | `src/kernel/**`、`src/host/{cli,ipc,plugins,settings}/**`、`plugins/*/src/**`、`tests/**`、`*.ts`、`*.mts` | `ESNext` + `types: ["node"]`                         | `NodeNext`         | 内核与 CLI / IPC / 设置服务是纯 Node 库，不需要 DOM；同时覆盖插件与测试，保证三者对同一份契约的类型判断一致                                                                                                                                        |
-| `tsconfig.electron.json`     | `src/{main,preload}.ts`、`src/host/electron/**`、`src/declarations.d.ts`                                   | `ESNext` + `DOM` + `DOM.Iterable`，`types: ["node"]` | `NodeNext`（继承） | 主进程与 preload 需要 DOM（`BrowserWindow`）与 node 同时在场                                                                                                                                                                                       |
-| `src/frontend/tsconfig.json` | `src/frontend/**/*.ts`、`src/frontend/**/*.svelte`、`src/shared/**/*.ts`、`src/declarations.d.ts`          | `ESNext` + `DOM`，**`types: []`**                    | **`Bundler`**      | ① 刻意不给 node 类型：renderer 在 `contextIsolation + sandbox` 下本就无 Node 能力，把约束落到类型层；② `Bundler` 是 svelte 插件解析 `./X.svelte` 的必要条件；③ 放在 `src/frontend/` 下是为了让 Svelte 语言服务按“最近 tsconfig”认领 `.svelte` 文件 |
-| `tsconfig.build.json`        | 仅 `src/kernel/**`                                                                                         | 同基线                                               | `NodeNext`         | **唯一 `noEmit: false`**：`declaration: true` + `outDir: dist` + `rootDir: src`；host 与 frontend 不进 dist                                                                                                                                        |
-| `tsconfig.shell.json`        | —                                                                                                          | —                                                    | —                  | 转发壳（`extends: ./tsconfig.electron.json`），保留是为了不破坏既有验收脚本                                                                                                                                                                        |
+| 配置                         | `include`                                                                                                  | `lib` / `types`                                      | `moduleResolution`              | 为什么这样切                                                                                                                                                                                                                                       |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tsconfig.json`（基线）      | `src/kernel/**`、`src/host/{cli,ipc,plugins,settings}/**`、`plugins/*/src/**`、`tests/**`、`*.ts`、`*.mts` | `ESNext` + `types: ["node"]`                         | `Bundler`（`module: preserve`） | 内核与 CLI / IPC / 设置服务是纯 Node 库，不需要 DOM；同时覆盖插件与测试，保证三者对同一份契约的类型判断一致。基线用 Bundler 是因为 `@/`、`rem2-kernel` 别名与 `.mts` 工具脚本需要 Vite/frontend 同样的解析语义                                     |
+| `tsconfig.electron.json`     | `src/{main,preload}.ts`、`src/host/electron/**`、`src/declarations.d.ts`                                   | `ESNext` + `DOM` + `DOM.Iterable`，`types: ["node"]` | `NodeNext`（继承）              | 主进程与 preload 需要 DOM（`BrowserWindow`）与 node 同时在场                                                                                                                                                                                       |
+| `src/frontend/tsconfig.json` | `src/frontend/**/*.ts`、`src/frontend/**/*.svelte`、`src/shared/**/*.ts`、`src/declarations.d.ts`          | `ESNext` + `DOM`，**`types: []`**                    | **`Bundler`**                   | ① 刻意不给 node 类型：renderer 在 `contextIsolation + sandbox` 下本就无 Node 能力，把约束落到类型层；② `Bundler` 是 svelte 插件解析 `./X.svelte` 的必要条件；③ 放在 `src/frontend/` 下是为了让 Svelte 语言服务按“最近 tsconfig”认领 `.svelte` 文件 |
+| `tsconfig.build.json`        | 仅 `src/kernel/**`                                                                                         | 同基线                                               | `NodeNext`                      | **唯一 `noEmit: false`**：`declaration: true` + `outDir: dist` + `rootDir: src`；host 与 frontend 不进 dist                                                                                                                                        |
+| `tsconfig.shell.json`        | —                                                                                                          | —                                                    | —                               | 转发壳（`extends: ./tsconfig.electron.json`），保留是为了不破坏既有验收脚本                                                                                                                                                                        |
 
 插件侧 `plugins/*/tsconfig.json` 独立，只声明 `paths: { "rem2-kernel": ["../../src/kernel/index.ts"] }`，不继承根配置。
+
+`.svelte` 文件的类型检查由 `pnpm typecheck:svelte`（`svelte-check --tsconfig ./src/frontend/tsconfig.json`）完成，已并入 `typecheck:all`；`tsc` 只看到 `*.svelte` 的模块声明，无法校验组件 props 与 runes。
 
 ### 3.4 构建期红线
 
@@ -130,7 +141,7 @@ pnpm dev --exit-after-start
 ```bash
 pnpm lint
 pnpm typecheck:all
-pnpm test:run
+pnpm test:all
 pnpm dev --exit-after-start
 ```
 
@@ -163,7 +174,8 @@ pnpm dev --exit-after-start
 8. **`git reset` 后大面积 modified 但 `git diff --cached` 为空**，是 racily-clean 伪差异（索引与 mtime 同秒），`git add -A <dir>` 刷新即可，别误判成丢改动。
 9. **打包链路已实机验证（2026-10-24）**：`pnpm package` 完整跑通；Windows 上 squirrel maker 产出 `Setup.exe` 且包内 `resources/plugins-dist/` 齐全（deb/rpm maker 仅 Linux 可用，属平台限制）。若 `out/` 内残留被其他进程占用的文件，packager 的清理步骤会被本机 safe-delete shim FAIL_CLOSED 阻断（报 `trash` 失败）——先清空 `out/` 再跑 `package` / `make`。
 10. **Node 原生 TS 支持（strip-only）不能用于插件**：不支持参数属性（`ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`），也不把 `.js` 说明符重映射到 `.ts`（`ERR_MODULE_NOT_FOUND`）。改插件修不好，只能预编译。
-11. **`REM2_DISABLE_GPU=1` 必须与 `--no-sandbox` 配套**（`main.ts` 里两者同属该 opt-in 块）。无 GPU / 虚拟化主机上 Chromium 进程沙箱的虚拟化后端同样失败（`Failed to create shared context for virtualization`），只禁 GPU 不禁沙箱会让每个渲染进程访问冲突崩溃：症状是**空白窗口** + `render-process-gone` (crashed) + `loadFile` 报 `ERR_FAILED`。判据：`scripts/verify-render.cjs` 的 5 开关组合含 `--no-sandbox` 所以能渲染，而漏掉它的 4 开关组合必崩。
+11. **浏览器测试需要真实 Chromium**：`pnpm test:browser` / `pnpm test:all` 前先执行 `pnpm exec playwright install chromium`；`test:run` 只跑 Node project，不需要浏览器。
+12. **`REM2_DISABLE_GPU=1` 必须与 `--no-sandbox` 配套**（`main.ts` 里两者同属该 opt-in 块）。无 GPU / 虚拟化主机上 Chromium 进程沙箱的虚拟化后端同样失败（`Failed to create shared context for virtualization`），只禁 GPU 不禁沙箱会让每个渲染进程访问冲突崩溃：症状是**空白窗口** + `render-process-gone` (crashed) + `loadFile` 报 `ERR_FAILED`。判据：`scripts/verify-render.cjs` 的 5 开关组合含 `--no-sandbox` 所以能渲染，而漏掉它的 4 开关组合必崩。
 
 ---
 

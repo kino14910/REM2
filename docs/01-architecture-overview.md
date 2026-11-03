@@ -177,14 +177,14 @@ rem2-kernel/
 ├── plugins-dist/                      # 内置插件构建产物（进 extraResource，git 忽略）
 ├── plugins-external-dist/             # 外部插件构建产物（发布包/测试用，不进安装包，git 忽略）
 ├── scripts/build-plugins.mjs          # esbuild 逐插件打包（含 REM2_EXTERNAL_PLUGINS_DIR；构建期代码，刻意不进 src/）
-├── tests/{unit,integration,contract}  # 分层测试 + fixtures/ + helpers/
+├── tests/{unit,integration,contract,browser}  # 分层测试 + fixtures/ + helpers/
 ├── examples/README.md                 # 插件扩展示例与脚手架说明
 │
 ├── vite.shared.mts                    # ★ alias / ssr.noExternal 的单一来源（conditions 按环境分化）
 ├── vite.main.config.mts               #   主进程构建（target node20）
 ├── vite.preload.config.mts            #   preload 构建（产物名必须是 preload.cjs）
 ├── vite.renderer.config.mts           #   renderer 构建（唯一挂 svelte 插件的 config）
-├── vitest.config.ts                   #   node 环境 + 限并发
+├── vitest.config.ts                   #   node + browser 两个 project（browser 用 Playwright Chromium；node 限并发）
 ├── tsconfig.json                      #   基线：kernel + host(cli/ipc) + 插件 + 测试
 ├── tsconfig.build.json                # ★ 唯一 noEmit:false 的配置（内核产物）
 ├── tsconfig.electron.json             #   主进程 + preload（DOM + node）

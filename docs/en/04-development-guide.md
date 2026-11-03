@@ -8,15 +8,23 @@
 
 ## 1. Environment
 
-| Item        | Requirement                                                                                          |
-| ----------- | ---------------------------------------------------------------------------------------------------- |
-| Node        | >= 22.13.0 (`package.json` → `engines`)                                                              |
-| pnpm        | >= 9; the repo sets no `packageManager` field and does not pin a version (verified locally: 12.16.1) |
-| Platform    | Windows / macOS / Linux; on Windows test concurrency must stay limited (see §6)                      |
-| Third-party | devDependencies only. `dependencies` stays `{}` (hard red line)                                      |
+| Item        | Requirement                                                                     |
+| ----------- | ------------------------------------------------------------------------------- |
+| Node        | >= 26.13.0 (`package.json` → `engines`)                                         |
+| pnpm        | `packageManager: pnpm@12.16.1`; `engines.pnpm >= 12.16.1`                       |
+| Platform    | Windows / macOS / Linux; on Windows test concurrency must stay limited (see §6) |
+| Third-party | devDependencies only. `dependencies` stays `{}` (hard red line)                 |
+
+`pnpm-workspace.yaml` sets `minimumReleaseAge: 1440` (minutes): a newly published
+version must be at least 24 hours old before it can be resolved.
+`minimumReleaseAgeExclude` is reserved for deliberately pinned exemptions
+(currently `vite@8.3.2`).
 
 ```bash
 pnpm install
+
+# required once per machine for the browser component tests
+pnpm exec playwright install chromium
 ```
 
 ---
@@ -34,9 +42,12 @@ pnpm install
 | `pnpm build:plugins`          | esbuild per built-in plugin → `plugins-dist/<id>/dist/index.js`                      | after editing built-in plugin source              |
 | `pnpm build:external`         | build sibling `REM2-plugins` → `plugins-external-dist/`                              | external plugin work / release packaging          |
 | `pnpm build:renderer`         | build the renderer alone                                                             | debugging frontend output                         |
-| `pnpm typecheck:all`          | `typecheck` + `typecheck:electron` + `typecheck:frontend`                            | before committing                                 |
-| `pnpm test:run`               | full test suite (single run)                                                         | before committing                                 |
-| `pnpm test:watch`             | watch mode                                                                           | during development                                |
+| `pnpm typecheck:all`          | 4 tsc projects + `typecheck:svelte` (svelte-check for `.svelte`)                     | before committing                                 |
+| `pnpm test:run`               | Node project only (unit / integration / contract)                                    | before committing                                 |
+| `pnpm test:watch`             | Node project watch mode                                                              | during development                                |
+| `pnpm test:browser`           | browser project only (Playwright Chromium; install the browser first)                | after changing Svelte components                  |
+| `pnpm test:browser:watch`     | browser project watch mode                                                           | while editing Svelte components                   |
+| `pnpm test:all`               | both Vitest projects in one run (Node + Browser)                                     | before committing / releasing                     |
 | `pnpm lint` / `pnpm lint:fix` | oxlint + oxfmt check / fix                                                           | before committing                                 |
 | `pnpm cli scaffold <id>`      | generate a plugin skeleton                                                           | creating a plugin                                 |
 | `pnpm cli validate <path>`    | validate `plugin.json`                                                               | after creating/editing a manifest                 |
@@ -47,8 +58,8 @@ pnpm install
 Current verification baseline:
 
 ```
-pnpm typecheck:all    → all tsconfigs report zero errors
-pnpm test:run         → full suite green
+pnpm typecheck:all    → all tsconfigs and svelte-check report zero errors
+pnpm test:all         → both Node and Browser projects are green
 pnpm dev --exit-after-start → all plugins started, failed=0
 ```
 
@@ -87,15 +98,17 @@ plugins-dist                  →  resources/plugins-dist/ (extraResource, ★ o
 
 The tsconfig set is a baseline plus per-runtime specializations and a forwarder; `strict` / `noUnused*` are global.
 
-| Config                       | `include`                                                                                                  | `lib` / `types`                                      | `moduleResolution`     | Why                                                                                                                                                                                                                                                                                                                          |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tsconfig.json` (baseline)   | `src/kernel/**`, `src/host/{cli,ipc,plugins,settings}/**`, `plugins/*/src/**`, `tests/**`, `*.ts`, `*.mts` | `ESNext` + `types: ["node"]`                         | `NodeNext`             | kernel, CLI/IPC and the settings service are pure Node libraries with no DOM need; also covers plugins and tests so all three judge the same contracts identically                                                                                                                                                           |
-| `tsconfig.electron.json`     | `src/{main,preload}.ts`, `src/host/electron/**`, `src/declarations.d.ts`                                   | `ESNext` + `DOM` + `DOM.Iterable`, `types: ["node"]` | `NodeNext` (inherited) | main and preload need DOM (`BrowserWindow`) and node at the same time                                                                                                                                                                                                                                                        |
-| `src/frontend/tsconfig.json` | `src/frontend/**/*.ts`, `src/frontend/**/*.svelte`, `src/shared/**/*.ts`, `src/declarations.d.ts`          | `ESNext` + `DOM`, **`types: []`**                    | **`Bundler`**          | ① deliberately no node types: the renderer has no Node capability under `contextIsolation + sandbox`, so the constraint lives in types; ② `Bundler` is required for the svelte plugin to resolve `./X.svelte`; ③ living under `src/frontend/` lets the svelte language server claim `.svelte` files via the nearest tsconfig |
-| `tsconfig.build.json`        | `src/kernel/**` only                                                                                       | same as baseline                                     | `NodeNext`             | **the only config with `noEmit: false`**: `declaration: true` + `outDir: dist` + `rootDir: src`; host and frontend never enter dist                                                                                                                                                                                          |
-| `tsconfig.shell.json`        | —                                                                                                          | —                                                    | —                      | forwarder (`extends: ./tsconfig.electron.json`) kept so existing verification scripts do not break                                                                                                                                                                                                                           |
+| Config                       | `include`                                                                                                  | `lib` / `types`                                      | `moduleResolution`             | Why                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tsconfig.json` (baseline)   | `src/kernel/**`, `src/host/{cli,ipc,plugins,settings}/**`, `plugins/*/src/**`, `tests/**`, `*.ts`, `*.mts` | `ESNext` + `types: ["node"]`                         | `Bundler` (`module: preserve`) | kernel, CLI/IPC and the settings service are pure Node libraries with no DOM need; also covers plugins and tests so all three judge the same contracts identically. Bundler matches the Vite/frontend resolution used for the `@/`, `rem2-kernel` aliases and `.mts` tool scripts                                            |
+| `tsconfig.electron.json`     | `src/{main,preload}.ts`, `src/host/electron/**`, `src/declarations.d.ts`                                   | `ESNext` + `DOM` + `DOM.Iterable`, `types: ["node"]` | `NodeNext` (inherited)         | main and preload need DOM (`BrowserWindow`) and node at the same time                                                                                                                                                                                                                                                        |
+| `src/frontend/tsconfig.json` | `src/frontend/**/*.ts`, `src/frontend/**/*.svelte`, `src/shared/**/*.ts`, `src/declarations.d.ts`          | `ESNext` + `DOM`, **`types: []`**                    | **`Bundler`**                  | ① deliberately no node types: the renderer has no Node capability under `contextIsolation + sandbox`, so the constraint lives in types; ② `Bundler` is required for the svelte plugin to resolve `./X.svelte`; ③ living under `src/frontend/` lets the svelte language server claim `.svelte` files via the nearest tsconfig |
+| `tsconfig.build.json`        | `src/kernel/**` only                                                                                       | same as baseline                                     | `NodeNext`                     | **the only config with `noEmit: false`**: `declaration: true` + `outDir: dist` + `rootDir: src`; host and frontend never enter dist                                                                                                                                                                                          |
+| `tsconfig.shell.json`        | —                                                                                                          | —                                                    | —                              | forwarder (`extends: ./tsconfig.electron.json`) kept so existing verification scripts do not break                                                                                                                                                                                                                           |
 
 Plugin tsconfigs (`plugins/*/tsconfig.json`) are standalone, declaring only `paths: { "rem2-kernel": ["../../src/kernel/index.ts"] }`, and do not extend the root config.
+
+`.svelte` type checking is done by `pnpm typecheck:svelte` (`svelte-check --tsconfig ./src/frontend/tsconfig.json`) and is part of `typecheck:all`; `tsc` only sees the `*.svelte` module declaration, so it cannot check component props or runes.
 
 ### 3.4 Build-time red lines
 
@@ -130,7 +143,7 @@ See [`01-architecture-overview.md`](01-architecture-overview.md) §10. Two enfor
 ```bash
 pnpm lint
 pnpm typecheck:all
-pnpm test:run
+pnpm test:all
 pnpm dev --exit-after-start
 ```
 
@@ -163,7 +176,8 @@ pnpm dev --exit-after-start
 8. **After `git reset`, many files appear modified while `git diff --cached` is empty** — that is a racily-clean artifact (index and mtime in the same second); `git add -A <dir>` refreshes it. Do not misread it as lost changes.
 9. **The packaging chain is verified (2026-10-24)**: `pnpm package` runs end-to-end; on Windows the squirrel maker produces a `Setup.exe` carrying `resources/plugins-dist/` (the deb/rpm makers are Linux-only, a platform limit). If `out/` contains files locked by another process, the packager's cleanup step is aborted by this machine's safe-delete shim (a `trash` failure) — clear `out/` before running `package` / `make`.
 10. **Node's native TS support (strip-only) does not work for plugins**: no parameter properties (`ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`), and `.js` specifiers are not remapped to `.ts` (`ERR_MODULE_NOT_FOUND`). No plugin-side change fixes this; precompile instead.
-11. **`REM2_DISABLE_GPU=1` must be paired with `--no-sandbox`** (both live in the same opt-in block in `main.ts`). On GPU-less / virtualized hosts the Chromium process sandbox's virtualization backend fails the same way (`Failed to create shared context for virtualization`), so disabling the GPU without the sandbox crashes every renderer process with an access violation: the symptom is a **blank window** + `render-process-gone` (crashed) + `ERR_FAILED` from `loadFile`. Criterion: `scripts/verify-render.cjs` uses a 5-switch combination that includes `--no-sandbox` and renders fine, while any 4-switch combination without it always crashes.
+11. **Browser tests need a real Chromium**: run `pnpm exec playwright install chromium` before `pnpm test:browser` / `pnpm test:all`; `test:run` only executes the Node project and needs no browser.
+12. **`REM2_DISABLE_GPU=1` must be paired with `--no-sandbox`** (both live in the same opt-in block in `main.ts`). On GPU-less / virtualized hosts the Chromium process sandbox's virtualization backend fails the same way (`Failed to create shared context for virtualization`), so disabling the GPU without the sandbox crashes every renderer process with an access violation: the symptom is a **blank window** + `render-process-gone` (crashed) + `ERR_FAILED` from `loadFile`. Criterion: `scripts/verify-render.cjs` uses a 5-switch combination that includes `--no-sandbox` and renders fine, while any 4-switch combination without it always crashes.
 
 ---
 

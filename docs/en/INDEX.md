@@ -35,8 +35,10 @@
 pnpm install
 pnpm dev                      # start the kernel in terminal form (built-in plugins)
 pnpm start                    # Electron desktop app (renderer is Svelte 5)
-pnpm test:run                 # full suite
-pnpm typecheck:all            # all tsconfigs
+pnpm test:run                 # Node project (unit / integration / contract)
+pnpm test:browser             # browser project (run pnpm exec playwright install chromium first)
+pnpm test:all                 # both Vitest projects
+pnpm typecheck:all            # all tsconfigs + svelte-check
 ```
 
 ## Boundaries are enforced by contract tests

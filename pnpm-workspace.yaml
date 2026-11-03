@@ -12,6 +12,10 @@ allowBuilds:
   electron-winstaller: true
   esbuild: true
   playwright: true
+# Supply-chain delay (minutes): keep installs on versions that have existed
+# long enough to be reviewed. `minimumReleaseAgeExclude` is only meaningful
+# together with this value, so both are declared here.
+minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - vite@8.3.2
 nodeLinker: hoisted

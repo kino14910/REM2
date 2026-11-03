@@ -255,7 +255,7 @@ pnpm build:external         # 外部插件 → plugins-external-dist/<id>/dist/i
 ```
 
 - `plugins/*/package.json` 是 pnpm workspace 成员（`@rem2/plugin-<id>`，private）。
-- 插件侧 `tsconfig.json` **独立**，只声明 `paths: { "rem2-kernel": ["../../src/kernel/index.ts"] }`。内核的 `NodeNext` + DOM 排除策略不适用于插件，继承根配置会连测试与前端一起拉进来。
+- 插件侧 `tsconfig.json` **独立**，只声明 `paths: { "rem2-kernel": ["../../src/kernel/index.ts"] }`。根配置的 `Bundler` 解析 + 全仓 `include`（测试、前端、host）不适用于插件，继承会连测试与前端一起拉进来。
 - 打包形态是自包含 ESM bundle（`target: node20`），dev 与 prod 完全一致。
 
 ---
