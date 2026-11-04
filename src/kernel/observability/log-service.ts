@@ -1,6 +1,7 @@
 /**
  * The kernel only produces logs and dispatches them to sinks; where logs
- * are written (console/file/remote) is each plugin's concern.
+ * are written (host console/file/remote or a plugin sink) is decided by the
+ * host composition.
  */
 
 import type {

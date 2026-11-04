@@ -1,6 +1,6 @@
 /**
- * The kernel only hands log entries to sinks; where they land is the plugin's
- * business.
+ * The kernel only hands log entries to sinks; where they land (host console,
+ * file, remote, or a plugin-contributed sink) is the host/plugin's business.
  */
 
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal'

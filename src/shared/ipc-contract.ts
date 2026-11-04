@@ -91,6 +91,20 @@ export const channels = {
   pluginDownloadCancel: 'plugin.download.cancel',
   pluginUpdateCheck: 'plugin.update.check',
   pluginUpdateInstall: 'plugin.update.install',
+  /**
+   * Read the official marketplace index with local installation state.
+   * `{ refresh?: boolean }`: false reuses the host's last index; true refetches
+   * (still falling back to the last cached index when the network fails).
+   */
+  pluginMarketList: 'plugin.market.list',
+  /**
+   * Install a marketplace plugin. The host re-resolves the registry entry by
+   * id + version, then installs it disabled so capability approval and enabling
+   * remain separate, explicit operations.
+   */
+  pluginMarketInstall: 'plugin.market.install',
+  /** Update an installed marketplace plugin from a host-verified registry version. */
+  pluginMarketUpdate: 'plugin.market.update',
   /** Read the host-owned proxy settings and the proxy Chromium actually resolves. */
   settingsProxyGet: 'settings.proxy.get',
   /** Replace proxy settings; applied to the default session immediately. */
@@ -99,6 +113,10 @@ export const channels = {
   settingsAppearanceGet: 'settings.appearance.get',
   /** Persist the renderer color mode; the renderer applies it on the next start. */
   settingsAppearanceSet: 'settings.appearance.set',
+  /** Read the host console logging settings. */
+  settingsLoggingGet: 'settings.logging.get',
+  /** Persist console logging settings; applied to the kernel immediately. */
+  settingsLoggingSet: 'settings.logging.set',
   /** Execute a command (responded directly by a command plugin; the host does not implement it). */
   commandExecute: 'command.execute',
   /** Fetch the health report. */
@@ -168,6 +186,24 @@ export type ColorModeDto = 'light' | 'dark' | 'system'
 /** Host-persisted appearance settings (renderer UI preferences, not kernel state). */
 export interface AppearanceSettingsDto {
   colorMode: ColorModeDto
+}
+
+/** All kernel log levels, ordered from most to least verbose. */
+export const LOG_LEVELS = [
+  'trace',
+  'debug',
+  'info',
+  'warn',
+  'error',
+  'fatal',
+] as const
+
+export type LogLevelDto = (typeof LOG_LEVELS)[number]
+
+/** Host-persisted console logging settings (the level filters every sink). */
+export interface LoggingSettingsDto {
+  enabled: boolean
+  level: LogLevelDto
 }
 
 export type PluginRuntimeStateDto =
@@ -274,6 +310,61 @@ export interface PluginUpdateCheckDto {
   updates: PluginUpdateDto[]
   /** Per-plugin source failures and updates that cannot be applied as-is. */
   issues: string[]
+}
+
+/** Effective relation between one marketplace entry and the local install state. */
+export type PluginMarketActionDto =
+  | 'install'
+  | 'update'
+  | 'installed'
+  | 'incompatible'
+
+export interface PluginMarketCompatibilityDto {
+  minKernel: string
+  maxKernel?: string
+  contractVersion: string
+  compatible: boolean
+  /** Human-readable kernel/contract incompatibility reasons. */
+  reasons: string[]
+}
+
+/**
+ * One official-registry entry projected for the renderer.
+ *
+ * Download URLs and digests are deliberately absent: the renderer only names
+ * an id + version, and the host re-resolves the registry before installing.
+ */
+export interface PluginMarketEntryDto {
+  id: string
+  name: string
+  description: string
+  author: string
+  tags: string[]
+  homepage?: string
+  /** Canonical plugin repository URL from the registry index. */
+  repository: string
+  /** Current stable release (`versions[0]`). */
+  version: string
+  publishedAt?: string
+  sizeBytes: number
+  requires: string[]
+  compatibility: PluginMarketCompatibilityDto
+  /** Present only when a user-installed copy exists (NotInstalled records excluded). */
+  installedVersion?: string
+  updateAvailable: boolean
+  action: PluginMarketActionDto
+}
+
+export interface PluginMarketListDto {
+  plugins: PluginMarketEntryDto[]
+  repository: string
+  generatedAt: string
+  /** When the shown index was last fetched successfully. */
+  fetchedAt: string
+  source: 'network' | 'cache'
+  stale: boolean
+  /** Cache fallback / refresh diagnostics; never fatal. */
+  warnings: string[]
 }
 
 export type PluginDownloadPhase =
