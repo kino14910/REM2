@@ -1,7 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { appSettings } from '@/frontend/lib/stores/settings.svelte'
-  import type { ProxyModeDto, ProxySettingsDto } from '@/shared/ipc-contract'
+  import {
+    LOG_LEVELS,
+    type LogLevelDto,
+    type ProxyModeDto,
+    type ProxySettingsDto,
+  } from '@/shared/ipc-contract'
   import Alert from '@/frontend/lib/ui/Alert.svelte'
   import Button from '@/frontend/lib/ui/Button.svelte'
   import Card from '@/frontend/lib/ui/Card.svelte'
@@ -16,9 +21,25 @@
     { value: 'direct', label: 'Direct connection (no proxy)' },
   ]
 
+  const levelLabels: Record<LogLevelDto, string> = {
+    trace: 'Trace',
+    debug: 'Debug',
+    info: 'Info',
+    warn: 'Warning',
+    error: 'Error',
+    fatal: 'Fatal',
+  }
+
+  const logLevelOptions = LOG_LEVELS.map(level => ({
+    value: level,
+    label: levelLabels[level],
+  }))
+
   let mode = $state<ProxyModeDto>('system')
   let address = $state('')
   let bypass = $state('')
+  let loggingEnabled = $state(true)
+  let logLevel = $state<LogLevelDto>('info')
 
   // The host is the source of truth: reload/save responses reset the form.
   $effect(() => {
@@ -28,14 +49,26 @@
     bypass = proxy.bypass ?? ''
   })
 
+  $effect(() => {
+    const logging = appSettings.logging
+    loggingEnabled = logging.enabled
+    logLevel = logging.level
+  })
+
   const canSave = $derived(
     !appSettings.saving &&
       !appSettings.loading &&
       (mode !== 'manual' || address.trim().length > 0),
   )
 
+  const loggingDirty = $derived(
+    loggingEnabled !== appSettings.logging.enabled ||
+      logLevel !== appSettings.logging.level,
+  )
+
   onMount(() => {
     void appSettings.load()
+    void appSettings.loadLogging()
   })
 
   function save(event: SubmitEvent): void {
@@ -93,6 +126,54 @@
           </p>
         </div>
         <ThemeToggle />
+      </div>
+    </Card>
+
+    <Card>
+      <div class="flex flex-col gap-4">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-semibold">Console logging</h3>
+          <p class="text-xs text-surface-600-400">
+            Write kernel logs to the terminal. The level filters every log sink;
+            turning this off only removes the console output.
+          </p>
+        </div>
+
+        <label class="flex items-center gap-2 text-sm" for="logging-enabled">
+          <input
+            id="logging-enabled"
+            type="checkbox"
+            bind:checked={loggingEnabled}
+            class="size-4 accent-primary-500"
+            disabled={appSettings.loggingSaving}
+          />
+          Write kernel logs to the terminal
+        </label>
+
+        <Field label="Log level" forId="log-level">
+          <Select
+            id="log-level"
+            bind:value={logLevel}
+            options={logLevelOptions}
+            disabled={appSettings.loggingSaving}
+          />
+        </Field>
+
+        <div class="flex justify-end border-t border-surface-200-800 pt-4">
+          <Button
+            type="button"
+            loading={appSettings.loggingSaving}
+            loadingLabel="Applying…"
+            disabled={!loggingDirty || appSettings.loggingSaving}
+            onclick={() =>
+              void appSettings.saveLogging({
+                enabled: loggingEnabled,
+                level: logLevel,
+              })}
+          >
+            Apply
+          </Button>
+        </div>
       </div>
     </Card>
 

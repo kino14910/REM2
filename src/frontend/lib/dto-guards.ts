@@ -11,9 +11,14 @@
 import type {
   AppearanceSettingsDto,
   ColorModeDto,
+  LoggingSettingsDto,
+  LogLevelDto,
   PluginDetailDto,
   PluginDownloadPhase,
   PluginDownloadProgressDto,
+  PluginMarketActionDto,
+  PluginMarketEntryDto,
+  PluginMarketListDto,
   PluginOperationResultDto,
   PluginRemoteInspectionDto,
   PluginRuntimeStateDto,
@@ -21,6 +26,8 @@ import type {
   ProxyModeDto,
   ProxySettingsDto,
 } from '@/shared/ipc-contract.js'
+
+import { LOG_LEVELS } from '@/shared/ipc-contract.js'
 
 import type { PanelDto, PanelFormDto, RouteDto } from './bridge-types.js'
 
@@ -617,6 +624,140 @@ export function parsePluginUpdateCheck(value: unknown): {
   return { items, issues }
 }
 
+const MARKET_ACTIONS = new Set<PluginMarketActionDto>([
+  'install',
+  'update',
+  'installed',
+  'incompatible',
+])
+
+function marketEntryIssue(entry: unknown, index: number): string | undefined {
+  if (!isRecord(entry)) return `market[${index}]: not an object`
+  for (const field of [
+    'id',
+    'name',
+    'description',
+    'author',
+    'repository',
+    'version',
+  ] as const) {
+    if (!isNonEmptyString(entry[field])) {
+      return `market[${index}]: field "${field}" must be a non-empty string`
+    }
+  }
+  for (const field of ['tags', 'requires'] as const) {
+    if (!isStringArray(entry[field])) {
+      return `market[${index}]: field "${field}" must be a string array`
+    }
+  }
+  if (
+    typeof entry.sizeBytes !== 'number' ||
+    !Number.isFinite(entry.sizeBytes) ||
+    entry.sizeBytes < 0
+  ) {
+    return `market[${index}]: field "sizeBytes" must be a non-negative number`
+  }
+  if (!isRecord(entry.compatibility) || !isCompatibility(entry.compatibility)) {
+    return `market[${index}]: invalid compatibility`
+  }
+  if (typeof entry.compatibility.compatible !== 'boolean') {
+    return `market[${index}]: compatibility.compatible must be boolean`
+  }
+  if (!isStringArray(entry.compatibility.reasons)) {
+    return `market[${index}]: compatibility.reasons must be a string array`
+  }
+  for (const field of [
+    'homepage',
+    'publishedAt',
+    'installedVersion',
+  ] as const) {
+    if (!optionalString(entry, field)) {
+      return `market[${index}]: field "${field}" must be a string`
+    }
+  }
+  if (typeof entry.updateAvailable !== 'boolean') {
+    return `market[${index}]: field "updateAvailable" must be boolean`
+  }
+  if (
+    typeof entry.action !== 'string' ||
+    !MARKET_ACTIONS.has(entry.action as PluginMarketActionDto)
+  ) {
+    return `market[${index}]: invalid action`
+  }
+  if (entry.action === 'incompatible' && entry.compatibility.compatible) {
+    return `market[${index}]: incompatible action requires incompatible compatibility`
+  }
+  if (
+    (entry.action === 'update' || entry.action === 'installed') &&
+    !isNonEmptyString(entry.installedVersion)
+  ) {
+    return `market[${index}]: action "${entry.action}" requires installedVersion`
+  }
+  if (entry.action === 'install' && entry.installedVersion !== undefined) {
+    return `market[${index}]: install action must not carry installedVersion`
+  }
+  if (entry.action === 'update' && !entry.updateAvailable) {
+    return `market[${index}]: update action requires updateAvailable`
+  }
+  return undefined
+}
+
+/**
+ * Validate the marketplace list. Invalid entries are dropped and reported in
+ * `warnings`; an invalid envelope throws so the store can show an error state.
+ */
+export function parsePluginMarketList(value: unknown): PluginMarketListDto {
+  if (!isRecord(value)) {
+    throw new Error('invalid market list: expected an object')
+  }
+  for (const field of ['repository', 'generatedAt', 'fetchedAt'] as const) {
+    if (!isNonEmptyString(value[field])) {
+      throw new Error(`invalid market list: "${field}" is required`)
+    }
+  }
+  if (value.source !== 'network' && value.source !== 'cache') {
+    throw new Error('invalid market list: source must be "network" or "cache"')
+  }
+  if (typeof value.stale !== 'boolean') {
+    throw new Error('invalid market list: "stale" must be boolean')
+  }
+  if (!Array.isArray(value.plugins)) {
+    throw new Error('invalid market list: "plugins" must be an array')
+  }
+
+  const warnings = Array.isArray(value.warnings)
+    ? value.warnings.filter(
+        (entry): entry is string => typeof entry === 'string',
+      )
+    : []
+  const plugins: PluginMarketEntryDto[] = []
+  const seen = new Set<string>()
+  value.plugins.forEach((entry, index) => {
+    const issue = marketEntryIssue(entry, index)
+    if (issue) {
+      warnings.push(issue)
+      return
+    }
+    const plugin = entry as unknown as PluginMarketEntryDto
+    if (seen.has(plugin.id)) {
+      warnings.push(`market[${index}]: duplicate plugin id ${plugin.id}`)
+      return
+    }
+    seen.add(plugin.id)
+    plugins.push(plugin)
+  })
+
+  return {
+    plugins,
+    repository: value.repository as string,
+    generatedAt: value.generatedAt as string,
+    fetchedAt: value.fetchedAt as string,
+    source: value.source,
+    stale: value.stale,
+    warnings,
+  }
+}
+
 const DOWNLOAD_PHASES = new Set<PluginDownloadPhase>([
   'downloading',
   'verifying',
@@ -686,6 +827,25 @@ export function parseAppearanceSettings(value: unknown): AppearanceSettingsDto {
     )
   }
   return { colorMode: colorMode as ColorModeDto }
+}
+
+const LOG_LEVEL_SET = new Set<LogLevelDto>(LOG_LEVELS)
+
+/** Validates the host logging payload; a bad shape must never toggle logging silently. */
+export function parseLoggingSettings(value: unknown): LoggingSettingsDto {
+  if (!isRecord(value)) {
+    throw new Error('invalid logging settings: expected an object')
+  }
+  if (typeof value.enabled !== 'boolean') {
+    throw new Error('invalid logging settings: enabled must be a boolean')
+  }
+  const level = value.level
+  if (typeof level !== 'string' || !LOG_LEVEL_SET.has(level as LogLevelDto)) {
+    throw new Error(
+      `invalid logging settings: level must be one of ${LOG_LEVELS.join(', ')}`,
+    )
+  }
+  return { enabled: value.enabled, level: level as LogLevelDto }
 }
 
 function isByteCount(value: unknown): value is number {

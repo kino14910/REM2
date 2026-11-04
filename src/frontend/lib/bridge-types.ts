@@ -92,14 +92,13 @@ export interface HealthDto {
  *
  * Field names must match what command plugins actually return: IpcBridge's
  * `reply({ok, result})` puts the plugin's return value into `result` as-is,
- * and preload unwraps `payload.result`, so the frontend `invoke` receives
- * the plugin's original return object itself.
+ * and preload unwraps `payload.result`, so the caller receives the plugin's
+ * original return object itself.
  * This was once written as `{ok, result, error}` while plugins returned
  * `{ok, output}`: `res.result` was always undefined, the UI could only
  * show "ok", and nothing errored.
  */
 export interface CommandResultDto {
-  command: string
   ok: boolean
   output?: string
   error?: string

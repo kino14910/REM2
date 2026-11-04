@@ -3,6 +3,7 @@ import type {
   PluginDetailDto,
   PluginDownloadProgressDto,
   PluginListDto,
+  PluginMarketEntryDto,
   PluginOperationResultDto,
   PluginRemoteInspectionDto,
   PluginUpdateDto,
@@ -12,6 +13,7 @@ import {
   parseDownloadProgress,
   parsePluginInspection,
   parsePluginList,
+  parsePluginMarketList,
   parsePluginOperation,
   parsePluginUpdateCheck,
 } from '@/frontend/lib/dto-guards'
@@ -77,6 +79,24 @@ const PLUGIN_ERROR_TEXT: Record<string, string> = {
   E_OPERATION_IN_PROGRESS:
     'Another operation is already running for this plugin.',
   E_MANAGER_UNAVAILABLE: 'Plugin management is unavailable.',
+  E_MARKET_UNAVAILABLE: 'The plugin marketplace is unavailable.',
+  E_MARKET_ENTRY_MISSING:
+    'This plugin is no longer available in the official marketplace.',
+  E_MARKET_VERSION_MISSING:
+    'The selected version is no longer available in the official marketplace.',
+  E_REGISTRY_NETWORK:
+    'The plugin marketplace could not be reached. Showing cached data if available.',
+  E_REGISTRY_TIMEOUT: 'The plugin marketplace request timed out.',
+  E_REGISTRY_HTTP: 'The plugin marketplace returned an HTTP error.',
+  E_REGISTRY_PARSE: 'The plugin marketplace returned malformed data.',
+  E_REGISTRY_SCHEMA: 'The plugin marketplace index is invalid.',
+  E_REGISTRY_SCHEMA_VERSION:
+    'The marketplace index uses a schema version this app does not support.',
+  E_REGISTRY_CACHE: 'The cached marketplace index could not be read.',
+  E_REGISTRY_SOURCE_INVALID:
+    'The plugin marketplace URL is not an allowed HTTPS source.',
+  E_REGISTRY_TOO_LARGE: 'The plugin marketplace index is too large.',
+  E_REGISTRY_CANCELLED: 'The marketplace request was cancelled.',
 }
 
 /** Readable text for a failed plugin operation (`Error.code` -> message). */
@@ -119,7 +139,24 @@ class PluginsStore {
   updates = $state<PluginUpdateDto[]>([])
   updateError = $state<string | undefined>(undefined)
 
+  /** Official marketplace index, joined with the host's actual local state. */
+  marketItems = $state<PluginMarketEntryDto[]>([])
+  marketLoading = $state(false)
+  /** Registry index load/refresh failure (the market list itself). */
+  marketLoadError = $state<string | undefined>(undefined)
+  /** Install/update failure for the selected marketplace entry. */
+  marketError = $state<string | undefined>(undefined)
+  marketWarnings = $state<string[]>([])
+  marketSource = $state<'network' | 'cache' | undefined>(undefined)
+  marketStale = $state(false)
+  marketFetchedAt = $state<string | undefined>(undefined)
+  /** Install/update currently running, so duplicate clicks can be ignored. */
+  marketPending = $state<'install' | 'update' | undefined>(undefined)
+  marketPendingId = $state<string | undefined>(undefined)
+
   private generation = 0
+  private marketGeneration = 0
+  private marketRequested = false
   private activeOperationId: string | undefined
 
   async load(): Promise<void> {
@@ -134,7 +171,9 @@ class PluginsStore {
       this.issues = result.issues
       this.restartRequired = result.restartRequired
       this.loadError = undefined
-      if (!result.items.some(item => item.id === this.selectedId)) {
+      // Keep a marketplace-only selection across local reloads; it is not part
+      // of `items` and must not be replaced by the first installed plugin.
+      if (this.selectedId === undefined) {
         this.selectedId = result.items[0]?.id
       }
     } catch (error) {
@@ -148,6 +187,91 @@ class PluginsStore {
   select(pluginId: string): void {
     this.selectedId = pluginId
     this.actionError = undefined
+    this.marketError = undefined
+  }
+
+  /**
+   * Load the official marketplace (host-cached after the first fetch).
+   * `refresh` asks the host to refetch the registry; a network failure still
+   * falls back to the last cached index instead of blanking the list.
+   */
+  async loadMarket(refresh = false): Promise<void> {
+    this.marketRequested = true
+    const generation = ++this.marketGeneration
+    this.marketLoading = true
+    try {
+      const result = parsePluginMarketList(
+        await ipc.request(
+          channels.pluginMarketList,
+          refresh ? { refresh: true } : {},
+        ),
+      )
+      if (generation !== this.marketGeneration) return
+      this.marketItems = result.plugins
+      this.marketWarnings = result.warnings
+      this.marketSource = result.source
+      this.marketStale = result.stale
+      this.marketFetchedAt = result.fetchedAt
+      this.marketLoadError = undefined
+    } catch (error) {
+      if (generation === this.marketGeneration) {
+        this.marketLoadError = pluginErrorText(error)
+      }
+    } finally {
+      if (generation === this.marketGeneration) this.marketLoading = false
+    }
+  }
+
+  /** Install a marketplace plugin disabled; approval and enabling stay separate. */
+  installFromMarket(entry: PluginMarketEntryDto): Promise<void> {
+    return this.runMarket('install', entry)
+  }
+
+  /** Replace an installed plugin with the marketplace's verified newer release. */
+  updateFromMarket(entry: PluginMarketEntryDto): Promise<void> {
+    return this.runMarket('update', entry)
+  }
+
+  private async runMarket(
+    action: 'install' | 'update',
+    entry: PluginMarketEntryDto,
+  ): Promise<void> {
+    if (this.marketPending || this.remotePending || this.pending) return
+    this.marketPending = action
+    this.marketPendingId = entry.id
+    this.marketError = undefined
+    this.actionError = undefined
+    this.notice = undefined
+    this.progress = undefined
+    this.activeOperationId = newOperationId()
+    try {
+      const result = parsePluginOperation(
+        await ipc.request<PluginOperationResultDto>(
+          action === 'install'
+            ? channels.pluginMarketInstall
+            : channels.pluginMarketUpdate,
+          {
+            operationId: this.activeOperationId,
+            pluginId: entry.id,
+            version: entry.version,
+          },
+        ),
+      )
+      this.applyResult(result)
+      await this.load()
+      // The host re-associates installed versions without a second network
+      // fetch, so the same entry now reflects the new local state.
+      await this.loadMarket()
+    } catch (error) {
+      this.marketError = pluginErrorText(error)
+      await this.load()
+      this.refreshMarketAssociation()
+    } finally {
+      this.marketPending = undefined
+      this.marketPendingId = undefined
+      this.progress = undefined
+      this.activeOperationId = undefined
+    }
   }
 
   enable(pluginId: string): Promise<void> {
@@ -265,6 +389,7 @@ class PluginsStore {
       this.applyResult(result)
       this.inspection = undefined
       await this.load()
+      this.refreshMarketAssociation()
     } catch (error) {
       this.remoteError = pluginErrorText(error)
     } finally {
@@ -347,6 +472,7 @@ class PluginsStore {
         item => item.pluginId !== update.pluginId,
       )
       await this.load()
+      this.refreshMarketAssociation()
     } catch (error) {
       this.updateError = pluginErrorText(error)
     } finally {
@@ -395,12 +521,19 @@ class PluginsStore {
       )
       this.applyResult(result)
       await this.load()
+      this.refreshMarketAssociation()
     } catch (error) {
       this.actionError = pluginErrorText(error)
       await this.load()
+      this.refreshMarketAssociation()
     } finally {
       this.pending = undefined
     }
+  }
+
+  /** Keep marketplace actions in sync after local install/uninstall/enable. */
+  private refreshMarketAssociation(): void {
+    if (this.marketRequested) void this.loadMarket()
   }
 
   private applyResult(result: PluginOperationResultDto): void {

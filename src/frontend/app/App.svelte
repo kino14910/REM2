@@ -9,13 +9,11 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import type { Component } from 'svelte'
-  import Shell from './Shell.svelte'
   import TitleBar from './components/TitleBar.svelte'
-  import CommandPrompt from './components/CommandPrompt.svelte'
   import PluginManager from './components/PluginManager.svelte'
   import SettingsView from './components/SettingsView.svelte'
   import { Navigation } from '@skeletonlabs/skeleton-svelte'
-  import { Terminal, Blocks, Settings } from '@lucide/svelte'
+  import { House, Blocks, Settings } from '@lucide/svelte'
   import type { LucideProps } from '@lucide/svelte'
   import { ipc } from '@/frontend/lib/ipc-client'
   import { events } from '@/shared/ipc-contract'
@@ -109,7 +107,7 @@
     >
       <Navigation.Content>
         <Navigation.Menu>
-          {@render railTrigger('main', 'Console', Terminal)}
+          {@render railTrigger('main', 'Main', House)}
           {@render railTrigger('plugins', 'Plugins', Blocks)}
         </Navigation.Menu>
       </Navigation.Content>
@@ -118,17 +116,12 @@
       </Navigation.Footer>
     </Navigation>
     <div class="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header
-        class="flex flex-wrap items-center gap-2 border-b border-surface-200-800 px-4 py-2"
-      >
-        <CommandPrompt />
-      </header>
       {#if view === 'plugins'}
         <PluginManager />
       {:else if view === 'settings'}
         <SettingsView />
       {:else}
-        <Shell />
+        <div class="min-h-0 flex-1"></div>
       {/if}
     </div>
   </div>

@@ -1,6 +1,12 @@
-import type { ProxySettingsDto } from '@/shared/ipc-contract'
+import type {
+  LoggingSettingsDto,
+  ProxySettingsDto,
+} from '@/shared/ipc-contract'
 
-import { parseProxySettings } from '@/frontend/lib/dto-guards'
+import {
+  parseLoggingSettings,
+  parseProxySettings,
+} from '@/frontend/lib/dto-guards'
 import { ipc } from '@/frontend/lib/ipc-client'
 import { channels } from '@/shared/ipc-contract'
 
@@ -15,19 +21,39 @@ const SETTINGS_ERROR_TEXT: Record<string, string> = {
     'This host cannot display the required proxy confirmation dialog.',
 }
 
-function settingsErrorText(error: unknown): string {
+const LOGGING_ERROR_TEXT: Record<string, string> = {
+  E_SETTINGS_INVALID: 'The logging settings are invalid.',
+  E_SETTINGS_WRITE: 'The logging settings could not be saved.',
+  E_SETTINGS_UNAVAILABLE: 'Logging settings are unavailable in this host.',
+}
+
+function formatSettingsError(
+  texts: Record<string, string>,
+  error: unknown,
+): string {
   const message = error instanceof Error ? error.message : String(error)
   const code = (error as { code?: unknown } | null)?.code
   if (typeof code !== 'string') return message
-  const text = SETTINGS_ERROR_TEXT[code]
+  const text = texts[code]
   return text ? `${text} (${code})` : `${message} (${code})`
+}
+
+function settingsErrorText(error: unknown): string {
+  return formatSettingsError(SETTINGS_ERROR_TEXT, error)
+}
+
+function loggingErrorText(error: unknown): string {
+  return formatSettingsError(LOGGING_ERROR_TEXT, error)
 }
 
 class SettingsStore {
   /** Last settings confirmed by the host (defaults match the host's default). */
   proxy = $state<ProxySettingsDto>({ mode: 'system' })
+  /** Console logging settings confirmed by the host (defaults match the host). */
+  logging = $state<LoggingSettingsDto>({ enabled: true, level: 'info' })
   loading = $state(false)
   saving = $state(false)
+  loggingSaving = $state(false)
   error = $state<string | undefined>(undefined)
   notice = $state<string | undefined>(undefined)
 
@@ -42,6 +68,16 @@ class SettingsStore {
       this.error = settingsErrorText(error)
     } finally {
       this.loading = false
+    }
+  }
+
+  async loadLogging(): Promise<void> {
+    try {
+      this.logging = parseLoggingSettings(
+        await ipc.request<LoggingSettingsDto>(channels.settingsLoggingGet),
+      )
+    } catch (error) {
+      this.error = loggingErrorText(error)
     }
   }
 
@@ -63,6 +99,26 @@ class SettingsStore {
       this.error = settingsErrorText(error)
     } finally {
       this.saving = false
+    }
+  }
+
+  async saveLogging(next: LoggingSettingsDto): Promise<void> {
+    this.loggingSaving = true
+    this.error = undefined
+    this.notice = undefined
+    try {
+      const result = parseLoggingSettings(
+        await ipc.request<LoggingSettingsDto>(channels.settingsLoggingSet, {
+          enabled: next.enabled,
+          level: next.level,
+        }),
+      )
+      this.logging = result
+      this.notice = 'Logging settings applied.'
+    } catch (error) {
+      this.error = loggingErrorText(error)
+    } finally {
+      this.loggingSaving = false
     }
   }
 

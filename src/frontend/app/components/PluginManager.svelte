@@ -3,7 +3,11 @@
   import { plugins } from '@/frontend/lib/stores/plugins.svelte'
   import { ipc } from '@/frontend/lib/ipc-client'
   import { events } from '@/shared/ipc-contract'
-  import type { PluginDetailDto } from '@/shared/ipc-contract'
+  import type {
+    PluginDetailDto,
+    PluginMarketEntryDto,
+  } from '@/shared/ipc-contract'
+  import PluginMarketDetail from '@/frontend/app/components/PluginMarketDetail.svelte'
   import Alert from '@/frontend/lib/ui/Alert.svelte'
   import Badge from '@/frontend/lib/ui/Badge.svelte'
   import Button from '@/frontend/lib/ui/Button.svelte'
@@ -38,15 +42,55 @@
   let updateTarget = $state<string | undefined>(undefined)
   let grantTargetId = $state<string | undefined>(undefined)
 
+  const searchActive = $derived(query.trim() !== '')
+  const marketById = $derived(
+    new Map(plugins.marketItems.map(entry => [entry.id, entry])),
+  )
+  const installedIds = $derived(
+    new Set(plugins.items.map(item => item.id)),
+  )
+  /** Marketplace entries already shown as installed rows are not duplicated. */
+  const marketOnly = $derived(
+    plugins.marketItems.filter(entry => !installedIds.has(entry.id)),
+  )
+  const selectedMarket = $derived(
+    plugins.selectedId === undefined
+      ? undefined
+      : marketById.get(plugins.selectedId),
+  )
+
   const filteredPlugins = $derived.by(() => {
     const needle = query.trim().toLowerCase()
     if (needle === '') return plugins.items
     return plugins.items.filter(item =>
-      `${item.name} ${item.id} ${item.description ?? ''}`
+      `${item.name} ${item.id} ${item.description ?? ''} ${item.tags.join(' ')}`
         .toLowerCase()
         .includes(needle),
     )
   })
+
+  const filteredMarket = $derived.by(() => {
+    const needle = query.trim().toLowerCase()
+    if (needle === '') return marketOnly
+    return marketOnly.filter(entry =>
+      `${entry.name} ${entry.id} ${entry.description} ${entry.tags.join(' ')}`
+        .toLowerCase()
+        .includes(needle),
+    )
+  })
+
+  const noSearchResults = $derived(
+    searchActive &&
+      filteredPlugins.length === 0 &&
+      filteredMarket.length === 0 &&
+      !plugins.loading &&
+      !plugins.marketLoading &&
+      !plugins.loadError &&
+      !plugins.marketLoadError,
+  )
+  const marketBusy = $derived(
+    Boolean(plugins.marketPending || plugins.remotePending || plugins.pending),
+  )
 
   const grantTarget = $derived(
     plugins.items.find(item => item.id === grantTargetId),
@@ -182,6 +226,7 @@
 
   onMount(() => {
     void plugins.load()
+    void plugins.loadMarket()
     const offProgress = plugins.subscribeProgress()
     // Coalesce: a plugin-service restart emits one event per plugin, and the
     // action handler already reloads afterwards.
@@ -191,6 +236,7 @@
       reloadTimer = setTimeout(() => {
         reloadTimer = undefined
         void plugins.load()
+        void plugins.loadMarket()
       }, 80)
     })
     return () => {
@@ -253,6 +299,41 @@
   function enableLabel(plugin: PluginDetailDto): string {
     if (plugin.state === 'Failed' || plugin.state === 'Dropped') return 'Retry'
     return 'Enable'
+  }
+
+  function marketBadge(entry: PluginMarketEntryDto): {
+    label: string
+    tone: BadgeTone
+  } {
+    switch (entry.action) {
+      case 'update':
+        return { label: 'Update', tone: 'brand' }
+      case 'installed':
+        return { label: 'Installed', tone: 'success' }
+      case 'incompatible':
+        return { label: 'Incompatible', tone: 'warning' }
+      default:
+        return { label: 'Marketplace', tone: 'neutral' }
+    }
+  }
+
+  function marketPendingFor(
+    pluginId: string,
+    action: 'install' | 'update',
+  ): boolean {
+    return (
+      plugins.marketPending === action && plugins.marketPendingId === pluginId
+    )
+  }
+
+  function installMarket(entry: PluginMarketEntryDto): void {
+    if (marketBusy) return
+    void plugins.installFromMarket(entry)
+  }
+
+  function updateMarket(entry: PluginMarketEntryDto): void {
+    if (marketBusy) return
+    void plugins.updateFromMarket(entry)
   }
 </script>
 
@@ -317,8 +398,8 @@
 
       <TextField
         bind:value={query}
-        placeholder="Search plugins"
-        aria-label="Search plugins"
+        placeholder="Search installed and marketplace plugins"
+        aria-label="Search installed and marketplace plugins"
         autocomplete="off"
         spellcheck="false"
       />
@@ -377,73 +458,205 @@
 
       {#if plugins.loading && plugins.items.length === 0 && !plugins.loadError}
         <p class="text-sm text-surface-600-400">Loading plugins…</p>
-      {:else if plugins.items.length === 0 && !plugins.loadError}
-        <EmptyState
-          title="No plugins installed."
-          description="Install a plugin from a folder or a release URL."
-        >
-          {#snippet action()}
-            <Button
-              variant="secondary"
-              loading={plugins.pending?.action === 'installFromDirectory'}
-              loadingLabel="Installing…"
-              disabled={Boolean(plugins.pending)}
-              onclick={() => void plugins.installFromDirectory()}
-            >
-              Install from folder…
-            </Button>
-          {/snippet}
-        </EmptyState>
-      {:else if plugins.items.length > 0}
-        <div class="flex flex-col gap-1" aria-label="Installed plugins">
-          {#each filteredPlugins as plugin (plugin.id)}
-            <!--
-              The card surface IS the interactive element: the whole row is the
-              target, and Skeleton's `card` utility already supplies the button
-              hover treatment. Nesting a button inside a Card would shrink the
-              click area to the content and add a second interactive element.
-            -->
-            <button
-              type="button"
-              class={cn(
-                'card flex flex-col items-stretch gap-1 border px-3 py-2 text-left transition-colors',
-                plugin.id === plugins.selectedId
-                  ? 'border-brand-light bg-surface-50-950 dark:border-brand-dark'
-                  : 'border-surface-200-800 bg-surface-100-900 hover:preset-tonal',
-              )}
-              onclick={() => plugins.select(plugin.id)}
-            >
-              <span class="flex items-start justify-between gap-2">
-                <span class="min-w-0 flex-1 truncate text-sm font-semibold"
-                  >{plugin.name}</span
-                >
-                <Badge tone={stateTone(plugin.state)}>{plugin.state}</Badge>
-              </span>
-              {#if plugin.author}
-                <span class="truncate text-[11px] text-surface-600-400">
-                  {plugin.author}
-                </span>
-              {/if}
-              {#if plugin.description}
-                <span class="line-clamp-2 text-xs leading-snug text-surface-600-400">
-                  {plugin.description}
-                </span>
-              {/if}
-            </button>
-          {/each}
-          {#if filteredPlugins.length === 0}
-            <EmptyState
-              title="No plugins match your search."
-              description="Try a different name or plugin id."
-            />
+      {/if}
+
+      <section class="flex flex-col gap-2" aria-label="Installed plugins">
+        <header class="flex items-center justify-between">
+          <h3
+            class="text-[11px] font-semibold uppercase tracking-wider text-surface-600-400"
+          >
+            Installed
+          </h3>
+          <span class="text-[11px] text-surface-600-400">
+            {plugins.items.length}
+          </span>
+        </header>
+        {#if plugins.items.length === 0}
+          {#if !searchActive && !plugins.loading}
+            <div class="flex flex-col items-start gap-1">
+              <p class="text-xs text-surface-600-400">No plugins installed.</p>
+              <Button
+                variant="link"
+                size="sm"
+                loading={plugins.pending?.action === 'installFromDirectory'}
+                loadingLabel="Installing…"
+                disabled={Boolean(plugins.pending)}
+                onclick={() => void plugins.installFromDirectory()}
+              >
+                Install from folder…
+              </Button>
+            </div>
           {/if}
-        </div>
+        {:else}
+          <div class="flex flex-col gap-1">
+            {#each filteredPlugins as plugin (plugin.id)}
+              {@const market = marketById.get(plugin.id)}
+              <!--
+                The card surface IS the interactive element: the whole row is the
+                target, and Skeleton's `card` utility already supplies the button
+                hover treatment. Nesting a button inside a Card would shrink the
+                click area to the content and add a second interactive element.
+              -->
+              <button
+                type="button"
+                class={cn(
+                  'card flex flex-col items-stretch gap-1 border px-3 py-2 text-left transition-colors',
+                  plugin.id === plugins.selectedId
+                    ? 'border-brand-light bg-surface-50-950 dark:border-brand-dark'
+                    : 'border-surface-200-800 bg-surface-100-900 hover:preset-tonal',
+                )}
+                onclick={() => plugins.select(plugin.id)}
+              >
+                <span class="flex items-start justify-between gap-2">
+                  <span class="min-w-0 flex-1 truncate text-sm font-semibold"
+                    >{plugin.name}</span
+                  >
+                  <span class="flex shrink-0 items-center gap-1">
+                    {#if market?.updateAvailable}
+                      <Badge tone="brand">Update</Badge>
+                    {/if}
+                    <Badge tone={stateTone(plugin.state)}>{plugin.state}</Badge>
+                  </span>
+                </span>
+                {#if plugin.author}
+                  <span class="truncate text-[11px] text-surface-600-400">
+                    {plugin.author}
+                  </span>
+                {/if}
+                {#if plugin.description}
+                  <span
+                    class="line-clamp-2 text-xs leading-snug text-surface-600-400"
+                  >
+                    {plugin.description}
+                  </span>
+                {/if}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </section>
+
+      <section class="flex flex-col gap-2" aria-label="Official marketplace">
+        <header class="flex items-center justify-between">
+          <h3
+            class="text-[11px] font-semibold uppercase tracking-wider text-surface-600-400"
+          >
+            Marketplace
+          </h3>
+          <IconButton
+            size="sm"
+            label={
+              plugins.marketLoading
+                ? 'Refreshing marketplace…'
+                : 'Refresh marketplace'
+            }
+            disabled={plugins.marketLoading}
+            onclick={() => void plugins.loadMarket(true)}
+          >
+            <svg
+              viewBox="0 0 16 16"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M13.4 8a5.4 5.4 0 1 1-1.6-3.8" />
+              <path d="M13.4 2.6v3h-3" />
+            </svg>
+          </IconButton>
+        </header>
+
+        {#if plugins.marketLoading}
+          <p class="text-xs text-surface-600-400">Loading marketplace…</p>
+        {/if}
+        {#if plugins.marketLoadError}
+          <Alert tone="error">
+            {plugins.marketLoadError}
+            {#snippet actions()}
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={plugins.marketLoading}
+                onclick={() => void plugins.loadMarket(true)}
+              >
+                Retry
+              </Button>
+            {/snippet}
+          </Alert>
+        {/if}
+        {#if plugins.marketStale}
+          <Alert tone="warning">
+            Showing the last cached marketplace index
+            {#if plugins.marketFetchedAt}
+              from {plugins.marketFetchedAt}
+            {/if}. Install and update still require a live registry check.
+          </Alert>
+        {/if}
+        {#if plugins.marketWarnings.length > 0}
+          <details class="text-xs text-surface-600-400">
+            <summary>
+              {plugins.marketWarnings.length} marketplace warning(s)
+            </summary>
+            {#each plugins.marketWarnings as warning, index (index)}
+              <p class="mt-1">{warning}</p>
+            {/each}
+          </details>
+        {/if}
+
+        {#if filteredMarket.length > 0}
+          <div class="flex flex-col gap-1">
+            {#each filteredMarket as entry (entry.id)}
+              {@const badge = marketBadge(entry)}
+              <button
+                type="button"
+                class={cn(
+                  'card flex flex-col items-stretch gap-1 border px-3 py-2 text-left transition-colors',
+                  entry.id === plugins.selectedId
+                    ? 'border-brand-light bg-surface-50-950 dark:border-brand-dark'
+                    : 'border-surface-200-800 bg-surface-100-900 hover:preset-tonal',
+                )}
+                onclick={() => plugins.select(entry.id)}
+              >
+                <span class="flex items-start justify-between gap-2">
+                  <span class="min-w-0 flex-1 truncate text-sm font-semibold"
+                    >{entry.name}</span
+                  >
+                  <Badge tone={badge.tone}>{badge.label}</Badge>
+                </span>
+                <span class="truncate text-[11px] text-surface-600-400">
+                  {entry.author}
+                </span>
+                <span
+                  class="line-clamp-2 text-xs leading-snug text-surface-600-400"
+                >
+                  {entry.description}
+                </span>
+              </button>
+            {/each}
+          </div>
+        {:else if !searchActive && !plugins.marketLoading && !plugins.marketLoadError}
+          <p class="text-xs text-surface-600-400">
+            No marketplace plugins available.
+          </p>
+        {/if}
+      </section>
+
+      {#if noSearchResults}
+        <EmptyState
+          title="No plugins match your search."
+          description="Try a different name, plugin id, description or tag."
+        />
       {/if}
     </aside>
 
-    <Card class="flex min-h-0 flex-col gap-4 overflow-y-auto">
-      {#if plugins.selected}
-        {@const selected = plugins.selected}
+    {#if plugins.selected}
+      {@const selected = plugins.selected}
+      {@const market = marketById.get(selected.id)}
+      <Card class="flex min-h-0 flex-col gap-4 overflow-y-auto">
         <header class="flex items-start justify-between gap-4">
           <div class="min-w-0">
             <h3 class="text-base font-semibold">{selected.name}</h3>
@@ -459,6 +672,9 @@
         {/if}
         {#if selected.error}
           <Alert tone="error">{selected.error}</Alert>
+        {/if}
+        {#if plugins.marketError}
+          <Alert tone="error">{plugins.marketError}</Alert>
         {/if}
         {#if selected.state === 'NotInstalled'}
           <Alert tone="warning">
@@ -499,6 +715,51 @@
           {/if}
         </dl>
 
+        {#if market}
+          <section
+            class="flex flex-col gap-2 rounded-base border border-surface-200-800 p-3"
+          >
+            <h4
+              class="text-xs font-semibold uppercase tracking-wider text-surface-600-400"
+            >
+              Marketplace
+            </h4>
+            <dl class="grid grid-cols-[6.5rem_1fr] gap-x-4 gap-y-1 text-xs">
+              <dt class="text-surface-600-400">Latest version</dt>
+              <dd>{market.version}</dd>
+              <dt class="text-surface-600-400">Repository</dt>
+              <dd>
+                <code class="break-all font-mono">{market.repository}</code>
+              </dd>
+              <dt class="text-surface-600-400">Kernel</dt>
+              <dd>{market.compatibility.minKernel}</dd>
+              <dt class="text-surface-600-400">Contract</dt>
+              <dd>{market.compatibility.contractVersion}</dd>
+            </dl>
+            {#if !market.compatibility.compatible}
+              <Alert tone="warning">
+                This kernel cannot run the latest marketplace version:
+                {#each market.compatibility.reasons as reason, index (index)}
+                  <p>{reason}</p>
+                {:else}
+                  <p>The compatibility contract is not satisfied.</p>
+                {/each}
+              </Alert>
+            {:else if market.updateAvailable}
+              <p class="text-xs">
+                Update available: <strong>{selected.version}</strong> →
+                <strong>{market.version}</strong>
+              </p>
+            {:else}
+              <p class="text-xs text-surface-600-400">
+                {selected.state === 'NotInstalled'
+                  ? 'Available in the marketplace.'
+                  : 'No newer marketplace version is available.'}
+              </p>
+            {/if}
+          </section>
+        {/if}
+
         <div class="grid grid-cols-2 gap-4 max-[760px]:grid-cols-1">
           <section>
             <h4
@@ -538,34 +799,72 @@
             {/each}
             {#if !selected.builtin && selected.permissions.denied.length > 0}
               <p class="mt-2 text-xs text-surface-600-400">
-                {#if selected.state === 'NotInstalled'}
-                  These capabilities are approved when the plugin is installed
-                  again.
-                {:else}
-                  Capabilities are approved when a plugin is installed.
-                  Enabling this one asks for the remaining denied capabilities.
-                {/if}
+                Capabilities are never granted automatically. Enabling this
+                plugin asks for the remaining denied capabilities.
               </p>
             {/if}
           </section>
         </div>
 
+        {#if market && marketPendingFor(selected.id, 'update')}
+          <div class="flex flex-col items-start gap-2">
+            <Progress
+              class="w-full"
+              value={progressPercent()}
+              label={phaseLabel()}
+              detail={progressLabel()}
+            />
+            {#if plugins.progress?.phase !== 'installing'}
+              <Button
+                size="sm"
+                variant="secondary"
+                loading={plugins.cancelling}
+                loadingLabel="Cancelling…"
+                onclick={() => void plugins.cancelDownload()}
+              >
+                Cancel download
+              </Button>
+            {/if}
+          </div>
+        {/if}
+
         <div class="flex flex-wrap items-center gap-2 border-t border-surface-200-800 pt-4">
-          {#if selected.state === 'NotInstalled'}
+          {#if market && market.updateAvailable}
             <Button
-              loading={plugins.pending?.action === 'reinstall' && plugins.pending.pluginId === selected.id}
-              loadingLabel="Installing…"
-              disabled={Boolean(plugins.pending)}
-              onclick={() => installRemoved(selected)}
+              loading={marketPendingFor(selected.id, 'update')}
+              loadingLabel="Updating…"
+              disabled={marketBusy}
+              onclick={() => updateMarket(market)}
             >
-              Install
+              Update to {market.version}
             </Button>
+          {/if}
+          {#if selected.state === 'NotInstalled'}
+            {#if market}
+              <Button
+                loading={marketPendingFor(selected.id, 'install')}
+                loadingLabel="Installing…"
+                disabled={!market.compatibility.compatible || marketBusy}
+                onclick={() => installMarket(market)}
+              >
+                {market.compatibility.compatible ? 'Install' : 'Incompatible'}
+              </Button>
+            {:else}
+              <Button
+                loading={plugins.pending?.action === 'reinstall' && plugins.pending.pluginId === selected.id}
+                loadingLabel="Installing…"
+                disabled={marketBusy}
+                onclick={() => installRemoved(selected)}
+              >
+                Install
+              </Button>
+            {/if}
           {:else if canDisable(selected)}
             <Button
               variant="secondary"
               loading={plugins.pending?.action === 'disable' && plugins.pending.pluginId === selected.id}
               loadingLabel="Disabling…"
-              disabled={Boolean(plugins.pending)}
+              disabled={marketBusy}
               onclick={() => void plugins.disable(selected.id)}
             >
               Disable
@@ -574,7 +873,7 @@
             <Button
               loading={plugins.pending?.action === 'enable' && plugins.pending.pluginId === selected.id}
               loadingLabel="Enabling…"
-              disabled={Boolean(plugins.pending)}
+              disabled={marketBusy}
               onclick={() => requestEnable(selected)}
             >
               {enableLabel(selected)}
@@ -585,20 +884,34 @@
               variant="danger"
               loading={plugins.pending?.action === 'uninstall' && plugins.pending.pluginId === selected.id}
               loadingLabel="Uninstalling…"
-              disabled={Boolean(plugins.pending)}
+              disabled={marketBusy}
               onclick={() => void plugins.uninstall(selected.id)}
             >
               Uninstall
             </Button>
           {/if}
         </div>
-      {:else}
+      </Card>
+    {:else if selectedMarket}
+      <PluginMarketDetail
+        entry={selectedMarket}
+        progress={marketPendingFor(selectedMarket.id, 'install')
+          ? plugins.progress
+          : undefined}
+        pending={marketPendingFor(selectedMarket.id, 'install')}
+        cancelling={plugins.cancelling}
+        error={plugins.marketError}
+        oninstall={() => installMarket(selectedMarket)}
+        oncancel={() => void plugins.cancelDownload()}
+      />
+    {:else}
+      <Card class="flex min-h-0 flex-col gap-4 overflow-y-auto">
         <EmptyState
           title="Select a plugin to view details."
-          description="The list on the left lists built-in and installed plugins."
+          description="Select an installed plugin or a marketplace entry from the list."
         />
-      {/if}
-    </Card>
+      </Card>
+    {/if}
   </div>
 
   <Dialog

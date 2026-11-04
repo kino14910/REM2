@@ -21,5 +21,5 @@
 >
   <span class="font-semibold tracking-wide text-surface-950-50">rem2-kernel</span>
   <span class="opacity-50" aria-hidden="true">·</span>
-  <span>Kernel Console</span>
+  <span>Kernel Main</span>
 </header>
