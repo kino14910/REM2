@@ -44,6 +44,11 @@ export default defineConfig({
         'src/kernel/index.ts',
         'src/kernel/contracts/**',
         'src/kernel/extensions/definitions.ts',
+        // Type-only modules compile to nothing; keeping them here only adds
+        // 0% rows and hides a later runtime addition behind that noise.
+        'src/kernel/extensions/ports.ts',
+        'src/kernel/extensions/ports-types.ts',
+        'src/kernel/scheduler/scheduler.ts',
       ],
       reporter: ['text', 'lcov'],
       thresholds: {
