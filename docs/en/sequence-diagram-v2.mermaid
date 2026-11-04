@@ -191,7 +191,7 @@ sequenceDiagram
     participant RC as rootContainer
     participant DEP as Dependent plugin
 
-    EM->>K: unloadPlugin('com.rem2.plugin-inspector', 'user-disable')
+    EM->>K: unloadPlugin('com.rem2.theme-switcher', 'user-disable')
     K->>REG: allLoaded().filter(hard-depends on this plugin)
     loop recursive (dependents stop first)
         K->>K: unloadPlugin(dependent, 'dependency-failed')
@@ -206,7 +206,7 @@ sequenceDiagram
     PIPE->>DEP: onDispose(ctx)
 
     Note over K: teardownPluginArtifacts —— P6 forced reclaim, not dependent on plugin discipline
-    K->>EP: retractAll('com.rem2.plugin-inspector') ★ retract all its extension-point contributions
+    K->>EP: retractAll('com.rem2.theme-switcher') ★ retract all its extension-point contributions
     K->>HS: unregisterCheck(pluginId)
     K->>PM: unregister(pluginId) (incl. guard.unregisterPermissions)
     K->>RC: unmountChildContainer(container)

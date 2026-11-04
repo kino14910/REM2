@@ -61,13 +61,11 @@ Expected output:
 
 ```
 ──── rem2-kernel started ────
-loadOrder : com.rem2.logger-console -> com.rem2.plugin-inspector
-started   : com.rem2.logger-console, com.rem2.plugin-inspector
+loadOrder :
+started   : (none)
 degraded  : (none)
 failed    : (none)
 health    : healthy
-  - com.rem2.logger-console [Active] healthy
-  - com.rem2.plugin-inspector [Active] healthy
 ─────────────────────────────
 ```
 
@@ -75,18 +73,14 @@ health    : healthy
 
 The shell is a **plugin carrier**; the kernel does not depend on it. It boots the kernel as a
 
-library and provides a command input box.
+library and provides the plugin manager, settings, and the panel/route UI.
 
 ```bash
 # Open the desktop app (dev mode, with hot reload)
 pnpm start
 ```
 
-Type a command in the window and click "Execute"; the command is forwarded
-
-to the kernel event bus through the IPC bridge. No built-in command is shipped, so the kernel
-
-returns an explicit `unknown command` until a plugin contributes `command.provide`. The top-bar **Plugins** view lists, installs,
+The **Plugins** view lists, installs,
 
 enables, disables and uninstalls local plugins; installs approve the declared capabilities up front and enable the plugin, and user
 
@@ -196,11 +190,14 @@ Full API reference: **[docs/02-plugin-api.md](docs/02-plugin-api.md)** (English:
 
 ## Example plugins (built-in + installable)
 
-| Plugin                                         | Proves what                                                                                     | Depends on |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------- |
-| [`logger-console`](plugins/logger-console)     | **observability is a plugin** — provides `log.sink`                                             | —          |
-| `theme-switcher` (external)                    | **UI is a plugin** — light/dark/system themes, accent form, persisted selection                 | —          |
-| [`plugin-inspector`](plugins/plugin-inspector) | **the inspector is a plugin** — contributes `ui.panel` + `ui.route`, serves a live plugin table | —          |
+The built-in catalog under `plugins/` is intentionally empty: console logging is
+now a host feature (toggle and level under **Settings → Console logging**), not a
+plugin. To add a built-in sample, scaffold one with `pnpm cli scaffold`; it will be
+loaded automatically as `source: 'builtin'`.
+
+| Plugin                      | Proves what                                                                     | Depends on |
+| --------------------------- | ------------------------------------------------------------------------------- | ---------- |
+| `theme-switcher` (external) | **UI is a plugin** — light/dark/system themes, accent form, persisted selection | —          |
 
 `theme-switcher` lives in the sibling `REM2-plugins` repository and is **not**
 bundled as a built-in: `pnpm build:external` builds it into

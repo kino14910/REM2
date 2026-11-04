@@ -318,7 +318,7 @@ Electron 下目录固定为：
 
 renderer 对话框不是信任边界：生产主进程对启用、授权、两种安装方式、重装、更新和代理修改再次调用原生确认框，展示已校验的 id、版本、来源、摘要、能力或代理地址。渲染进程即使直接调用 IPC，也不能绕过该确认；取消返回 `E_CONFIRMATION_DENIED`，宿主无法显示确认框时以 `E_CONFIRMATION_UNAVAILABLE` 失败关闭。**卸载没有确认横幅，也没有原生确认框**：Uninstall 按钮本身就是确认。
 
-管理 UI 是宿主常驻的 `PluginManager.svelte`，从顶栏 Plugins 进入。它不依赖 `plugin-inspector`，因此检查器被禁用时仍可恢复。列表、详情、加载、空态、错误和 issues 均由该组件处理；DTO 在 renderer 侧由 `parsePluginList` / `parsePluginOperation` / `parsePluginInspection` / `parsePluginUpdateCheck` / `parseDownloadProgress` 再次校验。顶栏 Settings 是另一个宿主视图，通过 `settings.proxy.get` / `settings.proxy.set` 修改系统/直连/手动代理，保存后立即作用于默认 Electron session，因此窗口请求、插件下载与 release 元数据都走同一代理。
+管理 UI 是宿主常驻的 `PluginManager.svelte`，从顶栏 Plugins 进入。它不依赖任何插件贡献，因此插件被禁用或卸载时仍可恢复。列表、详情、加载、空态、错误和 issues 均由该组件处理；DTO 在 renderer 侧由 `parsePluginList` / `parsePluginOperation` / `parsePluginInspection` / `parsePluginUpdateCheck` / `parseDownloadProgress` 再次校验。顶栏 Settings 是另一个宿主视图，通过 `settings.proxy.get` / `settings.proxy.set` 修改系统/直连/手动代理，保存后立即作用于默认 Electron session，因此窗口请求、插件下载与 release 元数据都走同一代理。
 
 交互约定：
 

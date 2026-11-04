@@ -78,7 +78,7 @@ Constraints:
   "name": "My Plugin",
   "version": "0.1.0",
   "entry": "dist/index.js",
-  "optionalDependencies": { "com.rem2.logger-console": "^1.0.0" },
+  "optionalDependencies": { "com.example.audit-log": "^1.0.0" },
   "contributes": [{ "point": "command.provide", "id": "greet" }],
   "requires": ["command.provide"],
   "compatibility": { "minKernel": "^1.0.0", "contractVersion": "1" },

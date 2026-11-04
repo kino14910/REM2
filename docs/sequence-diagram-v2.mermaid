@@ -190,7 +190,7 @@ sequenceDiagram
     participant RC as rootContainer
     participant DEP as 依赖者插件
 
-    EM->>K: unloadPlugin('com.rem2.plugin-inspector', 'user-disable')
+    EM->>K: unloadPlugin('com.rem2.theme-switcher', 'user-disable')
     K->>REG: allLoaded().filter(硬依赖本插件)
     loop 递归（依赖者先停）
         K->>K: unloadPlugin(依赖者, 'dependency-failed')
@@ -205,7 +205,7 @@ sequenceDiagram
     PIPE->>DEP: onDispose(ctx)
 
     Note over K: teardownPluginArtifacts —— P6 强制回收，不依赖插件自觉
-    K->>EP: retractAll('com.rem2.plugin-inspector') ★ 撤回其全部扩展点贡献
+    K->>EP: retractAll('com.rem2.theme-switcher') ★ 撤回其全部扩展点贡献
     K->>HS: unregisterCheck(pluginId)
     K->>PM: unregister(pluginId)（含 guard.unregisterPermissions）
     K->>RC: unmountChildContainer(container)

@@ -18,8 +18,8 @@
 
 ```mermaid
 graph BT
-    subgraph L1["plugins/ —— 内置插件；REM2-plugins —— 外部可安装插件"]
-        PA["in-process：logger-console / plugin-inspector"]
+    subgraph L1["plugins/ —— 内置插件（当前为空）；REM2-plugins —— 外部可安装插件"]
+        PA["in-process：内置插件（catalog 为空）"]
         PB["worker：按需加载（内置示例未附带）"]
     end
 
@@ -29,7 +29,7 @@ graph BT
     end
 
     subgraph L3["src/host/ —— 宿主适配层"]
-        HA["electron/：main / preload / window / theme-registry"]
+        HA["electron/：main / preload / window / theme-registry<br/>logging-settings / console-log-sink"]
         HB["ipc/：bridge / method-handlers / validate / forward-map"]
         HC["cli/：run / cli / args / paths / scaffold / validate"]
     end
@@ -392,12 +392,11 @@ sequenceDiagram
     K-->>Host: KernelStartResult
 ```
 
-### 6.2 命令（renderer → 内核 → 插件 → 原路回传）
+### 6.2 命令（调用方 → 内核 → 插件 → 原路回传）
 
 ```mermaid
 sequenceDiagram
-    participant UI as "CommandPrompt.svelte"
-    participant Store as "command.svelte.ts"
+    participant CLIENT as "调用方（renderer / DevTools）"
     participant IPC as "ipc-client.ts"
     participant PRE as "preload.ts"
     participant MAIN as "ipcMain"
@@ -407,8 +406,7 @@ sequenceDiagram
     participant EP as "command.provide 扩展槽"
     participant HP as "命令插件 contribution"
 
-    UI->>Store: execute(text)
-    Store->>IPC: request(channels.commandExecute, {command, args})
+    CLIENT->>IPC: request(channels.commandExecute, {command, args})
     IPC->>PRE: window.rem2.invoke(method, args)
     Note over PRE: 生成 id，按 id 配对回包
     PRE->>MAIN: send(Ipc.Invoke, {id, method, args})
@@ -424,9 +422,8 @@ sequenceDiagram
     BUS-->>BR: result
     BR->>MAIN: reply({id, ok, result})
     MAIN->>PRE: Ipc.Invoke 响应
-    PRE->>IPC: resolve(result)
-    IPC-->>Store: CommandResultDto
-    Store-->>UI: last = {...res, command}
+    PRE->>IPC: resolve(payload.result)
+    IPC-->>CLIENT: CommandResultDto
 ```
 
 宿主**不实现** `command.execute`（`method-handlers.ts` 里该键的值是 `null`）：分发只走内核 `CommandDispatcher` —— 它在 `start()` 开头注册（早于任何插件 `onStart` 的 respond，`pickResponder` 按 seq 取最小者，插件侧 respond 被确定性遮蔽），直接读 `command.provide` 扩展槽，**结构上不可能递归**。**插件不要再直接 `respond` `Topics.CommandExecute`**（即使写了也被 dispatcher 遮蔽）；把命令贡献进 `command.provide` 槽即可，示例见 [`02-plugin-api.md`](02-plugin-api.md) §8。
@@ -476,7 +473,7 @@ unloadPlugin(pluginId)
 | 数据     | 产生                                                                                                                  | 经过谁                                                                                                                                                            | 消费                                                                                                   |
 | -------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | **配置** | 内核只读默认层 `{app:{name:'rem2-kernel'}}` + `initialConfig` 可写层；文件 / 环境等来源可由插件注册 `config.provider` | `ConfigService.refresh()` 按 priority 升序 deepMerge 成快照；`get()` 惰性刷新                                                                                     | 插件 `onConfigure` 期 `ctx.config.get(…)`；Worker 插件拿 init 快照 + 变更推送。**配置不外泄 renderer** |
-| **命令** | `CommandPrompt.svelte` 输入                                                                                           | store → `ipc.request` → preload → `IpcBridge`（白名单）→ `bus.request(Topics.CommandExecute)`                                                                     | 内核 `CommandDispatcher` 读 `command.provide` 槽 → 命令插件 handler → `{ok, output}` 原路回传          |
+| **命令** | renderer / DevTools 调用 `command.execute`                                                                            | `ipc.request` → preload → `IpcBridge`（白名单）→ `bus.request(Topics.CommandExecute)`                                                                             | 内核 `CommandDispatcher` 读 `command.provide` 槽 → 命令插件 handler → `{ok, output}` 原路回传          |
 | **事件** | 插件 `bus.emit`                                                                                                       | `EventBusImpl` → `EVENT_FORWARD_MAP`（白名单 topic）→ `toDto` → `Ipc.Event`                                                                                       | renderer `ipc.subscribe`                                                                               |
 | **主题** | `theme-switcher` 插件贡献 `ui.theme`（light / dark / system 三套 token）                                              | 扩展点槽 →（`method-handlers.ts` → `syncThemeFromExtension()` **pull 同步 + followSystem 物化**）→ 宿主 `ThemeRegistryImpl`（目录 + 激活态）→ `ui.theme.list/set` | renderer `theme` store → `theme/vars.ts` → CSS 变量 + `color-scheme`                                   |
 

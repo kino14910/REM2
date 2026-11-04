@@ -67,7 +67,7 @@ src/frontend/
 │   │   ├── ThemeToggle.svelte   # light/dark switch (Settings view): renders only when the catalog holds both modes, sends ui.theme.set; without a catalog it applies and persists the mode locally
 │   │   ├── HealthBadge.svelte   # health badge reading the health report
 │   │   ├── PluginManager.svelte # host-owned plugin management: list / detail / install / enable / disable / uninstall
-│   │   └── CommandPrompt.svelte # command input and result display
+│   │   └── PluginMarketDetail.svelte # remote market detail: origin / version / digest / capability approval
 │   ├── global.css               # Tailwind source(none) + Skeleton + rem.css; theme variable fallbacks
 │   └── themes/rem.css           # the only registered Skeleton palette (blue.css was removed)
 └── lib/
@@ -76,7 +76,7 @@ src/frontend/
     ├── nav-link.ts              # pure function: route + panels + panelsReady → active-panel resolution (with notice)
     ├── dto-guards.ts            # pure functions: runtime validation of panel/route lists + panel data classification (table / form / json / empty / invalid)
     ├── stores/                  # Svelte 5 runes; file names must end with .svelte.ts
-    │   └── panels · routes · theme · health · command · plugins (one .svelte.ts each)
+    │   └── panels · routes · theme · health · plugins (one .svelte.ts each)
     └── theme/vars.ts            # ThemeDto → CSS variables (--rem2-*)
 ```
 
@@ -289,7 +289,7 @@ Plugin management DTOs **never** include `rootDir`, absolute paths, internal con
 
 A DTO is an **explicit projection whitelist**, not a rename of a kernel type. `CommandResultDto` field names must match what command plugins actually return: `IpcBridge` puts the plugin's return value into `reply.result` unchanged, preload unwraps `payload.result`, so the frontend `invoke` receives the plugin's original object (`{ok, output}`). A wrong field name produces no type error, a blank UI and a clean console — the most typical silent-defect shape in this project.
 
-The `command` field is filled in by the frontend store (`command.svelte.ts` → `{...res, command}`); plugins are not required to return it.
+The caller correlates the command itself: plugins return only `{ok, output}` / `{ok:false, error}` and are not required to echo the command name.
 
 **Panel data contract**: `PanelTableDto` / `PanelFormDto` are the two structured shapes (`dto-guards.ts` → `parsePanelData` classifies and validates at runtime on the renderer side): table → table; form → `select` / `color` fields whose changes go back through `ui.event {kind:'change', payload:{fieldId,value}}`; `undefined` / `null` → empty; anything else → pretty-printed JSON; serialization over **32KB** → `invalid` with an explicit error; declared `kind` with a malformed shape → `invalid` naming the reason. A plugin's `{ok:false,error}` reply reaches `PanelShell` unchanged instead of being rewritten as success. List payloads (`ui.panel.list` / `ui.route.list`) are validated entry by entry as well: bad entries are dropped and counted in `panels.issues`; a non-array payload throws into the store's error state.
 
@@ -474,14 +474,14 @@ object-src 'none'; base-uri 'none';
 
 ## 8. Known limitations
 
-| #   | Limitation                                                                                 | Impact                                                                                                               |
-| --- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| F1  | ~~`ui.panel.data` shape is plugin-defined and unvalidated by the kernel~~ **formalized**   | `dto-guards.ts` → `parsePanelData`: table / form / json / empty / invalid classification + a 32KB cap                |
-| F2  | `bridge-types.ts` DTOs are hand-written, so kernel changes do not break the frontend build | mitigated by source comments plus type alignment at assignment sites; `ui.*` `impl` types come from kernel contracts |
-| F3  | `preload.cjs` filename is an implicit contract (hardcoded in main)                         | renaming it fails as "preload script failed to load" with no hint about the filename                                 |
-| F4  | Runes in a plain `.ts` silently do nothing                                                 | only the `.svelte.ts` naming convention catches it                                                                   |
-| F5  | ~~No builtin plugin contributes `ui.panel` / `ui.route`~~ **resolved**                     | `plugin-inspector` contributes the `/plugins` route + the inspector panel                                            |
-| F6  | Installs provide no security sandbox, only path/dependency/lifecycle guards                | only install trusted plugins; see `05-plugin-management.md`                                                          |
-| F7  | Multiple windows do not share catalog-change events                                        | lifecycle uses the existing state events; install/uninstall requires a manual Refresh per window                     |
-| F8  | Remote install accepts only HTTPS ZIP assets from an allowlisted host                      | no registry, no tar.gz, no signature verification; SHA-256 proves integrity, not who published it                    |
-| F9  | Update checks hit the release API on every click, with no cache or throttling              | unauthenticated GitHub requests are rate-limited; checking many plugins from one source stacks requests              |
+| #   | Limitation                                                                                 | Impact                                                                                                                |
+| --- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| F1  | ~~`ui.panel.data` shape is plugin-defined and unvalidated by the kernel~~ **formalized**   | `dto-guards.ts` → `parsePanelData`: table / form / json / empty / invalid classification + a 32KB cap                 |
+| F2  | `bridge-types.ts` DTOs are hand-written, so kernel changes do not break the frontend build | mitigated by source comments plus type alignment at assignment sites; `ui.*` `impl` types come from kernel contracts  |
+| F3  | `preload.cjs` filename is an implicit contract (hardcoded in main)                         | renaming it fails as "preload script failed to load" with no hint about the filename                                  |
+| F4  | Runes in a plain `.ts` silently do nothing                                                 | only the `.svelte.ts` naming convention catches it                                                                    |
+| F5  | No builtin plugin contributes `ui.panel` / `ui.route`                                      | panels/routes exist only after installing the external `theme-switcher`; otherwise the main view shows an empty state |
+| F6  | Installs provide no security sandbox, only path/dependency/lifecycle guards                | only install trusted plugins; see `05-plugin-management.md`                                                           |
+| F7  | Multiple windows do not share catalog-change events                                        | lifecycle uses the existing state events; install/uninstall requires a manual Refresh per window                      |
+| F8  | Remote install accepts only HTTPS ZIP assets from an allowlisted host                      | no registry, no tar.gz, no signature verification; SHA-256 proves integrity, not who published it                     |
+| F9  | Update checks hit the release API on every click, with no cache or throttling              | unauthenticated GitHub requests are rate-limited; checking many plugins from one source stacks requests               |

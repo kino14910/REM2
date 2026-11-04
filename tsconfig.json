@@ -35,6 +35,7 @@
     "src/host/cli/**/*.ts",
     "src/host/ipc/**/*.ts",
     "src/host/plugins/**/*.ts",
+    "src/host/registry/**/*.ts",
     "src/host/settings/**/*.ts",
     "plugins/*/src/**/*.ts",
     "tests/**/*.ts",

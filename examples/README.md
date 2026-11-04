@@ -2,8 +2,9 @@
 
 This directory shows how to extend the system through plugins **without modifying the kernel**.
 
-The repository ships two built-in samples under `plugins/`: `logger-console` (a `log.sink`)
-and `plugin-inspector` (a `ui.panel` + `ui.route`). `pnpm dev` loads them automatically.
+The repository ships no built-in sample plugin under `plugins/`. The built-in catalog is
+intentionally empty; console logging is a host feature. `pnpm dev` still boots the kernel and
+prints the (empty) load report.
 
 ## Running the kernel with built-in plugins
 
@@ -40,8 +41,8 @@ optional lifecycle hook inside it, then run the plugin's `build` script to produ
 
 本目录演示如何在**不修改内核**的前提下，通过插件扩展系统能力。
 
-仓库在 `plugins/` 下内置两个示例：`logger-console`（`log.sink`）和 `plugin-inspector`
-（`ui.panel` + `ui.route`）。`pnpm dev` 会自动加载它们。
+仓库在 `plugins/` 下不附带内置示例插件。内置目录有意保持为空；控制台日志由宿主提供。
+`pnpm dev` 仍会启动内核并打印（空的）加载报告。
 
 ## 运行内核并加载内建插件
 

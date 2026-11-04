@@ -67,7 +67,7 @@ src/frontend/
 │   │   ├── ThemeToggle.svelte   # light/dark 切换（设置页）：目录含双模式时才渲染，发 ui.theme.set；无目录时本地应用并持久化模式
 │   │   ├── HealthBadge.svelte   # 健康徽标：读 health 报告
 │   │   ├── PluginManager.svelte # 宿主常驻插件管理：列表 / 详情 / 本地与远程安装 / 更新 / 启停 / 卸载 / 确认
-│   │   └── CommandPrompt.svelte # 命令输入与结果展示
+│   │   └── PluginMarketDetail.svelte # 远程市场详情：来源 / 版本 / 摘要 / 能力确认
 │   ├── global.css               # Tailwind source(none) + Skeleton + rem.css；主题变量 fallback
 │   └── themes/rem.css           # 唯一注册的 Skeleton 调色板（blue.css 已移除）
 └── lib/
@@ -76,7 +76,7 @@ src/frontend/
     ├── nav-link.ts              # 纯函数：route + panels + panelsReady → 激活面板决议（含 notice）
     ├── dto-guards.ts            # 纯函数：面板 / 路由列表运行时校验 + 面板数据分类（table / form / json / empty / invalid）
     ├── stores/                  # Svelte 5 runes；文件名必须以 .svelte.ts 结尾
-    │   └── panels · routes · theme · health · command · plugins（各一个 .svelte.ts）
+    │   └── panels · routes · theme · health · plugins（各一个 .svelte.ts）
     └── theme/vars.ts            # ThemeDto → CSS 变量映射（--rem2-*）
 ```
 
@@ -289,7 +289,7 @@ interface ProxySettingsDto {
 
 DTO 是**显式投影白名单**，不是「内核类型改个名字」。`CommandResultDto` 的字段名必须与命令插件真实返回一致：`IpcBridge` 把插件返回值原样放进 `reply.result`，preload 解包 `payload.result`，所以前端 `invoke` 拿到的就是插件原始返回对象（`{ok, output}`）。字段名写错时类型不报错、UI 空白、console 干净 —— 这是本项目最典型的静默缺陷形态。
 
-`command` 字段由前端 store 补上（`command.svelte.ts` → `{...res, command}`），不要求插件返回。
+`command` 字段由调用方自行关联：插件只返回 `{ok, output}` / `{ok:false, error}`，不要求回传命令名。
 
 **面板数据契约**：`PanelTableDto` / `PanelFormDto` 是两种结构化形状（`dto-guards.ts` → `parsePanelData` 在 renderer 侧做运行时分类与校验）：table → 表格；form → 渲染 `select` / `color` 字段，变更通过 `ui.event {kind:'change', payload:{fieldId,value}}` 回传；`undefined` / `null` → 空态；其余 → 美化 JSON；序列化超过 **32KB** → `invalid` 显式报错；声明 `kind` 但形状不符 → `invalid` 并说明原因。插件返回的 `{ok:false,error}` 会原样传到 `PanelShell`，不再被宿主改写成成功。列表类数据（`ui.panel.list` / `ui.route.list`）同样逐条目校验：坏条目丢弃并计入 `panels.issues`，整个载荷非数组则抛错走 store 的 error 态。
 
@@ -478,7 +478,7 @@ object-src 'none'; base-uri 'none';
 | F2  | `bridge-types.ts` 手写 DTO，内核契约改了前端不会自动报错          | 靠注释标注来源 + 赋值处类型对齐；`ui.*` 的 `impl` 类型来自内核契约                         |
 | F3  | `preload.cjs` 文件名是隐式契约（主进程硬编码）                    | 改名 → 窗口以「preload 加载失败」报错，不提示是文件名问题                                  |
 | F4  | runes 写在 `.ts` 里不生效且不报错                                 | 只能靠 `.svelte.ts` 目录约定                                                               |
-| F5  | ~~`ui.panel` / `ui.route` 无 builtin 贡献~~ **已解决**            | `plugin-inspector` 贡献 `/plugins` 路由 + 检查器面板                                       |
+| F5  | `ui.panel` / `ui.route` 无 builtin 贡献                           | 只有安装外部 `theme-switcher` 后才有面板与路由；未安装时主视图显示空态                     |
 | F6  | 插件安装不提供安全沙箱，仅做路径 / 依赖 / 生命周期保护            | 只应安装可信插件，详见 `05-plugin-management.md`                                           |
 | F7  | 管理页多窗口不共享目录变更事件                                    | 启停使用现有状态事件；安装 / 卸载需各窗口主动 Refresh                                      |
 | F8  | 远程安装只接受 HTTPS + 主机 allowlist 内的 ZIP 资产               | 无 registry、无 tar.gz、无签名验证；SHA-256 只证明完整性，不证明发布者身份                 |

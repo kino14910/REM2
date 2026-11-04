@@ -52,26 +52,24 @@ pnpm dev --log-level debug
 
 ```
 ──── rem2-kernel started ────
-loadOrder : com.rem2.logger-console -> com.rem2.plugin-inspector
-started   : com.rem2.logger-console, com.rem2.plugin-inspector
+loadOrder :
+started   : (none)
 degraded  : (none)
 failed    : (none)
 health    : healthy
-  - com.rem2.logger-console [Active] healthy
-  - com.rem2.plugin-inspector [Active] healthy
 ─────────────────────────────
 ```
 
 ### 二、Electron 桌面外壳（可选）
 
-外壳是**插件载体**，内核不依赖它。它会把内核当库启动，并提供一个命令输入框。
+外壳是**插件载体**，内核不依赖它。它会把内核当库启动，并提供插件管理、设置与面板/路由界面。
 
 ```bash
 # 打开桌面应用（开发模式，带热重载）
 pnpm start
 ```
 
-窗口里输入命令点「执行」，命令会经 IPC 桥转发到内核事件总线。默认不附带命令插件，因此内核会返回明确的 `unknown command`；安装提供 `command.provide` 的插件后即可使用。顶栏 **Plugins** 打开本地插件管理，可安装、查看、启停和卸载插件；安装前会确认并授予声明能力，安装完成即启用，用户数据默认保留。顶栏 **Settings** 可选择系统代理、直连或手动代理，保存后立即作用于窗口请求与插件下载。
+**Plugins** 打开本地插件管理，可安装、查看、启停和卸载插件；安装前会确认并授予声明能力，安装完成即启用，用户数据默认保留。**Settings** 可选择系统代理、直连或手动代理，保存后立即作用于窗口请求与插件下载。
 
 > **为什么宿主用 tsx 跑 TypeScript**：宿主自身的入口（终端形态 `src/host/cli/run.ts`、桌面外壳 `src/host/electron/main.ts`）用 TypeScript 编写，开发期由 tsx 直接执行。但**插件运行时并不以原始 `.ts` 加载**——每个插件已由 esbuild 预编译为自包含 ESM bundle，落在 `dist/index.js`（及 `plugins-dist/<id>/dist/index.js`），内核用动态 `import()` 加载。`tsx` 属 `devDependencies`：内核与 `dependencies` 仍零第三方依赖。打包产物若需加载 `.ts` 插件，需自行把 tsx 提为运行时依赖。
 
@@ -155,11 +153,13 @@ export default definePlugin(
 
 ## 示例插件（内置 + 可安装）
 
-| 插件                                           | 证明什么                                                                | 依赖 |
-| ---------------------------------------------- | ----------------------------------------------------------------------- | ---- |
-| [`logger-console`](plugins/logger-console)     | **可观测性是插件** — 提供 `log.sink`                                    | —    |
-| `theme-switcher`（外部）                       | **UI 是插件** — 亮/暗/跟随系统、强调色表单、选择持久化                  | —    |
-| [`plugin-inspector`](plugins/plugin-inspector) | **检查器自身也是插件** — 贡献 `ui.panel` + `ui.route`，提供实时插件表格 | —    |
+`plugins/` 下的内置目录现在有意保持为空：控制台日志已是宿主能力（在
+**设置 → 控制台日志** 中开关并调整等级），不再作为插件提供。需要内置示例时，
+用 `pnpm cli scaffold` 生成，会自动以 `source: 'builtin'` 加载。
+
+| 插件                     | 证明什么                                               | 依赖 |
+| ------------------------ | ------------------------------------------------------ | ---- |
+| `theme-switcher`（外部） | **UI 是插件** — 亮/暗/跟随系统、强调色表单、选择持久化 | —    |
 
 `theme-switcher` 的源码位于同级 `REM2-plugins` 仓库，**不再作为内置插件打包**：
 `pnpm build:external` 把它构建到 `plugins-external-dist`（git 忽略，不进

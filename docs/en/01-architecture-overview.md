@@ -18,8 +18,8 @@
 
 ```mermaid
 graph BT
-    subgraph L1["plugins/ — built-in plugins; REM2-plugins — external installable plugins"]
-        PA["in-process: logger-console / plugin-inspector"]
+    subgraph L1["plugins/ — built-in plugins (currently empty); REM2-plugins — external installable plugins"]
+        PA["in-process: built-in plugin (empty catalog)"]
         PB["worker: load on demand (no built-in sample)"]
     end
 
@@ -29,7 +29,7 @@ graph BT
     end
 
     subgraph L3["src/host/ — host adapters"]
-        HA["electron/: main / preload / window / theme-registry"]
+        HA["electron/: main / preload / window / theme-registry<br/>logging-settings / console-log-sink"]
         HB["ipc/: bridge / method-handlers / validate / forward-map"]
         HC["cli/: run / cli / args / paths / scaffold / validate"]
     end
@@ -392,12 +392,11 @@ sequenceDiagram
     K-->>Host: KernelStartResult
 ```
 
-### 6.2 Command (renderer → kernel → plugin → back)
+### 6.2 Command (caller → kernel → plugin → back)
 
 ```mermaid
 sequenceDiagram
-    participant UI as "CommandPrompt.svelte"
-    participant Store as "command.svelte.ts"
+    participant CLIENT as "caller (renderer / DevTools)"
     participant IPC as "ipc-client.ts"
     participant PRE as "preload.ts"
     participant MAIN as "ipcMain"
@@ -407,8 +406,7 @@ sequenceDiagram
     participant EP as "command.provide slot"
     participant HP as "command plugin contribution"
 
-    UI->>Store: execute(text)
-    Store->>IPC: request(channels.commandExecute, {command, args})
+    CLIENT->>IPC: request(channels.commandExecute, {command, args})
     IPC->>PRE: window.rem2.invoke(method, args)
     Note over PRE: generates an id and pairs the reply by id
     PRE->>MAIN: send(Ipc.Invoke, {id, method, args})
@@ -424,9 +422,8 @@ sequenceDiagram
     BUS-->>BR: result
     BR->>MAIN: reply({id, ok, result})
     MAIN->>PRE: Ipc.Invoke response
-    PRE->>IPC: resolve(result)
-    IPC-->>Store: CommandResultDto
-    Store-->>UI: last = {...res, command}
+    PRE->>IPC: resolve(payload.result)
+    IPC-->>CLIENT: CommandResultDto
 ```
 
 The host **does not implement** `command.execute` (that key is `null` in `method-handlers.ts`): dispatch goes through exactly one place — the kernel `CommandDispatcher`, registered at the beginning of `start()` (before any plugin `onStart` responder, so `pickResponder` — earliest seq wins — deterministically shadows plugin-side responders). It reads the `command.provide` slot directly, so **recursion is structurally impossible**. **Plugins must not `respond` `Topics.CommandExecute` directly** (even if written, the dispatcher shadows them); contribute the command into the `command.provide` slot instead — see the example in [`02-plugin-api.md`](02-plugin-api.md) §8.
@@ -477,7 +474,7 @@ unloadPlugin(pluginId)
 | Data        | Produced by                                                                                                                                             | Flows through                                                                                                                                                                         | Consumed by                                                                                                                                        |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Config**  | read-only kernel defaults `{app:{name:'rem2-kernel'}}` + writable `initialConfig` layer; file/env sources can be supplied by a `config.provider` plugin | `ConfigService.refresh()` deep-merges by ascending priority into a snapshot; `get()` refreshes lazily                                                                                 | plugins read `ctx.config.get(…)` in `onConfigure`; worker plugins get the init snapshot plus change pushes. **Config never leaks to the renderer** |
-| **Command** | input in `CommandPrompt.svelte`                                                                                                                         | store → `ipc.request` → preload → `IpcBridge` (allowlist) → `bus.request(Topics.CommandExecute)`                                                                                      | kernel `CommandDispatcher` reads the `command.provide` slot → command plugin handler → `{ok, output}` back through the same path                   |
+| **Command** | renderer / DevTools calls `command.execute`                                                                                                             | `ipc.request` → preload → `IpcBridge` (allowlist) → `bus.request(Topics.CommandExecute)`                                                                                              | kernel `CommandDispatcher` reads the `command.provide` slot → command plugin handler → `{ok, output}` back through the same path                   |
 | **Event**   | plugin `bus.emit`                                                                                                                                       | `EventBusImpl` → `EVENT_FORWARD_MAP` (allowlisted topics) → `toDto` → `Ipc.Event`                                                                                                     | renderer `ipc.subscribe`                                                                                                                           |
 | **Theme**   | `theme-switcher` plugin contributes `ui.theme` (light / dark / system token sets)                                                                       | extension slot → (`method-handlers.ts` → `syncThemeFromExtension()` **pull sync + followSystem materialization**) → host `ThemeRegistryImpl` (catalog + active) → `ui.theme.list/set` | renderer `theme` store → `theme/vars.ts` → CSS variables + `color-scheme`                                                                          |
 
