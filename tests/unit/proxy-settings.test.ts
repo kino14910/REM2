@@ -83,6 +83,7 @@ describe('unit · proxy settings', () => {
         bypass: 'localhost,127.0.0.1',
       },
       appearance: { colorMode: 'system' },
+      logging: { enabled: true, level: 'info' },
     })
 
     const second = new ElectronAppSettingsStore(directory)
@@ -299,6 +300,7 @@ describe('unit · proxy settings', () => {
         schemaVersion: 1,
         proxy: { mode: 'manual', address: 'http://127.0.0.1:7890' },
         appearance: { colorMode: 'system' },
+        logging: { enabled: true, level: 'info' },
       })
     } finally {
       errorSpy.mockRestore()
@@ -341,6 +343,7 @@ describe('unit · proxy settings', () => {
         schemaVersion: 1,
         proxy: { mode: 'direct' },
         appearance: { colorMode: 'dark' },
+        logging: { enabled: true, level: 'info' },
       })
     } finally {
       errorSpy.mockRestore()

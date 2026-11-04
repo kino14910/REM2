@@ -16,7 +16,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { RegistryMarketService } from '@/host/registry/market-service.js'
 import type { AppearanceSettingsService } from '@/host/settings/appearance-settings.js'
+import type { LoggingSettingsService } from '@/host/settings/logging-settings.js'
 import type { ProxySettingsService } from '@/host/settings/proxy-settings-service.js'
 import type { EventBus } from '@/kernel/contracts/event-bus.js'
 import type { HealthReport } from '@/kernel/contracts/health.js'
@@ -90,11 +92,10 @@ describe('integration · allowlisted method implementation table', () => {
     }
   })
 
-  it('ui.panel.list / ui.route.list read the extension slots (inspector contributes them)', async () => {
-    // The builtin plugin-inspector is in plugins-dist and contributes exactly
-    // one panel + one route; these assertions prove the handlers read the
-    // extension slots (not a hardcoded list) because the values correspond to
-    // the inspector's plugin.json contributes.
+  it('ui.panel.list / ui.route.list read the extension slots (theme-switcher contributes them)', async () => {
+    // The external theme-switcher contributes exactly one panel + one route;
+    // these assertions prove the handlers read the extension slots (not a
+    // hardcoded list) because the values correspond to its plugin.json.
     const kernel = createKernel()
     try {
       await kernel.start()
@@ -113,38 +114,23 @@ describe('integration · allowlisted method implementation table', () => {
       const routes = (await routeList(undefined)) as Array<
         Record<string, unknown>
       >
-      expect(panels).toHaveLength(2)
-      expect(panels).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            panelId: 'plugin-inspector',
-            command: 'com.rem2.plugin-inspector.data',
-            region: 'main',
-            order: 10,
-          }),
-          expect.objectContaining({
-            panelId: 'theme-switcher',
-            command: 'com.rem2.theme-switcher.data',
-            region: 'main',
-            order: 20,
-          }),
-        ]),
-      )
-      expect(routes).toHaveLength(2)
-      expect(routes).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            path: '/plugins',
-            panelId: 'plugin-inspector',
-            order: 10,
-          }),
-          expect.objectContaining({
-            path: '/theme',
-            panelId: 'theme-switcher',
-            order: 20,
-          }),
-        ]),
-      )
+      expect(panels).toHaveLength(1)
+      expect(panels).toEqual([
+        expect.objectContaining({
+          panelId: 'theme-switcher',
+          command: 'com.rem2.theme-switcher.data',
+          region: 'main',
+          order: 20,
+        }),
+      ])
+      expect(routes).toHaveLength(1)
+      expect(routes).toEqual([
+        expect.objectContaining({
+          path: '/theme',
+          panelId: 'theme-switcher',
+          order: 20,
+        }),
+      ])
     } finally {
       await kernel.shutdown()
     }
@@ -247,6 +233,51 @@ describe('integration · allowlisted method implementation table', () => {
       ).rejects.toThrow(/colorMode/)
       await expect(async () =>
         handlers[channels.settingsAppearanceGet]!({ colorMode: 'light' }),
+      ).rejects.toThrow(/no arguments/)
+    } finally {
+      await kernel.shutdown()
+    }
+  })
+
+  it('settings.logging.get / set delegate to the host logging service and validate args', async () => {
+    const kernel = createKernel()
+    try {
+      await kernel.start()
+      const bus = kernel.root.resolve<EventBus>(KernelTokens.EventBus)
+      const seen: unknown[] = []
+      const loggingSettings: LoggingSettingsService = {
+        get: () => ({ enabled: false, level: 'debug' }),
+        set: async settings => {
+          seen.push(settings)
+          return { ...settings }
+        },
+      }
+      const handlers = createMethodHandlers({
+        kernel,
+        bus,
+        themeRegistry: new ThemeRegistryImpl(),
+        loggingSettings,
+      })
+
+      expect(await handlers[channels.settingsLoggingGet]!(undefined)).toEqual({
+        enabled: false,
+        level: 'debug',
+      })
+      expect(
+        await handlers[channels.settingsLoggingSet]!({
+          enabled: true,
+          level: 'warn',
+        }),
+      ).toEqual({ enabled: true, level: 'warn' })
+      expect(seen).toEqual([{ enabled: true, level: 'warn' }])
+      await expect(async () =>
+        handlers[channels.settingsLoggingSet]!({
+          enabled: true,
+          level: 'verbose',
+        }),
+      ).rejects.toThrow(/logging level/)
+      await expect(async () =>
+        handlers[channels.settingsLoggingGet]!({ enabled: true }),
       ).rejects.toThrow(/no arguments/)
     } finally {
       await kernel.shutdown()
@@ -386,6 +417,65 @@ describe('integration · allowlisted method implementation table', () => {
       await expect(async () =>
         handlers[channels.settingsProxySet]!({ mode: 'manual' }),
       ).rejects.toMatchObject({ code: 'E_SETTINGS_INVALID' })
+    } finally {
+      await kernel.shutdown()
+    }
+  })
+
+  it('market install re-resolves the registry, confirms with host data and delegates', async () => {
+    const kernel = createKernel()
+    try {
+      await kernel.start()
+      const bus = kernel.root.resolve<EventBus>(KernelTokens.EventBus)
+      const release = {
+        pluginId: 'com.example.market',
+        name: 'Market Example',
+        version: '1.0.0',
+        downloadUrl:
+          'https://github.com/kino14910/REM2-plugins/releases/download/example-v1.0.0/example-1.0.0.zip',
+        sha256: 'a'.repeat(64),
+        sizeBytes: 5554,
+        requires: ['ui.panel'],
+        repository: 'https://github.com/kino14910/REM2-plugins',
+      }
+      const resolve = vi.fn(async () => release)
+      const install = vi.fn(async () => ({
+        ok: true as const,
+        changed: true,
+        restartRequired: false,
+      }))
+      const market = {
+        list: vi.fn(),
+        resolve,
+        install,
+      } as unknown as RegistryMarketService
+      const confirmPluginAction = vi.fn(async () => true)
+      const handlers = createMethodHandlers({
+        kernel,
+        bus,
+        themeRegistry: new ThemeRegistryImpl(),
+        market,
+        confirmPluginAction,
+      })
+
+      await handlers[channels.pluginMarketInstall]!({
+        operationId: 'market-install-1',
+        pluginId: release.pluginId,
+        version: release.version,
+      })
+
+      expect(resolve).toHaveBeenCalledWith(release.pluginId, release.version)
+      expect(confirmPluginAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'market-install',
+          detail: expect.stringContaining('ui.panel'),
+        }),
+      )
+      expect(install).toHaveBeenCalledWith(
+        release,
+        'market-install-1',
+        expect.any(Function),
+      )
     } finally {
       await kernel.shutdown()
     }

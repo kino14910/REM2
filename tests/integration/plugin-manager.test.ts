@@ -616,32 +616,6 @@ describe('integration · local plugin manager lifecycle', () => {
     )
   })
 
-  it('manages the real built-in catalog without allowing uninstall', async ({
-    skip,
-  }) => {
-    const builtinRoot = path.join(process.cwd(), 'plugins-dist')
-    try {
-      await access(path.join(builtinRoot, 'plugin-inspector', 'plugin.json'))
-    } catch {
-      skip()
-      return
-    }
-    const env = await createEnv({ builtinRoot })
-    const builtin = await env.manager.detail('com.rem2.plugin-inspector')
-    expect(builtin).toMatchObject({
-      source: 'builtin',
-      builtin: true,
-      canUninstall: false,
-      state: 'Active',
-    })
-    expect(
-      (await env.manager.disable('com.rem2.plugin-inspector')).plugin?.state,
-    ).toBe('Disabled')
-    expect(
-      (await env.manager.enable('com.rem2.plugin-inspector')).plugin?.state,
-    ).toBe('Active')
-  })
-
   it('lists built-in plugins while protecting them from uninstall', async () => {
     const env = await createEnv({
       builtin: [{ manifest: { id: 'com.example.builtin' } }],

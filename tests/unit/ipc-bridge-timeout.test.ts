@@ -11,6 +11,8 @@ describe('unit · IPC timeout policy', () => {
       channels.pluginRemoteInspect,
       channels.pluginUpdateCheck,
       channels.pluginUpdateInstall,
+      channels.pluginMarketInstall,
+      channels.pluginMarketUpdate,
       channels.pluginEnable,
       channels.pluginPermissionGrant,
       channels.pluginDisable,
@@ -25,5 +27,6 @@ describe('unit · IPC timeout policy', () => {
   it('keeps bounded timeouts for reads', () => {
     expect(timeoutFor(channels.settingsProxyGet)).toBe(15_000)
     expect(timeoutFor(channels.pluginList)).toBe(15_000)
+    expect(timeoutFor(channels.pluginMarketList)).toBe(20_000)
   })
 })

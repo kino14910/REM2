@@ -167,7 +167,7 @@ describe('hardening · plugin id rejects consecutive separators', () => {
   })
 
   it('accepts legal ids (reverse-DNS, hyphens, underscores)', () => {
-    expect(idValid('com.rem2.logger-console')).toBe(true)
+    expect(idValid('com.rem2.example')).toBe(true)
     expect(idValid('com.example.my_plugin')).toBe(true)
     expect(idValid('com.rem2.plugin-inspector')).toBe(true)
     expect(idValid('abc')).toBe(true)

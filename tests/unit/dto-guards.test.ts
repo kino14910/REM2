@@ -14,14 +14,20 @@
 import { describe, expect, it } from 'vitest'
 
 import type { PanelDto, RouteDto } from '@/frontend/lib/bridge-types.js'
-import type { PluginDetailDto } from '@/shared/ipc-contract.js'
+import type {
+  PluginDetailDto,
+  PluginMarketEntryDto,
+  PluginMarketListDto,
+} from '@/shared/ipc-contract.js'
 
 import {
   parseDownloadProgress,
+  parseLoggingSettings,
   parsePanelData,
   parsePanelList,
   parsePluginInspection,
   parsePluginList,
+  parsePluginMarketList,
   parsePluginOperation,
   parsePluginUpdateCheck,
   parseProxySettings,
@@ -361,6 +367,28 @@ describe('unit · dto guards · proxy settings', () => {
   })
 })
 
+describe('unit · dto guards · logging settings', () => {
+  it('accepts a valid logging payload', () => {
+    expect(parseLoggingSettings({ enabled: false, level: 'debug' })).toEqual({
+      enabled: false,
+      level: 'debug',
+    })
+  })
+
+  it.each([
+    ['null', null],
+    ['an array', []],
+    ['a missing enabled flag', { level: 'info' }],
+    ['a non-boolean enabled flag', { enabled: 'yes', level: 'info' }],
+    ['an unknown level', { enabled: true, level: 'verbose' }],
+    ['a missing level', { enabled: true }],
+  ])('rejects %s', (_label, value) => {
+    expect(() => parseLoggingSettings(value)).toThrow(
+      /invalid logging settings/,
+    )
+  })
+})
+
 describe('unit · dto guards · plugin management', () => {
   it('accepts a valid plugin list and merges host issues', () => {
     const result = parsePluginList({
@@ -618,6 +646,84 @@ describe('unit · dto guards · remote install DTOs', () => {
       })
       expect(result.items).toEqual([])
       expect(result.issues).toHaveLength(1)
+    }
+  })
+})
+
+function validMarketEntry(): PluginMarketEntryDto {
+  return {
+    id: 'com.example.market',
+    name: 'Market Example',
+    description: 'A marketplace plugin',
+    author: 'rem2-plugins',
+    tags: ['ui'],
+    repository: 'https://github.com/kino14910/REM2-plugins',
+    version: '1.0.0',
+    sizeBytes: 5554,
+    requires: ['ui.panel'],
+    compatibility: {
+      minKernel: '^1.0.0',
+      contractVersion: '1',
+      compatible: true,
+      reasons: [],
+    },
+    updateAvailable: false,
+    action: 'install',
+  }
+}
+
+function validMarketList(): PluginMarketListDto {
+  return {
+    plugins: [validMarketEntry()],
+    repository: 'https://github.com/kino14910/REM2-plugins',
+    generatedAt: '2026-11-04T06:25:44.202Z',
+    fetchedAt: '2026-11-04T06:30:00.000Z',
+    source: 'network',
+    stale: false,
+    warnings: [],
+  }
+}
+
+describe('unit · dto guards · parsePluginMarketList', () => {
+  it('accepts a well-formed marketplace list', () => {
+    expect(parsePluginMarketList(validMarketList())).toEqual(validMarketList())
+  })
+
+  it('drops invalid entries and records warnings', () => {
+    for (const entry of [
+      { ...validMarketEntry(), id: '' },
+      { ...validMarketEntry(), action: 'unknown' },
+      {
+        ...validMarketEntry(),
+        action: 'incompatible',
+        compatibility: {
+          ...validMarketEntry().compatibility,
+          compatible: true,
+        },
+      },
+      {
+        ...validMarketEntry(),
+        action: 'update',
+        updateAvailable: true,
+      },
+    ]) {
+      const result = parsePluginMarketList({
+        ...validMarketList(),
+        plugins: [entry],
+      })
+      expect(result.plugins).toEqual([])
+      expect(result.warnings).toHaveLength(1)
+    }
+  })
+
+  it('throws when the envelope itself is invalid', () => {
+    for (const value of [
+      null,
+      {},
+      { ...validMarketList(), source: 'offline' },
+      { ...validMarketList(), plugins: 'not-an-array' },
+    ]) {
+      expect(() => parsePluginMarketList(value)).toThrow()
     }
   })
 })

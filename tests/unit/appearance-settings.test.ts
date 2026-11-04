@@ -40,6 +40,7 @@ describe('unit · appearance settings', () => {
       schemaVersion: 1,
       proxy: { mode: 'system' },
       appearance: { colorMode: 'dark' },
+      logging: { enabled: true, level: 'info' },
     })
 
     const second = new ElectronAppSettingsStore(directory)

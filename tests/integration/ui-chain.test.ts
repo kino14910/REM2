@@ -4,7 +4,7 @@
  *
  * Rationale: the UI surface is a chain of four independent links that used to
  * break one at a time:
- * 1. the plugin contributes `ui.panel` / `ui.route` (here: plugin-inspector);
+ * 1. the plugin contributes `ui.panel` / `ui.route` (here: theme-switcher);
  * 2. the host method table reads the extension slots (`method-handlers.ts`);
  * 3. the IPC bridge narrows renderer calls to the whitelist and carries
  *    request/response by id (`bridge.ts`);
@@ -48,16 +48,8 @@ const THEME_ID = 'com.rem2.theme-switcher'
 const THEME_CAPABILITIES = ['ui.theme', 'ui.panel', 'ui.route']
 const EMPTY_ROOT = path.join(PROJECT_ROOT, 'tests', 'fixtures', 'empty-plugins')
 
-const INSPECTOR_PANEL_ID = 'plugin-inspector'
-const INSPECTOR_PLUGIN_ID = 'com.rem2.plugin-inspector'
-const DATA_TOPIC = 'com.rem2.plugin-inspector.data'
-
-/** The 3 plugins loaded by these suites (2 built-in + external theme-switcher). */
-const LOADED_PLUGIN_IDS = [
-  'com.rem2.logger-console',
-  'com.rem2.plugin-inspector',
-  'com.rem2.theme-switcher',
-]
+const THEME_PANEL_ID = 'theme-switcher'
+const THEME_PANEL_COMMAND = 'com.rem2.theme-switcher.data'
 
 function createKernel(): Kernel {
   return new Kernel(
@@ -144,29 +136,29 @@ function registerHandlers(
 afterEach(cleanupTestPluginDataRoots)
 
 describe('integration · ui chain', () => {
-  it('① plugin-inspector starts and contributes exactly one panel + one route', async () => {
+  it('① theme-switcher starts and contributes exactly one panel + one route', async () => {
     const kernel = createKernel()
     try {
       await kernel.start()
 
       const panels = kernel.extensions.listAll<PanelContribution>('ui.panel')
-      const inspector = panels.find(p => p.panelId === INSPECTOR_PANEL_ID)
-      expect(inspector).toMatchObject({
-        panelId: INSPECTOR_PANEL_ID,
-        title: 'Plugin Inspector',
-        icon: '🔍',
+      const themePanel = panels.find(p => p.panelId === THEME_PANEL_ID)
+      expect(themePanel).toMatchObject({
+        panelId: THEME_PANEL_ID,
+        title: 'Theme Switcher',
+        icon: '◐',
         region: 'main',
-        order: 10,
-        command: DATA_TOPIC,
+        order: 20,
+        command: THEME_PANEL_COMMAND,
       })
 
       const routes = kernel.extensions.listAll<{ path: string }>('ui.route')
-      const inspectorRoute = routes.find(r => r.path === '/plugins')
-      expect(inspectorRoute).toMatchObject({
-        path: '/plugins',
-        title: 'Plugins',
-        panelId: INSPECTOR_PANEL_ID,
-        order: 10,
+      const themeRoute = routes.find(r => r.path === '/theme')
+      expect(themeRoute).toMatchObject({
+        path: '/theme',
+        title: 'Theme',
+        panelId: THEME_PANEL_ID,
+        order: 20,
       })
     } finally {
       await kernel.shutdown()
@@ -186,10 +178,10 @@ describe('integration · ui chain', () => {
       expect(panelRes.result).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            panelId: INSPECTOR_PANEL_ID,
-            command: DATA_TOPIC,
+            panelId: THEME_PANEL_ID,
+            command: THEME_PANEL_COMMAND,
             region: 'main',
-            order: 10,
+            order: 20,
           }),
         ]),
       )
@@ -199,9 +191,9 @@ describe('integration · ui chain', () => {
       expect(routeRes.result).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            path: '/plugins',
-            panelId: INSPECTOR_PANEL_ID,
-            order: 10,
+            path: '/theme',
+            panelId: THEME_PANEL_ID,
+            order: 20,
           }),
         ]),
       )
@@ -212,7 +204,7 @@ describe('integration · ui chain', () => {
     }
   })
 
-  it('④ panel data resolves to the inspector table (all 3 plugins, Active/healthy)', async () => {
+  it('④ panel data resolves to the theme-switcher form (default mode/accent)', async () => {
     const kernel = createKernel()
     try {
       await kernel.start()
@@ -221,37 +213,25 @@ describe('integration · ui chain', () => {
       const client = createIpcClient(bus)
 
       const res = await client.invoke(channels.panelData, {
-        panelId: INSPECTOR_PANEL_ID,
+        panelId: THEME_PANEL_ID,
       })
       expect(res.ok).toBe(true)
-      const table = res.result as {
+      const form = res.result as {
         kind: string
-        columns: string[]
-        rows: unknown[][]
+        fields: Array<{ id: string; type: string; value: string }>
       }
-      expect(table.kind).toBe('table')
-      expect(table.columns).toEqual([
-        'id',
-        'name',
-        'version',
-        'state',
-        'health',
-        'message',
-      ])
-      expect(table.rows).toHaveLength(LOADED_PLUGIN_IDS.length)
-      expect(table.rows.map(r => r[0]).toSorted()).toEqual(
-        [...LOADED_PLUGIN_IDS].toSorted(),
-      )
-      const self = table.rows.find(r => r[0] === INSPECTOR_PLUGIN_ID)
-      expect(self).toBeDefined()
-      expect(self).toHaveLength(6)
-      expect(self?.[3]).toBe('Active')
-      expect(self?.[4]).toBe('healthy')
-      for (const row of table.rows) {
-        expect(row, `row for ${String(row[0])} is malformed`).toHaveLength(6)
-        expect(row[3]).toBe('Active')
-        expect(row[4]).toBe('healthy')
-      }
+      expect(form.kind).toBe('form')
+      expect(form.fields).toHaveLength(2)
+      expect(form.fields[0]).toMatchObject({
+        id: 'mode',
+        type: 'select',
+        value: 'system',
+      })
+      expect(form.fields[1]).toMatchObject({
+        id: 'accent',
+        type: 'color',
+        value: '#4f9cf9',
+      })
 
       client.bridge.unbind()
     } finally {
@@ -365,7 +345,7 @@ export default function factory(ctx) {
     }
   })
 
-  it('⑤ unloading the inspector reclaims its panel and route (degraded, not stale)', async () => {
+  it('⑤ unloading theme-switcher reclaims its panel and route (degraded, not stale)', async () => {
     const kernel = createKernel()
     try {
       await kernel.start()
@@ -380,25 +360,25 @@ export default function factory(ctx) {
 
       const before = await client.invoke(channels.panelList)
       expect(before.ok).toBe(true)
-      expect(before.result).toHaveLength(2)
+      expect(before.result).toHaveLength(1)
 
-      await kernel.unloadPlugin(INSPECTOR_PLUGIN_ID)
+      await kernel.unloadPlugin(THEME_ID)
 
       const panels = await client.invoke(channels.panelList)
       expect(panels.ok).toBe(true)
-      expect(panels.result).toMatchObject([{ panelId: 'theme-switcher' }])
+      expect(panels.result).toEqual([])
       const routes = await client.invoke(channels.routeList)
       expect(routes.ok).toBe(true)
-      expect(routes.result).toMatchObject([{ path: '/theme' }])
+      expect(routes.result).toEqual([])
 
       const data = await client.invoke(channels.panelData, {
-        panelId: INSPECTOR_PANEL_ID,
+        panelId: THEME_PANEL_ID,
       })
       expect(data.ok).toBe(false)
       expect(data.error).toContain('panel not found')
 
       const event = await client.invoke(channels.uiEvent, {
-        panelId: INSPECTOR_PANEL_ID,
+        panelId: THEME_PANEL_ID,
         kind: 'click',
       })
       expect(event.ok).toBe(true)
@@ -437,16 +417,14 @@ export default function factory(ctx) {
         },
       )
 
-      await kernel.unloadPlugin(INSPECTOR_PLUGIN_ID)
+      await kernel.unloadPlugin(THEME_ID)
 
-      const inspectorEvents = seen.filter(
-        e => e.pluginId === INSPECTOR_PLUGIN_ID,
-      )
-      expect(inspectorEvents).toEqual([
+      const themeEvents = seen.filter(e => e.pluginId === THEME_ID)
+      expect(themeEvents).toEqual([
         {
-          pluginId: INSPECTOR_PLUGIN_ID,
+          pluginId: THEME_ID,
           state: 'Stopped',
-          panelsAtEvent: ['theme-switcher'],
+          panelsAtEvent: [],
         },
       ])
     } finally {

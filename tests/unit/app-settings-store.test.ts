@@ -36,6 +36,7 @@ describe('unit · app settings document', () => {
     await store.load()
     expect(store.getProxy()).toEqual({ mode: 'system' })
     expect(store.getAppearance()).toEqual({ colorMode: 'system' })
+    expect(store.getLogging()).toEqual({ enabled: true, level: 'info' })
     expect(existsSync(path.join(directory, 'settings.json'))).toBe(false)
   })
 
@@ -57,6 +58,7 @@ describe('unit · app settings document', () => {
         bypass: 'localhost',
       },
       appearance: { colorMode: 'system' },
+      logging: { enabled: true, level: 'info' },
     })
 
     await store.setAppearance({ colorMode: 'dark' })
@@ -68,6 +70,7 @@ describe('unit · app settings document', () => {
         bypass: 'localhost',
       },
       appearance: { colorMode: 'dark' },
+      logging: { enabled: true, level: 'info' },
     })
 
     await store.setProxy({ mode: 'direct' })
@@ -75,6 +78,7 @@ describe('unit · app settings document', () => {
       schemaVersion: 1,
       proxy: { mode: 'direct' },
       appearance: { colorMode: 'dark' },
+      logging: { enabled: true, level: 'info' },
     })
   })
 
@@ -97,6 +101,56 @@ describe('unit · app settings document', () => {
       bypass: 'localhost',
     })
     expect(second.getAppearance()).toEqual({ colorMode: 'light' })
+  })
+
+  it('persists the logging namespace independently', async () => {
+    const directory = prepareRoot()
+    const store = new ElectronAppSettingsStore(directory)
+    await store.load()
+
+    await store.setLogging({ enabled: false, level: 'debug' })
+    expect(readSettings(directory)).toEqual({
+      schemaVersion: 1,
+      proxy: { mode: 'system' },
+      appearance: { colorMode: 'system' },
+      logging: { enabled: false, level: 'debug' },
+    })
+
+    await store.setProxy({ mode: 'direct' })
+    expect(readSettings(directory)).toEqual({
+      schemaVersion: 1,
+      proxy: { mode: 'direct' },
+      appearance: { colorMode: 'system' },
+      logging: { enabled: false, level: 'debug' },
+    })
+
+    const restarted = new ElectronAppSettingsStore(directory)
+    await restarted.load()
+    expect(restarted.getLogging()).toEqual({ enabled: false, level: 'debug' })
+  })
+
+  it('loads a document without a logging block without treating it as damaged', async () => {
+    const directory = prepareRoot()
+    const file = path.join(directory, 'settings.json')
+    const original = JSON.stringify({
+      schemaVersion: 1,
+      proxy: { mode: 'direct' },
+      appearance: { colorMode: 'dark' },
+    })
+    writeFileSync(file, original, 'utf8')
+
+    const store = new ElectronAppSettingsStore(directory)
+    await store.load()
+    expect(store.getLogging()).toEqual({ enabled: true, level: 'info' })
+    expect(readFileSync(file, 'utf8')).toBe(original)
+
+    await store.setLogging({ enabled: false, level: 'warn' })
+    expect(readSettings(directory)).toEqual({
+      schemaVersion: 1,
+      proxy: { mode: 'direct' },
+      appearance: { colorMode: 'dark' },
+      logging: { enabled: false, level: 'warn' },
+    })
   })
 
   it('never persists the runtime resolved diagnostic', async () => {
@@ -153,6 +207,7 @@ describe('unit · app settings document', () => {
         bypass: 'localhost',
       },
       appearance: { colorMode: 'dark' },
+      logging: { enabled: true, level: 'info' },
     })
     expect(existsSync(path.join(directory, 'proxy-settings.json'))).toBe(true)
     expect(existsSync(path.join(directory, 'appearance-settings.json'))).toBe(
@@ -284,6 +339,15 @@ describe('unit · app settings document', () => {
         appearance: { colorMode: 'sepia' },
       }),
     ],
+    [
+      'invalid logging value',
+      JSON.stringify({
+        schemaVersion: 1,
+        proxy: { mode: 'system' },
+        appearance: { colorMode: 'system' },
+        logging: { enabled: true, level: 'verbose' },
+      }),
+    ],
   ])('rejects %s and keeps the file untouched', async (_label, text) => {
     const directory = prepareRoot()
     const file = path.join(directory, 'settings.json')
@@ -322,6 +386,7 @@ describe('unit · app settings document', () => {
       schemaVersion: 1,
       proxy: { mode: 'system' },
       appearance: { colorMode: 'light' },
+      logging: { enabled: true, level: 'info' },
     })
     const backup = readdirSync(directory).find(name =>
       name.startsWith('settings.invalid-'),
@@ -358,6 +423,7 @@ describe('unit · app settings document', () => {
       schemaVersion: 1,
       proxy: { mode: 'manual', address: 'http://127.0.0.1:7890' },
       appearance: { colorMode: 'dark' },
+      logging: { enabled: true, level: 'info' },
     })
     const backup = readdirSync(directory).find(name =>
       name.startsWith('settings.invalid-'),
@@ -393,6 +459,7 @@ describe('unit · app settings document', () => {
       schemaVersion: 1,
       proxy: { mode: 'system' },
       appearance: { colorMode: 'light' },
+      logging: { enabled: true, level: 'info' },
     })
     const backup = readdirSync(directory).find(name =>
       name.startsWith('settings.invalid-'),
@@ -441,6 +508,7 @@ describe('unit · app settings document', () => {
       schemaVersion: 1,
       proxy: { mode: 'system' },
       appearance: { colorMode: 'dark' },
+      logging: { enabled: true, level: 'info' },
     })
   })
 
@@ -485,6 +553,7 @@ describe('unit · app settings document', () => {
       schemaVersion: 1,
       proxy: { mode: 'system' },
       appearance: { colorMode: 'light' },
+      logging: { enabled: true, level: 'info' },
     })
     const backup = readdirSync(directory).find(name =>
       name.startsWith('settings.invalid-'),
@@ -531,6 +600,7 @@ describe('unit · app settings document', () => {
       schemaVersion: 1,
       proxy: { mode: 'system' },
       appearance: { colorMode: 'light' },
+      logging: { enabled: true, level: 'info' },
     })
   })
 

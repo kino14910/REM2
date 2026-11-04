@@ -4,7 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render } from 'vitest-browser-svelte'
 import { userEvent } from 'vitest/browser'
 
-import type { ProxySettingsDto } from '@/shared/ipc-contract'
+import type {
+  LoggingSettingsDto,
+  ProxySettingsDto,
+} from '@/shared/ipc-contract'
 
 import SettingsView from '@/frontend/app/components/SettingsView.svelte'
 import { appSettings } from '@/frontend/lib/stores/settings.svelte'
@@ -21,10 +24,16 @@ interface Invocation {
 
 function installBridge(handlers: Record<string, Handler>): Invocation[] {
   const calls: Invocation[] = []
+  const defaults: Record<string, Handler> = {
+    [channels.settingsLoggingGet]: (): LoggingSettingsDto => ({
+      enabled: true,
+      level: 'info',
+    }),
+  }
   window.rem2 = {
     invoke: async (method, args) => {
       calls.push({ method, args })
-      const handler = handlers[method]
+      const handler = { ...defaults, ...handlers }[method]
       if (!handler) throw new Error(`unexpected invoke: ${method}`)
       return handler(args)
     },
@@ -53,6 +62,18 @@ function addressField(): HTMLInputElement {
   return element
 }
 
+function loggingCheckbox(): HTMLInputElement {
+  const element = document.querySelector<HTMLInputElement>('#logging-enabled')
+  if (!element) throw new Error('logging checkbox not found')
+  return element
+}
+
+function levelSelect(): HTMLSelectElement {
+  const element = document.querySelector<HTMLSelectElement>('#log-level')
+  if (!element) throw new Error('log level select not found')
+  return element
+}
+
 function saveCall(calls: Invocation[]): Invocation {
   const call = calls.find(entry => entry.method === channels.settingsProxySet)
   if (!call) throw new Error('settingsProxySet was not invoked')
@@ -61,8 +82,10 @@ function saveCall(calls: Invocation[]): Invocation {
 
 function resetStore(): void {
   appSettings.proxy = { mode: 'system' }
+  appSettings.logging = { enabled: true, level: 'info' }
   appSettings.loading = false
   appSettings.saving = false
+  appSettings.loggingSaving = false
   appSettings.error = undefined
   appSettings.notice = undefined
 }
@@ -72,6 +95,44 @@ beforeEach(resetStore)
 afterEach(() => {
   cleanup()
   delete window.rem2
+})
+
+describe('SettingsView · logging settings', () => {
+  it('loads host values and applies the enable flag with the selected level', async () => {
+    const calls = installBridge({
+      [channels.settingsProxyGet]: (): ProxySettingsDto => ({
+        mode: 'system',
+      }),
+      [channels.settingsLoggingGet]: (): LoggingSettingsDto => ({
+        enabled: true,
+        level: 'info',
+      }),
+      [channels.settingsLoggingSet]: (args): LoggingSettingsDto => ({
+        ...(args as LoggingSettingsDto),
+      }),
+    })
+
+    await render(SettingsViewComponent)
+    await vi.waitFor(() => expect(loggingCheckbox().checked).toBe(true))
+    await vi.waitFor(() => expect(levelSelect().value).toBe('info'))
+
+    await userEvent.click(loggingCheckbox())
+    await userEvent.selectOptions(levelSelect(), 'debug')
+    await vi.waitFor(() => expect(button('Apply').disabled).toBe(false))
+    await userEvent.click(button('Apply'))
+
+    const call = await vi.waitFor(() => {
+      const found = calls.find(
+        entry => entry.method === channels.settingsLoggingSet,
+      )
+      expect(found).toBeTruthy()
+      return found!
+    })
+    expect(call.args).toEqual({ enabled: false, level: 'debug' })
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain('Logging settings applied.'),
+    )
+  })
 })
 
 describe('SettingsView · proxy validation', () => {

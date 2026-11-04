@@ -393,6 +393,35 @@ describe('integration · remote plugin inspect and install', () => {
     expect(JSON.stringify(detail)).not.toContain(env.userRoot)
   })
 
+  it('installs from remote disabled when marketplace-style enable=false is used', async () => {
+    const env = await createEnv()
+    const marker = path.join(env.root, 'executed.marker')
+    const zip = buildPluginZip({
+      version: '1.0.0',
+      source: executableSource(marker),
+    })
+    const digest = digestOf(zip)
+    env.publish({ version: '1.0.0', zip, digest })
+
+    const installed = await env.manager.installFromRemote({
+      url: REPO_SOURCE,
+      operationId: 'install-disabled',
+      sha256: digest,
+      enable: false,
+    })
+
+    expect(installed.plugin).toMatchObject({
+      id: PLUGIN_ID,
+      version: '1.0.0',
+      state: 'Disabled',
+      enabled: false,
+    })
+    expect(installed.message).toContain('Review the declared capabilities')
+    expect(env.state.isDisabled(PLUGIN_ID)).toBe(true)
+    await access(path.join(env.userRoot, PLUGIN_ID, 'plugin.json'))
+    await expect(access(marker)).rejects.toThrow()
+  })
+
   it('records install-time capability approval and enables the plugin', async () => {
     const env = await createEnv()
     const zip = buildPluginZip({
@@ -965,6 +994,38 @@ describe('integration · remote plugin updates', () => {
 
     expect((await env.manager.detail(PLUGIN_ID)).version).toBe('1.0.0')
     expect(await listEntries(env.userRoot)).toEqual([PLUGIN_ID])
+  })
+
+  it('uses an explicit marketplace release URL for the update and provenance', async () => {
+    const env = await createEnv()
+    const firstZip = buildPluginZip({ version: '1.0.0' })
+    const firstDigest = digestOf(firstZip)
+    env.publish({ version: '1.0.0', zip: firstZip, digest: firstDigest })
+    await env.manager.installFromRemote({
+      url: REPO_SOURCE,
+      operationId: 'install-for-market-update',
+      sha256: firstDigest,
+    })
+
+    const secondZip = buildPluginZip({ version: '2.0.0' })
+    const secondDigest = digestOf(secondZip)
+    env.publish({ version: '2.0.0', zip: secondZip, digest: secondDigest })
+    const sourceUrl = `${REPO_SOURCE}/releases/download/v2.0.0/hello.zip`
+
+    const updated = await env.manager.applyUpdate({
+      pluginId: PLUGIN_ID,
+      operationId: 'market-update',
+      expectedVersion: '2.0.0',
+      expectedSha256: secondDigest,
+      sourceUrl,
+    })
+
+    expect(updated.plugin).toMatchObject({
+      id: PLUGIN_ID,
+      version: '2.0.0',
+      enabled: true,
+    })
+    expect(env.provenance.get(PLUGIN_ID)?.url).toBe(sourceUrl)
   })
 
   it('updates a live plugin in place and preserves config and data', async () => {
