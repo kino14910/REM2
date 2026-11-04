@@ -106,14 +106,6 @@ export function lt(a: SemVer, b: SemVer): boolean {
   return compare(a, b) === -1
 }
 
-export function gt(a: SemVer, b: SemVer): boolean {
-  return compare(a, b) === 1
-}
-
-export function lte(a: SemVer, b: SemVer): boolean {
-  return compare(a, b) <= 0
-}
-
 export function gte(a: SemVer, b: SemVer): boolean {
   return compare(a, b) >= 0
 }
@@ -121,8 +113,4 @@ export function gte(a: SemVer, b: SemVer): boolean {
 export function formatVersion(v: SemVer): string {
   const base = `${v.major}.${v.minor}.${v.patch}`
   return v.prerelease !== undefined ? `${base}-${v.prerelease}` : base
-}
-
-export function isPrerelease(v: SemVer): boolean {
-  return v.prerelease !== undefined
 }
