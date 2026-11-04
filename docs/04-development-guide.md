@@ -172,7 +172,7 @@ pnpm dev --exit-after-start
 6. **`grep -c pattern *.js` 是逐文件输出**，不会因为某个文件干净就整体变 0。
 7. **内核零依赖红线由 `tests/contract/kernel-deps.test.ts` 硬断言**，因此 `tsx` 必须留在 devDependencies；提进 `dependencies` 立即变红。
 8. **`git reset` 后大面积 modified 但 `git diff --cached` 为空**，是 racily-clean 伪差异（索引与 mtime 同秒），`git add -A <dir>` 刷新即可，别误判成丢改动。
-9. **打包链路已实机验证（2026-10-24）**：`pnpm package` 完整跑通；Windows 上 squirrel maker 产出 `Setup.exe` 且包内 `resources/plugins-dist/` 齐全（deb/rpm maker 仅 Linux 可用，属平台限制）。若 `out/` 内残留被其他进程占用的文件，packager 的清理步骤会被本机 safe-delete shim FAIL_CLOSED 阻断（报 `trash` 失败）——先清空 `out/` 再跑 `package` / `make`。
+9. **打包链路已实机验证（2026-10-24）**：`pnpm package` 完整跑通；Windows 上 squirrel maker 产出 `Setup.exe` 且包内 `resources/plugins-dist/` 齐全（deb/rpm maker 仅 Linux 可用，属平台限制）。产物固定落在 `out/package/<app>-<platform>-<arch>`（`forge.config.mts` 的 `outDir`），历史 `out/` 残留目录不再参与 packager 清理；若该目录内文件仍被进程占用，清理会被本机 safe-delete shim FAIL_CLOSED 阻断（报 `trash` 失败）——先关闭占用进程再重跑。
 10. **Node 原生 TS 支持（strip-only）不能用于插件**：不支持参数属性（`ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`），也不把 `.js` 说明符重映射到 `.ts`（`ERR_MODULE_NOT_FOUND`）。改插件修不好，只能预编译。
 11. **浏览器测试需要真实 Chromium**：`pnpm test:browser` / `pnpm test:all` 前先执行 `pnpm exec playwright install chromium`；`test:run` 只跑 Node project，不需要浏览器。
 12. **`REM2_DISABLE_GPU=1` 必须与 `--no-sandbox` 配套**（`main.ts` 里两者同属该 opt-in 块）。无 GPU / 虚拟化主机上 Chromium 进程沙箱的虚拟化后端同样失败（`Failed to create shared context for virtualization`），只禁 GPU 不禁沙箱会让每个渲染进程访问冲突崩溃：症状是**空白窗口** + `render-process-gone` (crashed) + `loadFile` 报 `ERR_FAILED`。判据：`scripts/verify-render.cjs` 的 5 开关组合含 `--no-sandbox` 所以能渲染，而漏掉它的 4 开关组合必崩。
