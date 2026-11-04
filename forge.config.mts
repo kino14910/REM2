@@ -9,6 +9,10 @@ import { VitePlugin } from '@electron-forge/plugin-vite'
 import { FuseV1Options, FuseVersion } from '@electron/fuses'
 
 const config: ForgeConfig = {
+  // Packaging targets land in out/package/<app>-<platform>-<arch>. Pinned here
+  // instead of relying on the default ./out so stale, file-locked artifacts
+  // from previous runs or acceptance builds never block `pnpm package`.
+  outDir: 'out/package',
   packagerConfig: {
     asar: true,
     extraResource: ['plugins-dist'],
