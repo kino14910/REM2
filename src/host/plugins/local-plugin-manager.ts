@@ -434,10 +434,16 @@ export class LocalPluginManager {
       operationId: string
       /** Capabilities approved during the install confirmation. */
       capabilities?: readonly string[]
+      /**
+       * Defaults to true for the URL install flow. Marketplace installs pass
+       * false so installation, capability approval and enabling stay separate.
+       */
+      enable?: boolean
     },
     onProgress?: ProgressSink,
   ): Promise<PluginOperationResultDto> {
     const approved = input.capabilities ?? []
+    const wantEnabled = input.enable !== false
     // Register before entering the mutation queue: a queued operation can then
     // be cancelled and will abort as soon as it reaches the front of the queue.
     const controller = this.registerOperation(input.operationId)
@@ -453,6 +459,7 @@ export class LocalPluginManager {
         let committed = false
         let provenanceWritten = false
         let grantsWritten = false
+        let disabledWritten = false
         try {
           if (input.sha256 !== undefined && !isSha256(input.sha256)) {
             throw new PluginManagementError(
@@ -502,15 +509,24 @@ export class LocalPluginManager {
           this.uncancellable.add(input.operationId)
           const target = path.join(this.userRoot, pluginId)
           assertInside(this.userRoot, target, 'plugin directory')
-          // Persist grants and the enabled intent before the directory becomes
-          // discoverable; the plugin is approved at install time and starts
-          // immediately after the commit.
+          // Persist grants and the intended enable state before the directory
+          // becomes discoverable, so a crash cannot expose approved code
+          // without its grants or start a marketplace install that must wait
+          // for explicit capability approval.
           if (approved.length > 0) {
             await this.requireGrants().set(pluginId, approved)
             grantsWritten = true
           }
-          if (this.state.isDisabled(pluginId)) {
-            await this.state.setDisabled(pluginId, false)
+          if (wantEnabled) {
+            if (this.state.isDisabled(pluginId)) {
+              await this.state.setDisabled(pluginId, false)
+            }
+          } else if (!this.state.isDisabled(pluginId)) {
+            // Persist the disabled intent before the directory becomes visible.
+            // A crash between rename and enable would otherwise start code the
+            // user has not approved yet.
+            await this.state.setDisabled(pluginId, true)
+            disabledWritten = true
           }
           await rename(extracted.root, target)
           committed = true
@@ -526,7 +542,9 @@ export class LocalPluginManager {
           provenanceWritten = true
           // A successful install replaces any NotInstalled entry for this id.
           await this.removed?.remove(pluginId).catch(() => undefined)
-          const startError = await this.enableInstalled(pluginId)
+          const startError = wantEnabled
+            ? await this.enableInstalled(pluginId)
+            : undefined
           return {
             ok: true,
             changed: true,
@@ -535,11 +553,13 @@ export class LocalPluginManager {
               { ...candidate, rootDir: target },
               { dropped: [], errors: new Map() },
             ),
-            message: startError
-              ? `Installed and enabled, but the plugin did not start: ${startError}`
-              : approved.length > 0
-                ? 'Installed from remote source, capabilities approved and enabled.'
-                : 'Installed from remote source and enabled.',
+            message: !wantEnabled
+              ? 'Installed from the marketplace. Review the declared capabilities and enable the plugin when ready.'
+              : startError
+                ? `Installed and enabled, but the plugin did not start: ${startError}`
+                : approved.length > 0
+                  ? 'Installed from remote source, capabilities approved and enabled.'
+                  : 'Installed from remote source and enabled.',
           }
         } catch (error) {
           if (committed && pluginId) {
@@ -553,6 +573,9 @@ export class LocalPluginManager {
           }
           if (grantsWritten && pluginId) {
             await this.grants?.remove(pluginId).catch(() => undefined)
+          }
+          if (disabledWritten && !committed && pluginId) {
+            await this.state.setDisabled(pluginId, false).catch(() => undefined)
           }
           // Only a committed directory needs a disabled tombstone: a failed
           // cleanup must not turn into code execution on next boot, but a
@@ -713,6 +736,11 @@ export class LocalPluginManager {
       /** Version and digest the user actually confirmed in the update dialog. */
       expectedVersion: string
       expectedSha256: string
+      /**
+       * Explicit release asset URL resolved by the marketplace. When absent the
+       * provenance URL (the original install source) is used.
+       */
+      sourceUrl?: string
     },
     onProgress?: ProgressSink,
   ): Promise<PluginOperationResultDto> {
@@ -764,8 +792,9 @@ export class LocalPluginManager {
           }
           wasLive = this.isRuntimeLive(input.pluginId)
 
+          const sourceUrl = input.sourceUrl ?? entry.url
           const release = await this.resolveRelease(
-            entry.url,
+            sourceUrl,
             controller.signal,
           )
           if (!isNewerVersion(candidate.manifest.version, release.version)) {
@@ -830,7 +859,7 @@ export class LocalPluginManager {
           assertInside(this.userRoot, backup, 'plugin backup directory')
           const nextProvenance: PluginProvenance = {
             kind: 'remote',
-            url: entry.url,
+            url: sourceUrl,
             sha256: release.sha256,
             ...((release.publishedAt ?? entry.publishedAt)
               ? { publishedAt: release.publishedAt ?? entry.publishedAt }

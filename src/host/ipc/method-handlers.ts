@@ -35,7 +35,9 @@ import type {
   LocalPluginManager,
   RemoteProgress,
 } from '@/host/plugins/local-plugin-manager.js'
+import type { RegistryMarketService } from '@/host/registry/market-service.js'
 import type { AppearanceSettingsService } from '@/host/settings/appearance-settings.js'
+import type { LoggingSettingsService } from '@/host/settings/logging-settings.js'
 import type { ProxySettingsService } from '@/host/settings/proxy-settings-service.js'
 import type { EventBus } from '@/kernel/contracts/event-bus.js'
 import type { HealthReport } from '@/kernel/contracts/health.js'
@@ -57,6 +59,9 @@ import {
   appearanceSettingsArgsOf,
   inspectRemoteArgsOf,
   installRemoteArgsOf,
+  loggingSettingsArgsOf,
+  marketListArgsOf,
+  marketTargetArgsOf,
   noArgsOf,
   operationIdOf,
   panelIdOf,
@@ -83,6 +88,8 @@ export interface PluginActionConfirmation {
     | 'directory-install'
     | 'remote-install'
     | 'update-install'
+    | 'market-install'
+    | 'market-update'
     | 'proxy-change'
   title: string
   message: string
@@ -105,10 +112,14 @@ export interface MethodContext {
     symbolColor: string
   }) => void
   pluginManager?: LocalPluginManager
+  /** Official marketplace: registry index joined with local install state. */
+  market?: RegistryMarketService
   /** Host proxy settings (Electron session in production, fake in tests). */
   proxySettings?: ProxySettingsService
   /** Host appearance settings (JSON store in production, fake in tests). */
   appearanceSettings?: AppearanceSettingsService
+  /** Host console logging settings (persist first, then apply to the kernel). */
+  loggingSettings?: LoggingSettingsService
   choosePluginDirectory?: () => Promise<string | undefined>
   /**
    * Main-process consent boundary for sensitive plugin actions. The browser UI
@@ -149,6 +160,16 @@ function pluginManagerOf(ctx: MethodContext): LocalPluginManager {
   return ctx.pluginManager
 }
 
+function marketOf(ctx: MethodContext): RegistryMarketService {
+  if (!ctx.market) {
+    throw new PluginManagementError(
+      'E_MARKET_UNAVAILABLE',
+      'the plugin marketplace is unavailable',
+    )
+  }
+  return ctx.market
+}
+
 function proxySettingsOf(ctx: MethodContext): ProxySettingsService {
   if (!ctx.proxySettings) {
     throw new ProxySettingsError(
@@ -164,6 +185,13 @@ function appearanceSettingsOf(ctx: MethodContext): AppearanceSettingsService {
     throw new Error('appearance settings service is unavailable')
   }
   return ctx.appearanceSettings
+}
+
+function loggingSettingsOf(ctx: MethodContext): LoggingSettingsService {
+  if (!ctx.loggingSettings) {
+    throw new Error('logging settings service is unavailable')
+  }
+  return ctx.loggingSettings
 }
 
 /**
@@ -618,6 +646,65 @@ export const METHOD_FACTORIES = {
     }
   },
 
+  [channels.pluginMarketList]: (ctx): MethodHandler => {
+    return args => marketOf(ctx).list(marketListArgsOf(args))
+  },
+
+  [channels.pluginMarketInstall]: (ctx): MethodHandler => {
+    return async args => {
+      const { operationId, pluginId, version } = marketTargetArgsOf(args)
+      const market = marketOf(ctx)
+      // Resolve before asking for consent: the confirmation must show the
+      // registry's actual capabilities, not values supplied by the renderer.
+      const resolved = await market.resolve(pluginId, version)
+      await confirmPluginAction(ctx, {
+        action: 'market-install',
+        title: 'Install plugin from marketplace',
+        message: `Install "${resolved.name}" ${resolved.version}?`,
+        detail: [
+          `${resolved.pluginId} ${resolved.version}`,
+          `Source: ${resolved.downloadUrl}`,
+          resolved.requires.length > 0
+            ? `Capabilities to approve: ${resolved.requires.join(', ')}`
+            : 'Capabilities: none declared',
+          'The plugin is installed but not enabled. You will review capabilities and enable it explicitly.',
+        ].join('\n'),
+      })
+      return await market.install(
+        resolved,
+        operationId,
+        progressSinkFor(ctx, operationId),
+      )
+    }
+  },
+
+  [channels.pluginMarketUpdate]: (ctx): MethodHandler => {
+    return async args => {
+      const { operationId, pluginId, version } = marketTargetArgsOf(args)
+      const market = marketOf(ctx)
+      const resolved = await market.resolve(pluginId, version)
+      const plugin = await pluginManagerOf(ctx).detail(pluginId)
+      await confirmPluginAction(ctx, {
+        action: 'market-update',
+        title: 'Update plugin from marketplace',
+        message: `Update "${plugin.name}" from ${plugin.version} to ${resolved.version}?`,
+        detail: [
+          `${resolved.pluginId} ${plugin.version} -> ${resolved.version}`,
+          `Source: ${resolved.downloadUrl}`,
+          resolved.requires.length > 0
+            ? `Declared capabilities: ${resolved.requires.join(', ')}`
+            : 'Capabilities: none declared',
+          'The current version is backed up and restored if the update fails.',
+        ].join('\n'),
+      })
+      return await market.update(
+        resolved,
+        operationId,
+        progressSinkFor(ctx, operationId),
+      )
+    }
+  },
+
   [channels.settingsProxyGet]: (ctx): MethodHandler => {
     return args => {
       noArgsOf(args)
@@ -653,6 +740,20 @@ export const METHOD_FACTORIES = {
     return async args => {
       const settings = appearanceSettingsArgsOf(args)
       return await appearanceSettingsOf(ctx).set(settings)
+    }
+  },
+
+  [channels.settingsLoggingGet]: (ctx): MethodHandler => {
+    return args => {
+      noArgsOf(args)
+      return loggingSettingsOf(ctx).get()
+    }
+  },
+
+  [channels.settingsLoggingSet]: (ctx): MethodHandler => {
+    return async args => {
+      const settings = loggingSettingsArgsOf(args)
+      return await loggingSettingsOf(ctx).set(settings)
     }
   },
 

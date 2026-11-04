@@ -1,4 +1,5 @@
 import type { AppearanceSettings } from './appearance-settings.js'
+import type { LoggingSettings } from './logging-settings.js'
 import type { ProxySettings } from './proxy-settings.js'
 
 /**
@@ -26,5 +27,17 @@ export interface AppearanceSettingsRepository {
   setAppearance(value: unknown): Promise<AppearanceSettings>
 }
 
+export interface LoggingSettingsRepository {
+  /** Load once; a corrupt file degrades to defaults without clearing it. */
+  load(): Promise<void>
+  /** Current persisted logging settings (copy). */
+  getLogging(): LoggingSettings
+  /** Validate, persist only the logging namespace, then publish it. */
+  setLogging(value: unknown): Promise<LoggingSettings>
+}
+
 export interface AppSettingsRepository
-  extends ProxySettingsRepository, AppearanceSettingsRepository {}
+  extends
+    ProxySettingsRepository,
+    AppearanceSettingsRepository,
+    LoggingSettingsRepository {}

@@ -4,6 +4,11 @@ import {
   type AppearanceSettings,
 } from './appearance-settings.js'
 import {
+  DEFAULT_LOGGING_SETTINGS,
+  normalizeLoggingSettings,
+  type LoggingSettings,
+} from './logging-settings.js'
+import {
   DEFAULT_PROXY_SETTINGS,
   normalizeProxySettings,
   ProxySettingsError,
@@ -17,6 +22,11 @@ export interface AppSettingsDocument {
   schemaVersion: typeof SETTINGS_SCHEMA_VERSION
   proxy: ProxySettings
   appearance: AppearanceSettings
+  /**
+   * Additive namespace: older documents without it stay valid and load the
+   * defaults, so no backup/rebuild is triggered just for its absence.
+   */
+  logging: LoggingSettings
 }
 
 /** Defaults are derived from the domain defaults; electron-store's `defaults`/schema are not used. */
@@ -25,6 +35,7 @@ export function defaultAppSettingsDocument(): AppSettingsDocument {
     schemaVersion: SETTINGS_SCHEMA_VERSION,
     proxy: { ...DEFAULT_PROXY_SETTINGS },
     appearance: { ...DEFAULT_APPEARANCE_SETTINGS },
+    logging: { ...DEFAULT_LOGGING_SETTINGS },
   }
 }
 
@@ -46,6 +57,9 @@ export interface AppSettingsRecovery {
  * Once the version is known, a damaged `proxy` block must not discard a valid
  * `appearance` value (and vice versa); the damaged side alone falls back to its
  * domain default and the caller preserves the original file for diagnosis.
+ *
+ * `logging` is additive: an absent block is not damage (it predates the
+ * namespace), while a present-but-invalid block is damage.
  */
 export function recoverAppSettingsDocument(
   value: unknown,
@@ -65,6 +79,7 @@ export function recoverAppSettingsDocument(
 
   let proxy: ProxySettings | undefined
   let appearance: AppearanceSettings | undefined
+  let logging: LoggingSettings | undefined
   let firstError: unknown
 
   if ('proxy' in value) {
@@ -93,6 +108,14 @@ export function recoverAppSettingsDocument(
     )
   }
 
+  if ('logging' in value) {
+    try {
+      logging = normalizeLoggingSettings(value.logging)
+    } catch (error) {
+      firstError ??= error
+    }
+  }
+
   if (proxy === undefined && appearance === undefined) {
     throw new ProxySettingsError(
       'E_SETTINGS_INVALID',
@@ -106,8 +129,12 @@ export function recoverAppSettingsDocument(
       schemaVersion: SETTINGS_SCHEMA_VERSION,
       proxy: proxy ?? { ...DEFAULT_PROXY_SETTINGS },
       appearance: appearance ?? { ...DEFAULT_APPEARANCE_SETTINGS },
+      logging: logging ?? { ...DEFAULT_LOGGING_SETTINGS },
     },
-    damaged: proxy === undefined || appearance === undefined,
+    damaged:
+      proxy === undefined ||
+      appearance === undefined ||
+      ('logging' in value && logging === undefined),
   }
 }
 

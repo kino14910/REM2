@@ -8,7 +8,11 @@
 import path from 'node:path'
 import process from 'node:process'
 
+import type { LogServiceLike } from '@/host/settings/logging-settings.js'
+
+import { ConsoleLogSink } from '@/host/console-log-sink.js'
 import { createDeps } from '@/kernel/composition.js'
+import { KernelTokens } from '@/kernel/contracts/kernel-tokens.js'
 import { Kernel } from '@/kernel/kernel.js'
 
 import { parseArgs } from './args.js'
@@ -46,6 +50,10 @@ export async function run(
       initialConfig: { app: { greeting: 'Hello from rem2-kernel' } },
     }),
   )
+
+  // CLI hosts always log to the console; the Electron host makes this a setting.
+  const log = kernel.root.resolve(KernelTokens.Log) as LogServiceLike
+  log.addSink(new ConsoleLogSink())
 
   const result = await kernel.start()
   const report = await kernel.health()

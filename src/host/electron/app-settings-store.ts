@@ -20,6 +20,11 @@ import {
   type AppearanceSettings,
 } from '@/host/settings/appearance-settings.js'
 import {
+  DEFAULT_LOGGING_SETTINGS,
+  normalizeLoggingSettings,
+  type LoggingSettings,
+} from '@/host/settings/logging-settings.js'
+import {
   DEFAULT_PROXY_SETTINGS,
   normalizeProxySettings,
   ProxySettingsError,
@@ -28,6 +33,7 @@ import {
 
 const PROXY_WRITE_MESSAGE = 'failed to persist proxy settings'
 const APPEARANCE_WRITE_MESSAGE = 'failed to persist appearance settings'
+const LOGGING_WRITE_MESSAGE = 'failed to persist logging settings'
 
 /**
  * The only electron-store consumer. Main creates one instance and exposes it to
@@ -106,6 +112,7 @@ export class ElectronAppSettingsStore implements AppSettingsRepository {
       schemaVersion: SETTINGS_SCHEMA_VERSION,
       proxy: legacy.proxy,
       appearance: legacy.appearance,
+      logging: { ...DEFAULT_LOGGING_SETTINGS },
     }
     this.baseWritePending = true
     this.loaded = true
@@ -120,6 +127,10 @@ export class ElectronAppSettingsStore implements AppSettingsRepository {
 
   getAppearance(): AppearanceSettings {
     return { ...this.settings.appearance }
+  }
+
+  getLogging(): LoggingSettings {
+    return { ...this.settings.logging }
   }
 
   async setProxy(value: unknown): Promise<void> {
@@ -155,6 +166,26 @@ export class ElectronAppSettingsStore implements AppSettingsRepository {
       throw writeFailure(APPEARANCE_WRITE_MESSAGE, error)
     }
     this.settings = { ...this.settings, appearance: next }
+    return { ...next }
+  }
+
+  async setLogging(value: unknown): Promise<LoggingSettings> {
+    const next = normalizeLoggingSettings(value)
+    await this.ensureLoaded()
+    if (this.baseWritePending) {
+      this.persistBase(
+        { ...this.settings, logging: next },
+        LOGGING_WRITE_MESSAGE,
+      )
+      return { ...next }
+    }
+    const store = this.prepareForWrite(LOGGING_WRITE_MESSAGE)
+    try {
+      store.set('logging', next)
+    } catch (error) {
+      throw writeFailure(LOGGING_WRITE_MESSAGE, error)
+    }
+    this.settings = { ...this.settings, logging: next }
     return { ...next }
   }
 
@@ -228,6 +259,7 @@ export class ElectronAppSettingsStore implements AppSettingsRepository {
         schemaVersion: validated.schemaVersion,
         proxy: validated.proxy,
         appearance: validated.appearance,
+        logging: validated.logging,
       })
     } catch (error) {
       throw writeFailure(message, error)

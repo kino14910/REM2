@@ -18,10 +18,15 @@ import {
   type AppearanceSettings,
 } from '@/host/settings/appearance-settings.js'
 import {
+  normalizeLoggingSettings,
+  type LoggingSettings,
+} from '@/host/settings/logging-settings.js'
+import {
   normalizeProxySettings,
   type ProxySettings,
 } from '@/host/settings/proxy-settings.js'
 import { isValidPluginId } from '@/kernel/discovery/manifest-validator.js'
+import { isValidVersion } from '@/kernel/semver/semver.js'
 
 const MAX_URL_LENGTH = 2048
 const OPERATION_ID_RE = /^[A-Za-z0-9._:-]{1,64}$/
@@ -173,6 +178,11 @@ export function appearanceSettingsArgsOf(args: unknown): AppearanceSettings {
   return normalizeAppearanceSettings(asObject(args))
 }
 
+/** Validates `{ enabled, level }` for `settings.logging.set`. */
+export function loggingSettingsArgsOf(args: unknown): LoggingSettings {
+  return normalizeLoggingSettings(asObject(args))
+}
+
 /**
  * Validates `{ url }` for remote sources: HTTPS only, bounded length.
  * Host allowlisting happens later in the downloader, not here.
@@ -292,5 +302,38 @@ export function updateInstallArgsOf(args: unknown): {
     pluginId: pluginIdOf(obj),
     expectedVersion,
     expectedSha256: obj.expectedSha256.toLowerCase(),
+  }
+}
+
+/** Validates `{ refresh?: boolean }` for marketplace reads. */
+export function marketListArgsOf(args: unknown): { refresh?: boolean } {
+  if (args === undefined) return {}
+  const obj = asObject(args)
+  if (obj.refresh === undefined) return {}
+  if (typeof obj.refresh !== 'boolean') {
+    throw new Error('invalid args: refresh must be a boolean')
+  }
+  return { refresh: obj.refresh }
+}
+
+/**
+ * Validates `{ operationId, pluginId, version }` for a marketplace install or
+ * update. The host re-resolves the registry by id + version; no URL or digest
+ * is accepted from the renderer.
+ */
+export function marketTargetArgsOf(args: unknown): {
+  operationId: string
+  pluginId: string
+  version: string
+} {
+  const obj = asObject(args)
+  const version = nonEmptyString(obj.version, 'version')
+  if (version.length > 128 || !isValidVersion(version)) {
+    throw new Error('invalid args: version must be a semver version')
+  }
+  return {
+    operationId: operationIdOf(obj),
+    pluginId: pluginIdOf(obj),
+    version,
   }
 }

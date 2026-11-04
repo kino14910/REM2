@@ -10,10 +10,15 @@ import path from 'node:path'
 import process from 'node:process'
 
 import type { AppearanceSettingsService } from '@/host/settings/appearance-settings.js'
+import type {
+  LoggingSettingsService,
+  LogServiceLike,
+} from '@/host/settings/logging-settings.js'
 import type { ProxySettingsService } from '@/host/settings/proxy-settings-service.js'
 import type { EventBus } from '@/kernel/contracts/event-bus.js'
 
 import { builtinPluginsRoot } from '@/host/cli/paths.js'
+import { ConsoleLogSink } from '@/host/console-log-sink.js'
 import { IpcBridge } from '@/host/ipc/bridge.js'
 import { EVENT_FORWARD_MAP } from '@/host/ipc/forward-map.js'
 import {
@@ -25,12 +30,17 @@ import { LocalPluginManager } from '@/host/plugins/local-plugin-manager.js'
 import { PluginProvenanceStore } from '@/host/plugins/provenance-store.js'
 import { PluginRemovedStore } from '@/host/plugins/removed-plugin-store.js'
 import { PluginStateStore } from '@/host/plugins/state-store.js'
+import { RegistryCache } from '@/host/registry/cache.js'
+import { RegistryClient } from '@/host/registry/client.js'
+import { RegistryMarketService } from '@/host/registry/market-service.js'
 import { createDeps } from '@/kernel/composition.js'
 import { KernelTokens } from '@/kernel/contracts/kernel-tokens.js'
 import { Kernel } from '@/kernel/kernel.js'
 import { Topics } from '@/kernel/topics.js'
+import { CONTRACT_VERSION } from '@/kernel/version.js'
 
 import { ElectronAppSettingsStore } from './app-settings-store.js'
+import { ElectronLoggingSettingsService } from './logging-settings-service.js'
 import { ElectronProxySettingsService } from './proxy-settings-service.js'
 import { createSessionFetch } from './session-fetch.js'
 import { ThemeRegistryImpl } from './theme-registry.js'
@@ -96,6 +106,8 @@ function registerWhitelistedMethods(
   pluginManager: LocalPluginManager,
   proxySettings: ProxySettingsService,
   appearanceSettings: AppearanceSettingsService,
+  loggingSettings: LoggingSettingsService,
+  market: RegistryMarketService,
 ): void {
   const bus = kernelRef.root.resolve<EventBus>(KernelTokens.EventBus)
   const methodContext = {
@@ -111,8 +123,10 @@ function registerWhitelistedMethods(
       }
     },
     pluginManager,
+    market,
     proxySettings,
     appearanceSettings,
+    loggingSettings,
     // Renderer dialogs are not a sufficient trust boundary: compromised renderer
     // code could invoke these methods directly. The main process asks the user
     // again using values it has validated.
@@ -158,6 +172,9 @@ async function startKernel(): Promise<void> {
     appSettings,
   )
   await proxySettings.initialize()
+  // Proxy initialization loads the unified settings document; logging settings
+  // are read from the same load and applied before the kernel starts.
+  const logging = appSettings.getLogging()
   const appearanceSettings: AppearanceSettingsService = {
     get: () => appSettings.getAppearance(),
     set: settings => appSettings.setAppearance(settings),
@@ -206,13 +223,19 @@ async function startKernel(): Promise<void> {
       startTimeoutMs: 5000,
       stopTimeoutMs: 5000,
       legacyFallback: false,
-      logLevel: 'info',
+      logLevel: logging.level,
       initialConfig: { app: { greeting: 'Hello from Electron shell' } },
     }),
   )
 
   // Host-provided UI-side service: exposed only via KernelTokens, never special-cased for any specific plugin.
   kernel.root.registerInstance(KernelTokens.UiThemeRegistry, themeRegistry)
+
+  // Console logging is host-owned: install the sink before start() so plugin
+  // startup logs are visible, and let the settings service add/remove it later.
+  const log = kernel.root.resolve(KernelTokens.Log) as LogServiceLike
+  const loggingSettings = new ElectronLoggingSettingsService(appSettings, log)
+  if (logging.enabled) log.addSink(new ConsoleLogSink())
 
   const pluginManager = new LocalPluginManager({
     kernel,
@@ -231,11 +254,25 @@ async function startKernel(): Promise<void> {
   // plugins; otherwise it could start a half-installed or missing version.
   await pluginManager.prepare()
   disabledPlugins.splice(0, disabledPlugins.length, ...state.ids())
+  // The official marketplace is a host-side join of the registry index with
+  // local install state; installation still goes through the same package
+  // manager and verification path.
+  const market = new RegistryMarketService({
+    client: new RegistryClient({
+      cache: new RegistryCache(path.join(userData, 'registry-cache.json')),
+      fetchImpl: netFetch,
+    }),
+    manager: pluginManager,
+    kernelVersion: kernel.version,
+    contractVersion: CONTRACT_VERSION,
+  })
   registerWhitelistedMethods(
     kernel,
     pluginManager,
     proxySettings,
     appearanceSettings,
+    loggingSettings,
+    market,
   )
   await kernel.start()
 

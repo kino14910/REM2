@@ -150,6 +150,8 @@ export function timeoutFor(method: string): number {
     method === channels.pluginInstallFromRemote ||
     method === channels.pluginReinstall ||
     method === channels.pluginUpdateInstall ||
+    method === channels.pluginMarketInstall ||
+    method === channels.pluginMarketUpdate ||
     method === channels.pluginRemoteInspect ||
     method === channels.pluginUpdateCheck ||
     method === channels.pluginInstallFromDirectory ||
@@ -171,5 +173,7 @@ export function timeoutFor(method: string): number {
   ) {
     return 15_000
   }
+  // Marketplace reads may perform a registry fetch whose own timeout is 15s.
+  if (method === channels.pluginMarketList) return 20_000
   return 5000
 }
