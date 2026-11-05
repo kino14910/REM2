@@ -1,6 +1,6 @@
 {
-  "name": "rem2-kernel",
-  "productName": "rem2-kernel",
+  "name": "rem2-legacy",
+  "productName": "rem2-legacy",
   "version": "1.0.0",
   "private": true,
   "type": "module",
